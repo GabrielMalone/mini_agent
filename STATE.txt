@@ -4,76 +4,59 @@
 
 ```
 mini_agent/
-├── mini_agent.py      # Orchestrator: system prompt, _log(), main loop (~210 lines)
-├── llm.py             # LLM: call_deepseek() with retry, _parse_stream() with resilience
+├── mini_agent.py      # Orchestrator, set_context() for tool globals
+├── llm.py             # LLM: retry, streaming, resilience
+├── prompt.py          # SYSTEM_PROMPT (confirm-before-planning rule)
 ├── terminal.py        # ANSI colour helpers
-├── config.py          # AgentConfig — loads .mini_agent.toml + env vars + CLI flags
-├── tools.py           # 7 tools, registry dispatch + summaries
+├── config.py          # AgentConfig: TOML + env + CLI, exa_api_key
+├── tools.py           # 11 tools, registry + context, sentence-transformers
 ├── safety.py          # ReadSafetyGate + WriteSafetyGate
-├── memory.py          # MemoryStore — SQLite-backed (was JSON)
+├── memory.py          # SQLite: save/load/clear/prune/migrate
+├── .gitignore
+├── .mini_agent.toml
 ├── test_safety.py     # 25 tests
-├── test_memory.py     # 16 tests (was 12, +4 for SQLite)
-├── test_tools.py      # 32 tests
+├── test_memory.py     # 22 tests
+├── test_tools.py      # 45 tests
 ├── test_agent_loop.py # 9 tests
 ├── test_config.py     # 18 tests
-├── .mini_agent.toml   # Example project config
-└── STATE.txt          # This file
+├── test_git.py        # 16 tests
+└── STATE.txt
 ```
 
-### Memory: SQLite backend
+136 tests total.
 
-- Each message stored as a row: `(id, role, content_json, created_at)`
-- `save()` replaces all messages in an ACID transaction — no corruption on crash
-- `load()` returns decoded message dicts, strips incomplete tool-call sequences
-- `clear()` deletes all rows and vacuums
-- Old `.json` memory files are auto-migrated on first run (kept in place)
-- DB path is derived by replacing `.json` → `.db` extension
+### Tools (11)
 
-### Module responsibilities
+| # | Tool | Args | Gate | Notes |
+|---|------|------|:---:|-------|
+| 1 | `read_file` | `path` | read | |
+| 2 | `write_file` | `path`, `content` | write | |
+| 3 | `edit_file` | `path`, `old`, `new` | write | First occurrence |
+| 4 | `list_directory` | `path` | read | |
+| 5 | `run_shell` | `command` | — | cwd locked, 60s timeout |
+| 6 | `search_files` | `pattern`, `path?`, `regex?`, `ignore_case?` | read | 50-result cap |
+| 7 | `file_info` | `path` | read | Size, mode, mtime, type |
+| 8 | `run_tests` | `path?` | — | Structured pass/fail |
+| 9 | `semantic_search` | `query`, `path?` | read | all-MiniLM-L6-v2, local embeddings |
+| 10 | `web_search` | `query`, `num_results?`, `search_type?` | — | Exa API, highlights |
+| 11 | `git` | `subcommand`, `args?` | — | status/diff/log/init/add/commit/show/restore |
 
-| Module | Role |
-|--------|------|
-| `mini_agent.py` | Orchestrator (~210 lines) |
-| `llm.py` | LLM: retry, streaming, resilience (~180 lines) |
-| `terminal.py` | ANSI colours (~20 lines) |
-| `config.py` | TOML + env + CLI config |
-| `tools.py` | 7 tools: read/write/edit_file, list_directory, run_shell, search_files, file_info |
-| `safety.py` | Read/write workspace boundary |
-| `memory.py` | SQLite message store |
+### Search strategy (how the agent decides)
 
-**Import graph:** `mini_agent` → `config`, `llm`, `terminal`, `safety`, `memory`, `tools`. No cycles.
+| What you need | Tool |
+|:---|:---|
+| Exact pattern (regex) | `search_files` with `regex: true` |
+| Case-insensitive substring | `search_files` with `ignore_case: true` |
+| Code by meaning / concept | `semantic_search` |
+| Documentation, APIs, current info | `web_search` |
 
-### Tools
+### Key features
 
-| Tool | Args | Gate |
-|------|------|:---:|
-| `read_file` | `path` | read |
-| `write_file` | `path`, `content` | write |
-| `edit_file` | `path`, `old_string`, `new_string` | write |
-| `list_directory` | `path` | read |
-| `run_shell` | `command` | — (cwd locked) |
-| `search_files` | `pattern`, `path?` | read |
-| `file_info` | `path` | read |
-
-### API retry
-
-3 retries with exponential backoff (1s, 2s, 4s) on 429/5xx/connection errors.
-
-### Streaming resilience
-
-Connection drops mid-stream are caught — partial content and tool calls are returned.
-
-### Adding a tool
-
-1. `@_register("name")` on impl, `@_summarize("name")` on summary
-2. JSON schema entry in `TOOLS`
-
-## Tests: 101 total
-
-| File | Count | Covers |
-|------|:-----:|--------|
-| `test_safety.py` | 25 | Read + write safety gates |
-| `test_memory.py` | 16 | SQLite save/load/clear, migration, edge cases |
-| `test_tools.py` | 32 | All 7 tools + tool_summary |
-| `test_agent_loop.py` | 9 | Turn pipeline + API retry |
-| `test_config.py` | 18 | TOML, env vars, CLI flags, type validation |
+- **Semantic search** — sentence-transformers (all-MiniLM-L6-v2), chunks at def/class boundaries, mtime-based cache, fully local
+- **Web search** — Exa API with highlights, `type=auto` by default
+- **SQLite memory** — ACID, auto-migration from JSON, auto-prune at 200 messages
+- **Git integration** — local-only, restore-all for disaster recovery
+- **Regex + case-insensitive search**
+- **Structured test runner**
+- **Confirm-before-planning rule** in system prompt
+- **Tool context** — `set_context()` for API keys and globals

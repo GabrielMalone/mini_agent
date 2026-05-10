@@ -28,7 +28,7 @@ from prompt import SYSTEM_PROMPT
 from safety import ReadSafetyGate, WriteSafetyGate
 from memory import MemoryStore
 from terminal import c, _DIM, _CYAN, _YELLOW, _GREEN, _RED
-from tools import execute_tool, tool_summary
+from tools import execute_tool, tool_summary, set_context
 
 
 # ---------------------------------------------------------------------------
@@ -56,6 +56,11 @@ def resolve_workspace() -> str:
 
 
 def main() -> None:
+    # --help
+    if "--help" in sys.argv or "-h" in sys.argv:
+        print(__doc__)
+        return
+
     workspace = resolve_workspace()
     config = AgentConfig.load(workspace)
 
@@ -63,6 +68,7 @@ def main() -> None:
     read_gate = ReadSafetyGate(config.workspace)
     memory_path = os.path.join(config.workspace, config.memory_filename)
     memory = MemoryStore(memory_path, max_messages=config.max_messages)
+    set_context(exa_api_key=config.exa_api_key)
 
     # Restore previous session (system prompt is always fresh)
     saved = memory.load()

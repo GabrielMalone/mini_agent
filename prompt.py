@@ -44,4 +44,6 @@ SYSTEM_PROMPT = (
     "- Consult STATE.txt for current architecture and decisions before major changes.\n"
     "- Update STATE.txt after every completed change to track what was done.\n"
     "- Prefer TODO comments over partially implemented systems.\n"
+    "- **Before proposing or starting a new feature, confirm the plan with the user.** "
+    "Do not assume agreement — state the plan and wait for a go-ahead.\n"
 )

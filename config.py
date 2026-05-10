@@ -23,10 +23,11 @@ except ImportError:
 CONFIG_FILENAME = ".mini_agent.toml"
 MEMORY_FILENAME = ".mini_agent_memory.json"
 
-DEFAULT_MODEL       = "deepseek-v4-pro"
-DEFAULT_API_URL     = "https://api.deepseek.com/v1/chat/completions"
-DEFAULT_API_KEY     = "sk-df0ebdf0572a4485bd4e89996c9aa710"
+DEFAULT_MODEL        = "deepseek-v4-pro"
+DEFAULT_API_URL      = "https://api.deepseek.com/v1/chat/completions"
+DEFAULT_API_KEY      = "sk-df0ebdf0572a4485bd4e89996c9aa710"
 DEFAULT_MAX_MESSAGES = 200
+DEFAULT_EXA_API_KEY  = "4346b9ff-217d-4d42-8cee-f0e74117d188"
 
 
 # ---------------------------------------------------------------------------
@@ -53,6 +54,7 @@ class AgentConfig:
     verbose: bool = True
     memory_filename: str = MEMORY_FILENAME
     max_messages: int = DEFAULT_MAX_MESSAGES
+    exa_api_key: str = DEFAULT_EXA_API_KEY
 
     # ------------------------------------------------------------------
     # Factory
@@ -84,6 +86,8 @@ class AgentConfig:
             config.api_key = os.environ["DEEPSEEK_API_KEY"]
         if os.environ.get("AGENT_WORKSPACE"):
             config.workspace = os.environ["AGENT_WORKSPACE"]
+        if os.environ.get("EXA_API_KEY"):
+            config.exa_api_key = os.environ["EXA_API_KEY"]
 
         # ---- 3.  CLI flags --------------------------------------------------
         if "--stream" in sys.argv:
@@ -109,6 +113,7 @@ _TOML_SCHEMA: dict[str, type] = {
     "stream": bool,
     "verbose": bool,
     "max_messages": int,
+    "exa_api_key": str,
 }
 
 

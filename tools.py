@@ -147,11 +147,19 @@ TOOLS = [
                 "properties": {
                     "pattern": {
                         "type": "string",
-                        "description": "Text or substring to search for (case-sensitive)",
+                        "description": "Text or substring to search for (case-sensitive by default). If regex is true, treated as a Python regex.",
                     },
                     "path": {
                         "type": "string",
                         "description": "Directory to search in (defaults to workspace root)",
+                    },
+                    "regex": {
+                        "type": "boolean",
+                        "description": "If true, treat pattern as a Python regex. Default: false.",
+                    },
+                    "ignore_case": {
+                        "type": "boolean",
+                        "description": "If true, case-insensitive search. Default: false.",
                     },
                 },
                 "required": ["pattern"],
@@ -182,14 +190,92 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "run_tests",
+            "description": (
+                "Run tests in the workspace. Returns structured pass/fail counts "
+                "and failure details. Use after every code change to verify nothing "
+                "broke. If 'path' is given, runs only those tests; otherwise runs all."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Optional: specific test file or directory to run (e.g. 'test_tools.py' or 'test_memory.py'). If omitted, runs all tests.",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "semantic_search",
+            "description": (
+                "Search code by meaning using embeddings. Finds code chunks semantically "
+                "similar to the query, even if they don't share keywords. Good for finding "
+                "related functionality, similar patterns, or code that 'feels like' something. "
+                "Indexes files live — no pre-indexing needed. Returns top 10 matches."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Natural language description of what to find (e.g. 'error handling around file writes', 'retry logic')",
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "Directory to search in (defaults to workspace root)",
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "web_search",
+            "description": (
+                "Search the web using Exa. Returns relevant pages with titles, URLs, "
+                "and highlighted excerpts. Good for documentation lookup, API references, "
+                "current information, and technical questions."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search query. Be specific and use technical terms for best results.",
+                    },
+                    "num_results": {
+                        "type": "integer",
+                        "description": "Number of results to return (default 5, max 20).",
+                    },
+                    "search_type": {
+                        "type": "string",
+                        "description": "Search depth: 'auto' (default, balanced), 'fast', 'deep'. 'auto' works for most queries.",
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "git",
             "description": (
                 "Run a git command in the workspace. "
-                "Supports: status, diff, log, init, add, commit. "
+                "Supports: status, diff, log, init, add, commit, show, restore. "
                 "All operations are local-only (no push/pull). "
                 "Use 'diff' to see unstaged changes, 'status' to see file states, "
                 "'log' for recent commits, 'init' to initialize a repo, "
-                "'add' to stage files, 'commit' to commit staged changes."
+                "'add' to stage files, 'commit' to commit staged changes, "
+                "'show' to read a committed version of a file, "
+                "'restore' to recover a file from the last commit."
             ),
             "parameters": {
                 "type": "object",
@@ -234,6 +320,12 @@ class ToolResult:
 
 _TOOL_DISPATCH: dict[str, callable] = {}
 _TOOL_SUMMARIES: dict[str, callable] = {}
+_TOOL_CONTEXT: dict = {}
+
+
+def set_context(**kwargs) -> None:
+    """Set module-level context accessible to tool implementations."""
+    _TOOL_CONTEXT.update(kwargs)
 
 
 def _register(name: str):
@@ -423,12 +515,29 @@ _SKIP_DIRS = {".git", ".hg", ".svn", "__pycache__", ".pytest_cache",
 def _search_files(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
     pattern = args["pattern"]
     path = args.get("path", ".")
+    use_regex = args.get("regex", False)
+    ignore_case = args.get("ignore_case", False)
     safety_result = rg.check(path)
     if not safety_result.allowed:
         return ToolResult(
             success=False,
             content=f"Search blocked by safety layer: {safety_result.reason}",
         )
+
+    if use_regex:
+        import re
+        flags = re.IGNORECASE if ignore_case else 0
+        try:
+            compiled = re.compile(pattern, flags)
+        except re.error as e:
+            return ToolResult(success=False, content=f"Invalid regex: {e}")
+        match_fn = lambda line: compiled.search(line) is not None
+    elif ignore_case:
+        lower_pattern = pattern.lower()
+        match_fn = lambda line: lower_pattern in line.lower()
+    else:
+        match_fn = lambda line: pattern in line
+
     results: list[str] = []
     try:
         for root, dirs, files in os.walk(safety_result.resolved_path):
@@ -438,7 +547,7 @@ def _search_files(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolR
                 try:
                     with open(fpath, "r", errors="replace") as f:
                         for lineno, line in enumerate(f, 1):
-                            if pattern in line:
+                            if match_fn(line):
                                 results.append(f"{fpath}:{lineno}: {line.rstrip()}")
                                 if len(results) >= 50:
                                     break
@@ -492,15 +601,173 @@ def _file_info(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResu
 
 
 # ---------------------------------------------------------------------------
+# semantic_search tool (sentence-transformers, local)
+# ---------------------------------------------------------------------------
+
+_SEMANTIC_STORE: dict[str, tuple[float, list[tuple[int, int, str, "numpy.ndarray"]]]] = {}
+_SEM_MODEL = None
+
+
+def _sem_get_model():
+    global _SEM_MODEL
+    if _SEM_MODEL is None:
+        from sentence_transformers import SentenceTransformer
+        _SEM_MODEL = SentenceTransformer("all-MiniLM-L6-v2")
+    return _SEM_MODEL
+
+
+def _sem_chunk_py(filepath: str) -> list[tuple[int, int, str]]:
+    """Chunk a .py file at def/class boundaries. Returns (start_line, end_line, text)."""
+    try:
+        with open(filepath, "r") as f:
+            lines = f.readlines()
+    except (OSError, PermissionError):
+        return []
+
+    boundaries = [i for i, ln in enumerate(lines) if ln.strip().startswith(("def ", "class "))]
+    if not boundaries:
+        text = "".join(lines).strip()
+        return [(1, len(lines), text)] if text else []
+
+    chunks: list[tuple[int, int, str]] = []
+    for j, start in enumerate(boundaries):
+        end = boundaries[j + 1] if j + 1 < len(boundaries) else len(lines)
+        text = "".join(lines[start:end]).strip()
+        if text:
+            chunks.append((start + 1, end, text))
+    return chunks
+
+
+def _sem_index(root: str) -> None:
+    """Build/update in-memory index of .py files."""
+    current = set()
+    import numpy as np
+
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS and not d.startswith(".")]
+        for fname in filenames:
+            if not fname.endswith(".py"):
+                continue
+            fpath = os.path.join(dirpath, fname)
+            current.add(fpath)
+            try:
+                mtime = os.path.getmtime(fpath)
+            except OSError:
+                continue
+            if fpath in _SEMANTIC_STORE and _SEMANTIC_STORE[fpath][0] == mtime:
+                continue
+            chunks = _sem_chunk_py(fpath)
+            if not chunks:
+                _SEMANTIC_STORE[fpath] = (mtime, [])
+                continue
+            texts = [t for _, _, t in chunks]
+            model = _sem_get_model()
+            embeddings = model.encode(texts, show_progress_bar=False)
+            _SEMANTIC_STORE[fpath] = (mtime, list(zip(
+                [s for s, e, _ in chunks],
+                [e for s, e, _ in chunks],
+                texts,
+                list(embeddings),
+            )))
+    stale = [p for p in _SEMANTIC_STORE if p not in current]
+    for p in stale:
+        del _SEMANTIC_STORE[p]
+
+
+@_register("semantic_search")
+def _semantic_search(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
+    query = args.get("query", "")
+    if not query:
+        return ToolResult(success=False, content="Missing required parameter: 'query'.")
+    path = args.get("path", ".")
+    safety_result = rg.check(path)
+    if not safety_result.allowed:
+        return ToolResult(success=False, content=f"Search blocked by safety layer: {safety_result.reason}")
+
+    import numpy as np
+
+    root = safety_result.resolved_path
+    _sem_index(root)
+
+    model = _sem_get_model()
+    query_emb = model.encode([query], show_progress_bar=False)[0]
+
+    scored: list[tuple[float, str, int, int, str]] = []
+    for fpath, (_, chunks) in _SEMANTIC_STORE.items():
+        for start, end, text, emb in chunks:
+            a = np.asarray(query_emb)
+            b = np.asarray(emb)
+            cos = float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-9))
+            scored.append((cos, fpath, start, end, text))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    top = scored[:10]
+
+    if not top:
+        return ToolResult(success=True, content="No matches found.")
+
+    lines: list[str] = []
+    for cos, fpath, start, end, text in top:
+        lines.append(f"score={cos:.3f}  {fpath}:{start}-{end}")
+        snippet = text[:200].replace("\n", "\\n")
+        if len(text) > 200:
+            snippet += "…"
+        lines.append(f"  {snippet}")
+
+    return ToolResult(success=True, content="\n".join(lines))
+
+
+# ---------------------------------------------------------------------------
+# web_search tool (Exa)
+# ---------------------------------------------------------------------------
+
+@_register("web_search")
+def _web_search(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
+    query = args.get("query", "")
+    if not query:
+        return ToolResult(success=False, content="Missing required parameter: 'query'.")
+    num = min(args.get("num_results", 5), 20)
+    stype = args.get("search_type", "auto")
+    api_key = _TOOL_CONTEXT.get("exa_api_key") or os.environ.get("EXA_API_KEY", "")
+
+    if not api_key:
+        return ToolResult(success=False, content="EXA_API_KEY not configured.")
+
+    try:
+        from exa_py import Exa
+        exa = Exa(api_key=api_key)
+        response = exa.search(
+            query,
+            type=stype,
+            num_results=num,
+            contents={"highlights": True},
+        )
+    except Exception as e:
+        return ToolResult(success=False, content=f"Exa search error: {e}")
+
+    if not response.results:
+        return ToolResult(success=True, content="No results found.")
+
+    lines: list[str] = []
+    for i, r in enumerate(response.results, 1):
+        lines.append(f"{i}. {r.title}")
+        lines.append(f"   {r.url}")
+        if r.highlights:
+            for h in r.highlights[:3]:
+                lines.append(f"   > {h.strip()}")
+        lines.append("")
+
+    return ToolResult(success=True, content="\n".join(lines).rstrip())
+
+
+# ---------------------------------------------------------------------------
 # Git tool
 # ---------------------------------------------------------------------------
 
-# Subcommands that are safe to run (local-only, no remote operations)
-_GIT_SAFE: set[str] = {"status", "diff", "log", "init", "add", "commit"}
+_GIT_SAFE: set[str] = {"status", "diff", "log", "init", "add", "commit", "show", "restore"}
 
 
 def _git_run(cwd: str, *args: str) -> tuple[int, str, str]:
-    """Run a git command and return (exit_code, stdout, stderr)."""
     result = subprocess.run(
         ["git", *args],
         cwd=cwd,
@@ -545,7 +812,6 @@ def _git(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
         rc, out, err = _git_run(
             cwd, "log", "--oneline", "-n", "20", "--decorate",
         )
-        # git log exits non-zero when there are no commits — that's fine
         if rc != 0 and "does not have any commits" not in err:
             return ToolResult(success=False, content=err or out)
         if not out.strip():
@@ -572,6 +838,72 @@ def _git(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
         if rc != 0:
             return ToolResult(success=False, content=err or out)
         return ToolResult(success=True, content=out.strip() or "Committed.")
+
+    elif sub == "show":
+        if not extra.strip():
+            return ToolResult(success=False, content="'show' requires a file path in 'args'.")
+        rc, out, err = _git_run(cwd, "show", f"HEAD:{extra.strip()}")
+        if rc != 0:
+            return ToolResult(success=False, content=err or out)
+        return ToolResult(success=True, content=out)
+
+    elif sub == "restore":
+        if not extra.strip():
+            extra = "."
+        rc, changed, _ = _git_run(cwd, "diff", "--name-only", "HEAD")
+        if rc != 0:
+            return ToolResult(success=False, content=changed or "Unable to list changed files.")
+        files = changed.strip()
+        rc, out, err = _git_run(cwd, "restore", *extra.strip().split())
+        if rc != 0:
+            return ToolResult(success=False, content=err or out)
+        if files:
+            return ToolResult(success=True,
+                              content=f"Restored all changes. Files restored:\n{files}")
+        return ToolResult(success=True, content="Restored (no changes to revert).")
+
+
+# ---------------------------------------------------------------------------
+# run_tests tool
+# ---------------------------------------------------------------------------
+
+@_register("run_tests")
+def _run_tests(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
+    target = args.get("path", "").strip()
+    cmd = ["python", "-m", "pytest", "-q"]
+    if target:
+        cmd.append(target)
+
+    try:
+        result = subprocess.run(
+            cmd,
+            cwd=rg.workspace_root,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except subprocess.TimeoutExpired:
+        return ToolResult(success=False, content="Tests timed out after 120s")
+    except Exception as e:
+        return ToolResult(success=False, content=f"Error running tests: {e}")
+
+    output = (result.stdout + result.stderr).strip()
+    summary_line = ""
+    lines = output.split("\n")
+    for line in reversed(lines):
+        if "passed" in line or "failed" in line or "error" in line:
+            summary_line = line.strip()
+            break
+
+    if not summary_line:
+        summary_line = f"exit_code={result.returncode}"
+
+    success = result.returncode == 0
+
+    if not success and len(output) > 500:
+        output = "…\n" + output[-500:]
+
+    return ToolResult(success=success, content=summary_line)
 
 
 # ---------------------------------------------------------------------------
@@ -636,3 +968,29 @@ def _git_summary(args: dict) -> str:
     if extra:
         return f"git {sub} {extra}"
     return f"git {sub}"
+
+
+@_summarize("run_tests")
+def _run_tests_summary(args: dict) -> str:
+    target = args.get("path", "").strip()
+    if target:
+        return f"run_tests({target})"
+    return "run_tests(all)"
+
+
+@_summarize("web_search")
+def _web_search_summary(args: dict) -> str:
+    query = args.get("query", "?")
+    preview = query[:60]
+    if len(query) > 60:
+        preview += "…"
+    return f"web_search({preview})"
+
+
+@_summarize("semantic_search")
+def _semantic_search_summary(args: dict) -> str:
+    query = args.get("query", "?")
+    preview = query[:60]
+    if len(query) > 60:
+        preview += "…"
+    return f"semantic_search({preview})"
