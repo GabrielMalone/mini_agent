@@ -1,0 +1,19 @@
+# Bytecode
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual env
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+.DS_Store
+
+# Runtime data
+.mini_agent_memory.db
+
+# Secrets
+keys
