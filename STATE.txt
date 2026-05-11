@@ -199,3 +199,12 @@ agent response ended with a table, rows carried over to the next turn, and the
 
 **Fix:** Flush `_table_buf` in `_finish_turn` (before `_flush_buf`). Add
 defensive clear in `_submit`.
+
+## 2026-05-11 — Startup context injection
+
+**What:** At session start, inject a system message with a workspace file tree,
+STATE.txt excerpt, and recent git log. Saves 2-3 discovery turns.
+
+**How:** `config.py:build_startup_context()` generates the context string.
+Both `mini_agent.py:main()` and `tui.py:on_mount()` prepend it as the first
+system message (before the main prompt and any restored history).

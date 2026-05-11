@@ -32,7 +32,7 @@ import time
 
 import requests
 
-from config import AgentConfig, CONFIG_FILENAME, resolve_workspace
+from config import AgentConfig, CONFIG_FILENAME, resolve_workspace, build_startup_context
 from llm import run_agent_turn
 from prompt import SYSTEM_PROMPT
 from safety import ReadSafetyGate, WriteSafetyGate
@@ -104,7 +104,11 @@ def main() -> None:
 
     # Restore previous session (system prompt is always fresh)
     saved = memory.load()
-    messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
+    startup_ctx = build_startup_context(workspace)
+    messages: list[dict] = [
+        {"role": "system", "content": startup_ctx},
+        {"role": "system", "content": SYSTEM_PROMPT},
+    ]
     if saved:
         messages.extend(saved)
         _log(config.verbose, f"(restored {len(saved)} messages from previous session)")

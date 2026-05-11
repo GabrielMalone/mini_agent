@@ -24,7 +24,7 @@ from textual.binding import Binding
 
 import requests
 
-from config import AgentConfig, resolve_workspace
+from config import AgentConfig, resolve_workspace, build_startup_context
 from llm import run_agent_turn, THINKING_START, THINKING_END
 from prompt import SYSTEM_PROMPT
 from safety import ReadSafetyGate, WriteSafetyGate
@@ -209,7 +209,11 @@ class MiniAgentTUI(App):
         build_symbol_index(self.config.workspace)
 
         saved = self.memory.load()
-        self.messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
+        startup_ctx = build_startup_context(workspace)
+        self.messages: list[dict] = [
+            {"role": "system", "content": startup_ctx},
+            {"role": "system", "content": SYSTEM_PROMPT},
+        ]
         if saved:
             self.messages.extend(saved)
 

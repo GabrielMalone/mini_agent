@@ -145,6 +145,64 @@ def _apply_toml(config: AgentConfig, data: dict) -> None:
         setattr(config, key, value)
 
 
+def build_startup_context(workspace: str) -> str:
+    """Generate a one-shot system message describing the workspace at startup.
+
+    Saves the agent discovery turns — no need to list_directory / read STATE.txt
+    before getting to work.
+    """
+    import subprocess as _sp
+
+    parts: list[str] = []
+    parts.append("[WORKSPACE CONTEXT — injected once at session start]")
+
+    # 1. File tree (skip hidden dirs, __pycache__, .git, venv, node_modules)
+    SKIP = {".git", "__pycache__", ".venv", "venv", "node_modules", ".mypy_cache",
+            ".pytest_cache", ".ruff_cache", "dist", "build", ".tox"}
+    tree_lines: list[str] = []
+    for dirpath, dirnames, filenames in os.walk(workspace):
+        dirnames[:] = sorted(d for d in dirnames if d not in SKIP and not d.startswith("."))
+        depth = dirpath[len(workspace):].count(os.sep)
+        indent = "  " * depth
+        label = os.path.basename(dirpath) or workspace.rstrip("/").rsplit("/", 1)[-1]
+        tree_lines.append(f"{indent}[d] {label}/")
+        for fname in sorted(filenames):
+            if fname.startswith("."):
+                continue
+            tree_lines.append(f"{indent}  [f] {fname}")
+        if len(tree_lines) > 60:
+            tree_lines.append(f"{indent}  ... (truncated)")
+            break
+    parts.append("```\n" + "\n".join(tree_lines) + "\n```")
+
+    # 2. STATE.txt content (if it exists)
+    state_path = os.path.join(workspace, "STATE.txt")
+    if os.path.isfile(state_path):
+        try:
+            with open(state_path) as f:
+                state_content = f.read()
+            # Only include last ~50 lines to keep it brief
+            state_lines = state_content.split("\n")
+            if len(state_lines) > 50:
+                state_content = "\n".join(state_lines[-50:])
+                parts.append("\n## Latest STATE.txt (last 50 lines)\n" + state_content)
+            else:
+                parts.append("\n## STATE.txt\n" + state_content)
+        except OSError:
+            pass
+
+    # 3. Recent git log (last 5 commits, if this is a git repo)
+    try:
+        r = _sp.run(["git", "-C", workspace, "log", "--oneline", "-5"],
+                    capture_output=True, text=True, timeout=5)
+        if r.returncode == 0 and r.stdout.strip():
+            parts.append("\n## Recent git log\n```\n" + r.stdout.rstrip() + "\n```")
+    except Exception:
+        pass
+
+    return "\n".join(parts) + "\n"
+
+
 def resolve_workspace() -> str:
     """Resolve workspace root from CLI arg, env var, or default to cwd.
 
