@@ -223,3 +223,15 @@ Helps the agent self-correct typos/whitespace mismatches.
 **Standalone diff tool** (`tools/file_ops.py`, `tools/__init__.py`): New `diff`
 tool. Runs `git diff` for the workspace or a specific file. Returns raw diff
 output or "No unstaged changes." Useful for verifying edits before committing.
+
+## 2026-05-11 — Scratchpad prominence + smart test detection
+
+**Scratchpad prominence** (`prompt.py`): Moved scratchpad guidance from the
+"Memory & context awareness" section to its own prominent section right after
+Behavior. Added specific guidance: structure with headings, update after every
+tool round. Aims to increase scratchpad usage.
+
+**Smart test detection** (`tools/shell_ops.py`): Enhanced `_verify` to check
+multiple candidate test paths when matching modified source files to test files.
+Now checks `test_<name>.py`, `tests/test_<name>.py`, `test/test_<name>.py`,
+and parent-directory tests (e.g. `tools/file_ops.py` → `test_tools.py`).

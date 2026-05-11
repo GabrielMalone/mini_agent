@@ -341,11 +341,23 @@ def _verify(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
                 test_targets.append(base)
             else:
                 name = _os.path.splitext(base)[0]
-                test_candidate = f"test_{name}.py"
-                if test_candidate not in seen:
-                    if _os.path.exists(_os.path.join(root, test_candidate)):
-                        seen.add(test_candidate)
-                        test_targets.append(test_candidate)
+                # Check multiple candidate test paths
+                candidates = [
+                    f"test_{name}.py",
+                    f"tests/test_{name}.py",
+                    f"test/test_{name}.py",
+                ]
+                # Also check parent-dir test (e.g. tools/file_ops.py → test_tools.py)
+                parent = _os.path.basename(_os.path.dirname(fpath))
+                if parent and parent != root:
+                    candidates.append(f"test_{parent}.py")
+                    candidates.append(f"tests/test_{parent}.py")
+                for candidate in candidates:
+                    if candidate not in seen:
+                        if _os.path.exists(_os.path.join(root, candidate)):
+                            seen.add(candidate)
+                            test_targets.append(candidate)
+                            break  # first match wins
 
     if not test_targets:
         test_targets.append(".")  # run all
