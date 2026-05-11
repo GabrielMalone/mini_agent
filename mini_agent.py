@@ -30,12 +30,12 @@ import sys
 import time
 
 from config import AgentConfig, CONFIG_FILENAME
-from llm import call_deepseek
+from llm import run_agent_turn
 from prompt import SYSTEM_PROMPT
 from safety import ReadSafetyGate, WriteSafetyGate
 from memory import MemoryStore
 from terminal import c, _DIM, _CYAN, _YELLOW, _GREEN, _RED
-from tools import execute_tool, tool_summary, set_context
+from tools import set_context
 
 
 # ---------------------------------------------------------------------------
@@ -117,49 +117,44 @@ def main() -> None:
         # ----- User turn -----
         messages.append({"role": "user", "content": user_input})
 
-        # ----- Tool execution loop (handle multiple rounds) -----
-        while True:
-            _log(config.verbose,
-                 f"  {c('⏳', _CYAN)} calling API…", file=sys.stderr)
-            t0 = time.monotonic()
-            msg = call_deepseek(messages, config)
+        # ----- Agent turn -----
+        _log(config.verbose,
+             f"  {c('⏳', _CYAN)} calling API…", file=sys.stderr)
+        t0 = time.monotonic()
+
+        def _tool_start(summary: str) -> None:
+            nonlocal t0
             elapsed = time.monotonic() - t0
-
-            if not msg.get("tool_calls"):
-                if not config.stream:
-                    print(msg.get("content", ""))
-                _log(config.verbose,
-                     f"  {c('←', _DIM)} text response ({elapsed:.1f}s)",
-                     file=sys.stderr)
-                messages.append(msg)
-                break
-
-            n = len(msg["tool_calls"])
             _log(config.verbose,
-                 f"  {c('←', _YELLOW)} {n} tool call(s) after {elapsed:.1f}s",
+                 f"  {c('←', _YELLOW)} tool call(s) after {elapsed:.1f}s",
                  file=sys.stderr)
-            messages.append(msg)
-            for tc in msg["tool_calls"]:
+            _log(config.verbose,
+                 f"  {c('🔧', _YELLOW)} {summary}",
+                 file=sys.stderr)
+
+        def _tool_end(ok: bool, detail: str) -> None:
+            if ok:
                 _log(config.verbose,
-                     f"  {c('🔧', _YELLOW)} {tool_summary(tc)}",
+                     f"     {c('✓', _GREEN)}  ok",
                      file=sys.stderr)
-                t0 = time.monotonic()
-                result = execute_tool(tc, write_gate, read_gate)
-                tool_elapsed = time.monotonic() - t0
-                if result.success:
-                    _log(config.verbose,
-                         f"     {c('✓', _GREEN)}  ok ({tool_elapsed:.2f}s)",
-                         file=sys.stderr)
-                else:
-                    _log(config.verbose,
-                         f"     {c('✗', _RED)}  FAILED ({tool_elapsed:.2f}s): "
-                         f"{c(result.content, _RED)}",
-                         file=sys.stderr)
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc["id"],
-                    "content": result.to_json(),
-                })
+            else:
+                _log(config.verbose,
+                     f"     {c('✗', _RED)}  FAILED: {c(detail, _RED)}",
+                     file=sys.stderr)
+
+        msg = run_agent_turn(
+            messages, config, write_gate, read_gate,
+            on_tool_start=_tool_start,
+            on_tool_end=_tool_end,
+        )
+        elapsed = time.monotonic() - t0
+
+        if msg is not None and not msg.get("tool_calls"):
+            if not config.stream:
+                print(msg.get("content", ""))
+            _log(config.verbose,
+                 f"  {c('←', _DIM)} text response ({elapsed:.1f}s)",
+                 file=sys.stderr)
 
         # Persist after every turn
         memory.save(messages)

@@ -28,12 +28,17 @@ class TestTUIImports(unittest.TestCase):
         self.assertIn("background", MiniAgentTUI.CSS)
 
     def test_bindings_contain_cancel(self):
-        binds = {t[0]: t[1] for t in MiniAgentTUI.BINDINGS}
+        binds = {b.key: b.action for b in MiniAgentTUI.BINDINGS}
         self.assertIn("ctrl+c", binds)
         self.assertEqual(binds["ctrl+c"], "cancel")
 
+    def test_bindings_contain_submit(self):
+        binds = {b.key: b.action for b in MiniAgentTUI.BINDINGS}
+        self.assertIn("enter", binds)
+        self.assertEqual(binds["enter"], "submit")
+
     def test_bindings_contain_quit(self):
-        binds = {t[0]: t[1] for t in MiniAgentTUI.BINDINGS}
+        binds = {b.key: b.action for b in MiniAgentTUI.BINDINGS}
         self.assertIn("ctrl+q", binds)
         self.assertEqual(binds["ctrl+q"], "quit")
 

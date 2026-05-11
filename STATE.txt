@@ -6,7 +6,7 @@
 mini_agent/
 ├── mini_agent.py      # Terminal REPL (--help, --workspace, --stream, --quiet, --no-color)
 ├── tui.py             # Textual TUI: dark theme, streaming, cancel, multi-line paste
-├── llm.py             # LLM: retry, streaming, on_token callback for TUI
+├── llm.py             # LLM: retry, streaming, on_token, THINKING_START/END, run_agent_turn
 ├── prompt.py          # SYSTEM_PROMPT (confirm-before-planning rule)
 ├── terminal.py        # ANSI colour helpers
 ├── config.py          # AgentConfig: TOML + env + CLI, exa_api_key
@@ -18,7 +18,7 @@ mini_agent/
 ├── requirements.txt   # exa-py, sentence-transformers, requests, tomli, textual
 ├── test_safety.py     # 25 tests
 ├── test_memory.py     # 22 tests
-├── test_tools.py      # 54 tests (includes shell guard, semantic_search, web_search)
+├── test_tools.py      # 53 tests (web_search API tests disabled to save tokens)
 ├── test_tui.py        # 12 tests
 ├── test_agent_loop.py # 9 tests
 ├── test_config.py     # 18 tests
@@ -26,7 +26,7 @@ mini_agent/
 └── STATE.txt
 ```
 
-157 tests total.
+156 tests total.
 
 ### Tools (11)
 
@@ -61,11 +61,16 @@ mini_agent/
 
 ### TUI (tui.py)
 
-- **Dark theme**: #16162a background
-- **Streaming**: typewriter token display via `on_token` callback (llm.py)
-- **Cancel**: Ctrl+C sets cancel flag, worker thread exits cleanly
-- **Multi-line**: Shift+Enter inserts newline, paste preserves newlines
-- **Zones**: agent output (cyan), user input (green), tools (yellow), errors (red)
+- **Dark theme**: #1a1a1a background, #262626 surface
+- **Streaming**: partial lines shown in a Static widget below the conversation log;
+  complete lines flushed to RichLog. Thinking/reasoning content shown dimmed and italic.
+- **Multi-line input**: TextArea widget. Enter submits, Shift+Enter inserts newline.
+- **Cancel**: Ctrl+C sets cancel flag, worker thread exits cleanly.
+- **Tool visibility**: ⚙ tool_name(args) on start, ✓/✗ detail on end.
+- **Queue architecture**: AgentWorker pushes messages to a thread-safe Queue;
+  set_interval(50ms) drain loop reads them on the main thread.
+- **Shared agent loop**: `run_agent_turn()` in llm.py used by both TUI and terminal REPL.
+- **Double-submit guard**: Enter is ignored while a worker is active.
 
 ### Flags (both mini_agent.py and tui.py)
 

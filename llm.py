@@ -10,12 +10,18 @@ for SSE parsing with tool-call accumulation and connection-drop resilience.
 import json
 import sys
 import time
+import threading
 
 import requests
 
 from config import AgentConfig
 from terminal import c, _DIM
-from tools import TOOLS
+from tools import TOOLS, execute_tool, tool_summary
+from safety import ReadSafetyGate, WriteSafetyGate
+
+# Thinking-mode delimiters sent through the on_token stream
+THINKING_START = "\n[thinking] "
+THINKING_END = "\n[/thinking]"
 
 
 # ---------------------------------------------------------------------------
@@ -167,7 +173,7 @@ def _parse_stream(response: requests.Response, on_token: callable = None) -> dic
                     if full_reasoning and not full_content:
                         # First content token after reasoning — signal end of thinking
                         if on_token:
-                            on_token("\n[/thinking]")
+                            on_token(THINKING_END)
                     full_content += delta["content"]
                     if on_token:
                         on_token(delta["content"])
@@ -178,7 +184,7 @@ def _parse_stream(response: requests.Response, on_token: callable = None) -> dic
                 if "reasoning_content" in delta and delta["reasoning_content"]:
                     if not reasoning_header_printed and not full_content:
                         if on_token:
-                            on_token("\n[thinking] ")
+                            on_token(THINKING_START)
                         else:
                             print(c("  thinking…", _DIM), file=sys.stderr, flush=True)
                         reasoning_header_printed = True
@@ -240,3 +246,58 @@ def _parse_stream(response: requests.Response, on_token: callable = None) -> dic
         ]
 
     return msg
+
+
+# ---------------------------------------------------------------------------
+# Shared agent loop — used by both terminal REPL and TUI
+# ---------------------------------------------------------------------------
+
+def run_agent_turn(
+    messages: list[dict],
+    config: AgentConfig,
+    write_gate: WriteSafetyGate,
+    read_gate: ReadSafetyGate,
+    *,
+    on_token: callable = None,
+    on_tool_start: callable = None,
+    on_tool_end: callable = None,
+    cancel_event: threading.Event = None,
+) -> dict | None:
+    """Run one full agent turn — possibly multiple API calls if tools are used.
+
+    Calls the LLM, executes any tool calls, feeds results back, and repeats
+    until the model returns a plain text response or the turn is cancelled.
+
+    *messages* is mutated in place: assistant and tool messages are appended.
+    Returns the final assistant message dict, or ``None`` if cancelled.
+    """
+    while True:
+        if cancel_event is not None and cancel_event.is_set():
+            return None
+
+        msg = call_deepseek(messages, config, on_token=on_token)
+
+        if cancel_event is not None and cancel_event.is_set():
+            return None
+
+        if not msg.get("tool_calls"):
+            messages.append(msg)
+            return msg
+
+        messages.append(msg)
+        for tc in msg["tool_calls"]:
+            if cancel_event is not None and cancel_event.is_set():
+                return None
+            if on_tool_start is not None:
+                on_tool_start(tool_summary(tc))
+            result = execute_tool(tc, write_gate, read_gate)
+            detail = result.content[:300]
+            if len(result.content) > 300:
+                detail += "…"
+            if on_tool_end is not None:
+                on_tool_end(result.success, detail)
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tc["id"],
+                "content": result.to_json(),
+            })
