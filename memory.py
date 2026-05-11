@@ -106,15 +106,17 @@ def _compress_tool_results(
         except (json.JSONDecodeError, TypeError):
             continue
 
-        # Only compress if there's more than one line
-        if "\n" not in text:
+        # Only compress if there's more than 5 lines
+        lines = text.split("\n")
+        if len(lines) <= 5:
             continue
 
-        first_line = text.split("\n")[0].rstrip()
-        if len(first_line) > 300:
-            first_line = first_line[:300] + "…"
+        kept = "\n".join(lines[:5])
+        # Trim very long first lines
+        if len(kept) > 500:
+            kept = kept[:500] + "…"
 
-        new_content = first_line + "\n… (output truncated)"
+        new_content = kept + f"\n… (truncated at 5 lines — {len(lines)} total)"
         data["content"] = new_content
         m["content"] = json.dumps(data)
 

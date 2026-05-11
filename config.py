@@ -57,6 +57,7 @@ class AgentConfig:
     max_messages: int = DEFAULT_MAX_MESSAGES
     max_tokens: int = DEFAULT_MAX_TOKENS
     exa_api_key: str = DEFAULT_EXA_API_KEY
+    approve_write_ops: bool = False
 
     # ------------------------------------------------------------------
     # Factory
@@ -96,6 +97,10 @@ class AgentConfig:
             config.stream = True
         if "--quiet" in sys.argv:
             config.verbose = False
+        if "--allow-overwrites" in sys.argv:
+            config.allow_overwrites = True
+        if "--approve" in sys.argv:
+            config.approve_write_ops = True
         # --workspace is resolved before we get here; store it
         config.workspace = workspace
 
@@ -117,6 +122,7 @@ _TOML_SCHEMA: dict[str, type] = {
     "max_messages": int,
     "max_tokens": int,
     "exa_api_key": str,
+    "approve_write_ops": bool,
 }
 
 

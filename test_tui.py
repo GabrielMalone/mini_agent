@@ -8,6 +8,7 @@ import tempfile
 import unittest
 from queue import Queue
 from unittest.mock import MagicMock, patch
+from tui import _Done, _Error
 
 from tui import (
     MiniAgentTUI, AgentWorker,
@@ -116,3 +117,27 @@ class TestAgentWorker(unittest.TestCase):
 if __name__ == "__main__":
     unittest.main()
 
+
+    def test_worker_exception_pushes_error_to_queue(self):
+        """Worker exception sends _Done with error instead of crashing."""
+        import threading, requests
+        from unittest.mock import patch
+        out = Queue()
+        config = self.config
+        config.stream = True
+        w = AgentWorker(
+            [{"role": "user", "content": "test"}],
+            config, self.write_gate, self.read_gate,
+            out, requests.Session(),
+        )
+        # Make run_agent_turn raise
+        with patch("tui.run_agent_turn", side_effect=RuntimeError("boom")):
+            w.run()
+        # Should have pushed at least a _Done with error
+        items = []
+        while not out.empty():
+            items.append(out.get_nowait())
+        errors = [i for i in items if isinstance(i, _Error)]
+        dons = [i for i in items if isinstance(i, _Done)]
+        self.assertEqual(len(errors), 1, f'Expected 1 _Error, got: {errors}')
+        self.assertIn('boom', errors[0].msg)

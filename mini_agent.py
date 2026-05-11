@@ -25,6 +25,7 @@ Configuration:
   See STATE.txt for architecture overview and tool reference.
 """
 
+import json
 import os
 import sys
 import time
