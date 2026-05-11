@@ -92,6 +92,7 @@ def call_deepseek(
     config: AgentConfig,
     on_token: callable = None,
     session: requests.Session | None = None,
+    on_tool_ready: callable = None,
 ) -> dict:
     """Send messages to DeepSeek, return the assistant message dict.
 
@@ -112,7 +113,8 @@ def call_deepseek(
 
     clean_messages = []
     for m in messages:
-        m2 = dict(m)  # shallow copy so we don't mutate the original
+        m2 = {k: v for k, v in m.items()
+              if not k.startswith("_")}  # strip internal tracking fields
         if "tool_calls" in m2:
             m2["tool_calls"] = [
                 {k: v for k, v in tc.items() if k != "index"}
@@ -145,12 +147,12 @@ def call_deepseek(
     r.raise_for_status()
 
     if config.stream:
-        return _parse_stream(r, on_token)
+        return _parse_stream(r, on_token, on_tool_ready)
     else:
         return r.json()["choices"][0]["message"]
 
 
-def _parse_stream(response: requests.Response, on_token: callable = None) -> dict:
+def _parse_stream(response: requests.Response, on_token: callable = None, on_tool_ready: callable = None) -> dict:
     """Parse an SSE streamed response, printing text as it arrives.
 
     Accumulates both text content and tool_calls from deltas.  Tool call
@@ -161,6 +163,10 @@ def _parse_stream(response: requests.Response, on_token: callable = None) -> dic
     If *on_token* is provided, it is called with each content token (str)
     instead of printing to stdout.
 
+    If *on_tool_ready* is provided, it is called with a complete tool call
+    dict the moment its arguments form valid JSON.  This allows incremental
+    tool execution while the stream tail is still arriving.
+
     If the connection drops mid-stream, whatever was accumulated so far is
     returned rather than crashing — a warning is printed to stderr.
 
@@ -170,6 +176,7 @@ def _parse_stream(response: requests.Response, on_token: callable = None) -> dic
     full_content = ""
     full_reasoning = ""
     tool_calls_by_index: dict[int, dict] = {}  # index → accumulated tc dict
+    fired_indices: set[int] = set()
     reasoning_header_printed = False
     usage: dict | None = None
 
@@ -217,7 +224,7 @@ def _parse_stream(response: requests.Response, on_token: callable = None) -> dic
                     else:
                         print(c(delta["reasoning_content"], _DIM), end="", flush=True)
 
-                # Tool calls — accumulate fragments by index
+                # Tool calls — accumulate fragments by index and detect completion
                 if "tool_calls" in delta:
                     for tc_delta in delta["tool_calls"]:
                         idx = tc_delta.get("index", 0)
@@ -238,6 +245,18 @@ def _parse_stream(response: requests.Response, on_token: callable = None) -> dic
                                 tc["function"]["name"] += fn_delta["name"]
                             if "arguments" in fn_delta:
                                 tc["function"]["arguments"] += fn_delta["arguments"]
+
+                        # Fire on_tool_ready when arguments form valid JSON
+                        if on_tool_ready and idx not in fired_indices:
+                            args = tc["function"]["arguments"]
+                            try:
+                                json.loads(args)
+                                fired_indices.add(idx)
+                                ready = dict(tc)
+                                ready["_index"] = idx
+                                on_tool_ready(ready)
+                            except (json.JSONDecodeError, ValueError):
+                                pass  # still fragmentary
             except Exception:
                 continue
     except (
@@ -269,8 +288,54 @@ def _parse_stream(response: requests.Response, on_token: callable = None) -> dic
             tool_calls_by_index[i]
             for i in sorted(tool_calls_by_index)
         ]
+        # Tag which ones were already incrementally executed
+        if fired_indices:
+            msg["_fired_indices"] = list(fired_indices)
 
     return msg
+
+
+
+# ---------------------------------------------------------------------------
+# Circuit breaker — guards against repeated identical tool calls
+# ---------------------------------------------------------------------------
+
+_CIRCUIT_WINDOW = 6       # lookback window size
+_CIRCUIT_THRESHOLD = 3    # trip after this many identical calls in the window
+
+
+def _tool_call_key(tc: dict) -> str:
+    """Stable hash key for a tool call: name + normalized args."""
+    fn = tc["function"]
+    name = fn["name"]
+    try:
+        args_normalized = json.dumps(
+            json.loads(fn["arguments"]), sort_keys=True)
+    except (json.JSONDecodeError, TypeError):
+        args_normalized = fn["arguments"]
+    return f"{name}:{args_normalized}"
+
+
+def _check_circuit(recent_keys: list[str]) -> str | None:
+    """Return a warning message if the circuit is tripped, otherwise None.
+
+    Trips when the same tool call appears *CIRCUIT_THRESHOLD* or more times
+    within the last *CIRCUIT_WINDOW* calls.
+    """
+    if len(recent_keys) < _CIRCUIT_THRESHOLD:
+        return None
+    from collections import Counter
+    counts = Counter(recent_keys)
+    for key, count in counts.items():
+        if count >= _CIRCUIT_THRESHOLD:
+            return (
+                f"⚠️ Circuit breaker: you have called '{key}' {count} times "
+                f"in the last {len(recent_keys)} tool calls. "
+                "The same call keeps being made with identical arguments. "
+                "Stop, diagnose why it isn't working, and try a different "
+                "approach rather than repeating it."
+            )
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -312,6 +377,7 @@ def run_agent_turn(
 
     total_usage: dict[str, int] = {}
     turn_count = 0
+    recent_tool_keys: list[str] = []  # circuit breaker tracking
     if session is None:
         session = requests  # test-friendly: mockable via patch("llm.requests.post")
     clear_tool_cache()
@@ -332,10 +398,52 @@ def run_agent_turn(
                 )
                 messages.append({"role": "user", "content": reminder})
 
-            msg = call_deepseek(messages, config, on_token=on_token, session=session)
+            # Circuit breaker check — inject warning if identical tool calls repeat
+            warning = _check_circuit(recent_tool_keys)
+            if warning:
+                messages.append({"role": "user", "content": warning})
+
+            # Collect tools executed incrementally during the stream.
+            # Tool results MUST be appended AFTER the assistant message (which
+            # contains tool_calls), not before — otherwise DeepSeek returns 400
+            # ("Messages with role 'tool' must be a response to a preceding
+            # message with 'tool_calls'").
+            executed_tool_indices: set[int] = set()
+            deferred_stream_results: list[tuple] = []  # (tc, result)
+
+            def _on_tool_ready(tc: dict) -> None:
+                """Execute a tool immediately when its args form valid JSON."""
+                # The parser tags each fired tool with its index
+                idx = tc.pop("_index", -1)
+                if idx in executed_tool_indices:
+                    return
+                executed_tool_indices.add(idx)
+                if cancel_event is not None and cancel_event.is_set():
+                    return
+                if on_tool_start is not None:
+                    on_tool_start(tool_summary(tc))
+                result = execute_tool(tc, write_gate, read_gate,
+                                      on_output=on_tool_output,
+                                      approve_callback=approve_callback)
+                # Defer message append — assistant msg with tool_calls must
+                # be inserted first to satisfy API message ordering rules.
+                deferred_stream_results.append((tc, result))
+                # Still fire the end callback immediately for UI updates
+                detail = result.content[:300]
+                if len(result.content) > 300:
+                    detail += "…"
+                if on_tool_end is not None:
+                    on_tool_end(result.success, detail)
+
+            msg = call_deepseek(messages, config, on_token=on_token,
+                               session=session, on_tool_ready=_on_tool_ready)
 
             if cancel_event is not None and cancel_event.is_set():
                 return None
+
+            # Strip internal tracking fields
+            fired_indices = set(msg.pop("_fired_indices", []))
+            executed_tool_indices |= fired_indices
 
             # Accumulate token usage across all API calls in this turn
             if "_usage" in msg:
@@ -356,36 +464,78 @@ def run_agent_turn(
                 messages.append(msg)
                 return msg
 
+            # Keep ALL tool_calls on the assistant message for valid API
+            # ordering.  Deferred results are flushed right after this, and
+            # remaining tools execute next, so every tool_call gets a result.
+            raw_tool_calls = msg["tool_calls"]
+            remaining = [
+                tc for i, tc in enumerate(raw_tool_calls)
+                if i not in executed_tool_indices
+            ]
+            # Do NOT filter tool_calls on the assistant — keep them all intact
+            # so deferred tool results have a preceding tool_calls reference.
+            # Flush deferred tool results after the assistant message
+            # (which keeps ALL tool_calls for valid API ordering).
+            if not remaining:
+                messages.append(msg)
+                for tc, result in deferred_stream_results:
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc["id"],
+                        "content": result.to_json(),
+                    })
+                    recent_tool_keys.append(_tool_call_key(tc))
+                    while len(recent_tool_keys) > _CIRCUIT_WINDOW:
+                        recent_tool_keys.pop(0)
+                continue
+
+            # Keep all tool_calls so deferred results have a reference
+            msg["tool_calls"] = raw_tool_calls
             messages.append(msg)
-            tool_calls = msg["tool_calls"]
+            # Flush deferred tool results from streaming execution
+            for tc, result in deferred_stream_results:
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc["id"],
+                    "content": result.to_json(),
+                })
+                recent_tool_keys.append(_tool_call_key(tc))
+                while len(recent_tool_keys) > _CIRCUIT_WINDOW:
+                    recent_tool_keys.pop(0)
 
             # Single tool — run inline (no thread overhead)
-            if len(tool_calls) == 1:
-                tc = tool_calls[0]
+            if len(remaining) == 1:
+                tc = remaining[0]
                 if cancel_event is not None and cancel_event.is_set():
                     return None
                 if on_tool_start is not None:
                     on_tool_start(tool_summary(tc))
-                result = execute_tool(tc, write_gate, read_gate, on_output=on_tool_output, approve_callback=approve_callback)
-                _append_tool_result(messages, tc, result, on_tool_end)
+                result = execute_tool(tc, write_gate, read_gate,
+                                      on_output=on_tool_output,
+                                      approve_callback=approve_callback)
+                _append_tool_result(messages, tc, result, on_tool_end,
+                                    recent_keys=recent_tool_keys)
                 continue
 
             # Multiple tools — run in parallel thread pool
             if on_tool_start is not None:
-                for tc in tool_calls:
+                for tc in remaining:
                     on_tool_start(tool_summary(tc), True)
 
             def _run_tool(tc):
-                return tc, execute_tool(tc, write_gate, read_gate, on_output=on_tool_output, approve_callback=approve_callback)
+                return tc, execute_tool(tc, write_gate, read_gate,
+                                        on_output=on_tool_output,
+                                        approve_callback=approve_callback)
 
-            with ThreadPoolExecutor(max_workers=len(tool_calls)) as pool:
-                futures = {pool.submit(_run_tool, tc): tc for tc in tool_calls}
+            with ThreadPoolExecutor(max_workers=len(remaining)) as pool:
+                futures = {pool.submit(_run_tool, tc): tc for tc in remaining}
                 for future in as_completed(futures):
                     if cancel_event is not None and cancel_event.is_set():
                         pool.shutdown(wait=False, cancel_futures=True)
                         return None
                     tc, result = future.result()
-                    _append_tool_result(messages, tc, result, on_tool_end)
+                    _append_tool_result(messages, tc, result, on_tool_end,
+                                        recent_keys=recent_tool_keys)
 
         # Exceeded max_turns — return last assistant message (still has tool_calls)
         if total_usage:
@@ -403,6 +553,7 @@ def _append_tool_result(
     tc: dict,
     result,
     on_tool_end: callable = None,
+    recent_keys: list[str] | None = None,
 ) -> None:
     """Append a tool result message and fire the on_tool_end callback."""
     detail = result.content[:300]
@@ -415,3 +566,8 @@ def _append_tool_result(
         "tool_call_id": tc["id"],
         "content": result.to_json(),
     })
+    # Track for circuit breaker
+    if recent_keys is not None:
+        recent_keys.append(_tool_call_key(tc))
+        while len(recent_keys) > _CIRCUIT_WINDOW:
+            recent_keys.pop(0)

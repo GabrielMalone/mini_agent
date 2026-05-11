@@ -348,14 +348,23 @@ TOOLS = [
 # ---------------------------------------------------------------------------
 
 class ToolResult:
-    """Structured result from a tool execution — never a raw exception."""
+    """Structured result from a tool execution — never a raw exception.
 
-    def __init__(self, success: bool, content: str) -> None:
+    *hint* is an optional short diagnostic shown to the LLM to help it
+    self-correct on malformed calls (invalid JSON, unknown parameters,
+    wrong types, etc.).  It is included only on failure.
+    """
+
+    def __init__(self, success: bool, content: str, hint: str = "") -> None:
         self.success = success
         self.content = content
+        self.hint = hint
 
     def to_dict(self) -> dict:
-        return {"success": self.success, "content": self.content}
+        d: dict = {"success": self.success, "content": self.content}
+        if self.hint:
+            d["hint"] = self.hint
+        return d
 
     def to_json(self) -> str:
         return json.dumps(self.to_dict())
@@ -405,6 +414,91 @@ def clear_tool_cache() -> None:
     _TOOL_CACHE.clear()
 
 
+def _repair_json(raw: str) -> tuple[object, bool]:
+    """Attempt to repair common LLM-generated JSON malformations.
+
+    Returns (parsed_value, was_repaired).  If all repair attempts fail the
+    original raw string is re-raised via json.loads so callers see a standard
+    JSONDecodeError.
+
+    Repairs attempted (in order, each retried independently, then combinations):
+    1. Trailing commas before ``]`` or ``}``
+    2. Single-quoted strings → double quotes
+    3. Unquoted object keys
+    4. 1+2, 1+3, 2+3, 1+2+3 (combinations)
+    """
+    import re
+
+    # Individual fixes
+    fix1 = re.sub(r',\s*([}\]])', r'\1', raw)
+
+    fix2 = raw
+    if "'" in raw:
+        fix2 = raw.replace("'", '"')
+
+    fix3 = raw
+    if not raw.strip().startswith('['):
+        fix3 = re.sub(r'(\w+)(\s*:)', r'"\1"\2', raw)
+
+    # Combinations — apply fixes in sequence on copies
+    def _apply_combo(base: str, *indices: int) -> str:
+        s = base
+        for i in indices:
+            if i == 1:
+                s = re.sub(r',\s*([}\]])', r'\1', s)
+            elif i == 2:
+                s = s.replace("'", '"')
+            elif i == 3:
+                if not s.strip().startswith('['):
+                    s = re.sub(r'(\w+)(\s*:)', r'"\1"\2', s)
+        return s
+
+    attempts: list[str] = [
+        fix1,
+        fix2,
+        fix3,
+        _apply_combo(raw, 1, 2),
+        _apply_combo(raw, 1, 3),
+        _apply_combo(raw, 2, 3),
+        _apply_combo(raw, 1, 2, 3),
+    ]
+
+    for attempt in attempts:
+        if attempt == raw:
+            continue
+        try:
+            return json.loads(attempt), True
+        except (json.JSONDecodeError, ValueError):
+            continue
+
+    # Last resort: try the original
+    return json.loads(raw), False
+
+
+def _build_error_hint(name: str, exc: Exception) -> str:
+    """Build a short self-correction hint for the LLM when a tool call fails.
+
+    Includes the tool name, the parse/execution error, and the valid parameter
+    names so the LLM can immediately retry with corrected arguments.
+    """
+    valid_params: list[str] = []
+    for tool_def in TOOLS:
+        if tool_def["function"]["name"] == name:
+            props = tool_def["function"].get("parameters", {}).get("properties", {})
+            required = tool_def["function"].get("parameters", {}).get("required", [])
+            for pname, pinfo in props.items():
+                ptype = pinfo.get("type", "any")
+                marker = " (required)" if pname in required else ""
+                valid_params.append(f"{pname}: {ptype}{marker}")
+            break
+
+    hint_parts = [f"Tool '{name}' failed: {exc}"]
+    if valid_params:
+        hint_parts.append(f"Valid parameters: {', '.join(valid_params)}")
+    hint_parts.append("Please fix your tool call arguments and retry.")
+    return "\n".join(hint_parts)
+
+
 def execute_tool(
     tool_call: dict,
     write_gate: WriteSafetyGate,
@@ -419,10 +513,23 @@ def execute_tool(
 
     If *on_output* is provided, it is called with (tool_name, line_str) for
     real-time output streaming (currently only run_shell uses this).
+
+    Malformed JSON arguments are repaired automatically (trailing commas,
+    single quotes, unquoted keys) before parsing.  On failure a *hint* is
+    attached to the ToolResult so the LLM can self-correct.
     """
     fn = tool_call["function"]
     name = fn["name"]
-    args = json.loads(fn["arguments"])
+    raw_args = fn["arguments"]
+    try:
+        args, _repaired = _repair_json(raw_args)
+    except json.JSONDecodeError as exc:
+        hint = _build_error_hint(name, exc)
+        return ToolResult(
+            success=False,
+            content=f"Malformed JSON in tool arguments: {exc}",
+            hint=hint,
+        )
 
     # Check cache for read-only tools (skip if on_output is streaming)
     if on_output is None and name in _CACHEABLE:
@@ -432,7 +539,12 @@ def execute_tool(
 
     dispatch = _TOOL_DISPATCH.get(name)
     if dispatch is None:
-        return ToolResult(success=False, content=f"Unknown tool: {name}")
+        known = sorted(td["function"]["name"] for td in TOOLS)
+        return ToolResult(
+            success=False,
+            content=f"Unknown tool: {name}",
+            hint=f"Tool '{name}' is not recognized. Available tools: {', '.join(known)}. Please use one of these.",
+        )
 
     # Approval gate for write/destructive tools
     if approve_callback is not None and name in ("write_file", "edit_file", "run_shell"):
@@ -440,6 +552,7 @@ def execute_tool(
             return ToolResult(
                 success=False,
                 content=f"{name} not approved by user.",
+                hint=f"Tool '{name}' requires user approval and was denied. Consider an alternative approach or ask the user to approve.",
             )
 
     # Pass on_output to the tool if it accepts it
