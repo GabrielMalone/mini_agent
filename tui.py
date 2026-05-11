@@ -203,7 +203,7 @@ class MiniAgentTUI(App):
         self.read_gate = ReadSafetyGate(workspace)
         memory_path = os.path.join(workspace, self.config.memory_filename)
         self.memory = MemoryStore(memory_path, max_messages=self.config.max_messages, max_tokens=self.config.max_tokens)
-        set_context(exa_api_key=self.config.exa_api_key)
+        set_context(exa_api_key=self.config.exa_api_key, scratchpad_path=self.memory._db_path)
         self.session = requests.Session()
         # Build symbol index in background (fast, <1s for most workspaces)
         build_symbol_index(self.config.workspace)

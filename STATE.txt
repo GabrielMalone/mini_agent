@@ -254,6 +254,17 @@ a flag in `_TOOL_CONTEXT`. `run_agent_turn` checks it every 3 turns after turn 4
 if the scratchpad hasn't been updated, injects a transient warning. Flag resets
 after each check so the nudge repeats if still stale.
 
+## 2026-05-11 — Scratchpad path bug: TUI missing scratchpad_path
+
+**Bug:** `write_scratchpad` has two code paths: SQLite (when `scratchpad_path`
+is set in `_TOOL_CONTEXT`) and a `.mini_agent_scratchpad.md` fallback file.
+`mini_agent.py` passed `scratchpad_path` but `tui.py` didn't, so the TUI always
+fell through to the stale `.md` file, and the actual scratchpad data (stored in
+the SQLite DB) was invisible to the user.
+
+**Fix:** Added `scratchpad_path=self.memory._db_path` to `tui.py`'s
+`set_context()` call. Also updated the stale `.md` file with current content.
+
 ## 2026-05-11 — TUI [/code] crash fix v2: single write() for table flush
 
 **Root cause:** The table buffer flush wrote `[code]`, table rows, and `[/code]`
