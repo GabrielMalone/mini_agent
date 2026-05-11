@@ -83,6 +83,32 @@ class TestRunShell(unittest.TestCase):
         resolved = os.path.realpath(self.workspace)
         self.assertIn(resolved, result.content)
 
+    # --- shell guard ---
+
+    def test_blocks_rm_rf(self):
+        tc = _make_tool_call("run_shell", command="rm -rf /etc")
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertFalse(result.success)
+        self.assertIn("blocked by safety guard", result.content)
+
+    def test_blocks_fork_bomb(self):
+        tc = _make_tool_call("run_shell", command=":(){ :|:& };:")
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertFalse(result.success)
+        self.assertIn("blocked by safety guard", result.content)
+
+    def test_force_bypasses_guard(self):
+        tc = _make_tool_call("run_shell", command="rm -rf /nonexistent_test_dir", force=True)
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        # Will succeed or fail depending on permissions, but NOT blocked by guard
+        self.assertNotIn("blocked by safety guard", result.content)
+
+    def test_safe_commands_not_blocked(self):
+        tc = _make_tool_call("run_shell", command="echo hello && ls -la")
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertTrue(result.success)
+        self.assertIn("hello", result.content)
+
 
 # ---------------------------------------------------------------------------
 # search_files tests

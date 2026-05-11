@@ -1,21 +1,28 @@
 #!/usr/bin/env python3
 """
-mini_agent — a minimal DeepSeek V4 Pro agent that reads and writes files.
-All file reads and writes are mediated through the safety layer (safety.py).
-Conversation memory is persisted between sessions (memory.py).
+mini_agent — a coding agent powered by DeepSeek V4 Pro with 11 tools.
+
+All file reads and writes go through the safety layer (safety.py).
+Memory persists between sessions via SQLite (memory.py).
 Tools are defined and executed in tools.py.
-Project configuration is loaded from .mini_agent.toml (config.py).
+Config lives in .mini_agent.toml (config.py).
 LLM communication is handled by llm.py.
 The system prompt lives in prompt.py.
 
-Usage:
-    python mini_agent.py [--workspace /path/to/root] [--quiet] [--stream] [--no-color]
-    > read /path/to/file
-    > write /path/to/file some content here
-    > ls /some/dir
-    > run python -m pytest test_safety.py -v
-    > clear          (reset memory)
-    > quit
+Flags:
+  --workspace PATH    Set workspace root (default: current directory)
+  --stream            Stream responses token-by-token (default: off)
+  --quiet             Suppress tool execution logs
+  --no-color          Disable ANSI colours in output
+  --help, -h          Show this message and exit
+
+Session commands (type at the prompt):
+  quit                Save memory and exit
+  clear               Reset conversation memory
+
+Configuration:
+  Set EXA_API_KEY in your environment or .mini_agent.toml for web search.
+  See STATE.txt for architecture overview and tool reference.
 """
 
 import os
@@ -81,7 +88,7 @@ def main() -> None:
     _log(config.verbose, f"model: {config.model}  stream: {config.stream}")
     if os.path.isfile(os.path.join(config.workspace, CONFIG_FILENAME)):
         _log(config.verbose, f"config: {CONFIG_FILENAME} loaded")
-    _log(config.verbose, "Type 'quit' to exit, 'clear' to reset memory.")
+    _log(config.verbose, "Type 'quit' to exit, 'clear' to reset memory, --help for flags.")
     if not config.verbose:
         _log(config.verbose, "(quiet mode — use without --quiet to see tool execution)")
     _log(config.verbose)

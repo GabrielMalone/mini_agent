@@ -126,7 +126,11 @@ TOOLS = [
                     "command": {
                         "type": "string",
                         "description": "Shell command to execute (e.g. 'python -m pytest test_safety.py -v')",
-                    }
+                    },
+                    "force": {
+                        "type": "boolean",
+                        "description": "Bypass the destructive-command guard. Default: false. Required for rm, mkfs, etc.",
+                    },
                 },
                 "required": ["command"],
             },
@@ -478,9 +482,46 @@ def _list_directory(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> Too
         return ToolResult(success=False, content=f"Error listing '{safety_result.resolved_path}': {e}")
 
 
+# Patterns that indicate destructive commands.  Guarded unless force=True.
+_DESTRUCTIVE_PATTERNS = [
+    r"\brm\b",             # remove
+    r"\brmdir\b",          # remove directory
+    r"\bdd\b",             # disk destroyer
+    r"\bmkfs\b",           # make filesystem
+    r"\bmkswap\b",         # make swap
+    r"\bchmod\s+777\b",    # world-writable
+    r"\bchown\b",          # change owner
+    r">.*/dev/",            # write directly to device
+    r"\bformat\b",         # format disk
+    r"\bwiped\b",          # wipe
+    r"\bwipefs\b",         # wipe filesystem
+    r"\bparted\b",         # partition editor
+    r"\bfdisk\b",          # partition table
+    r":\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:",  # fork bomb
+    r">/dev/null\s*&&\s*rm\b",  # rm disguised after suppression
+]
+
+
+def _check_destructive(command: str) -> str | None:
+    """Return a warning string if the command looks destructive, else None."""
+    import re
+    for pat in _DESTRUCTIVE_PATTERNS:
+        if re.search(pat, command):
+            return (
+                f"Command blocked by safety guard (matches destructive pattern '{pat}'). "
+                f"Use force=True to bypass, or rephrase to use only safe operations."
+            )
+    return None
+
+
 @_register("run_shell")
 def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
     command = args["command"]
+    force = args.get("force", False)
+    if not force:
+        block = _check_destructive(command)
+        if block is not None:
+            return ToolResult(success=False, content=block)
     try:
         result = subprocess.run(
             command,
@@ -946,6 +987,9 @@ def _run_shell_summary(args: dict) -> str:
     preview = cmd[:80]
     if len(cmd) > 80:
         preview += "…"
+    force = args.get("force", False)
+    if force:
+        return f"run_shell[force] ({preview})"
     return f"run_shell({preview})"
 
 
