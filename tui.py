@@ -537,7 +537,7 @@ class MiniAgentTUI(App):
                         if self._table_buf:
                             log.write("[code]")
                             for tline in self._table_buf:
-                                log.write(tline)
+                                log.write(_safe(tline))
                             log.write("[/code]")
                             self._table_buf = []
                         log.write(_safe(line))
