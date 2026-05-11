@@ -494,6 +494,49 @@ class TestRunAgentTurn(unittest.TestCase):
         # 3 API calls, not 5
         self.assertEqual(mock_post.call_count, 3)
 
+    @patch("llm.requests.post")
+    def test_parallel_tool_execution(self, mock_post):
+        """Multiple tool calls in one response execute in parallel."""
+        mock_post.side_effect = [
+            _mock_response(tool_calls=[
+                _tool_call("write_file", "pa", {
+                    "path": os.path.join(self.workspace, "a.txt"),
+                    "content": "A",
+                }),
+                _tool_call("write_file", "pb", {
+                    "path": os.path.join(self.workspace, "b.txt"),
+                    "content": "B",
+                }),
+            ]),
+            _mock_response(content="Both written in parallel."),
+        ]
+
+        starts = []
+        ends = []
+
+        messages: list[dict] = [{"role": "user", "content": "write two files"}]
+        msg = run_agent_turn(
+            messages, self.config, self.write_gate, self.read_gate,
+            on_tool_start=lambda s, parallel=False: starts.append((s, parallel)),
+            on_tool_end=lambda ok, d: ends.append((ok, d)),
+        )
+
+        self.assertEqual(msg["content"], "Both written in parallel.")
+        self.assertTrue(os.path.isfile(os.path.join(self.workspace, "a.txt")))
+        self.assertTrue(os.path.isfile(os.path.join(self.workspace, "b.txt")))
+
+        # Both tool starts should have parallel=True
+        self.assertEqual(len(starts), 2)
+        self.assertTrue(starts[0][1])  # parallel flag
+        self.assertTrue(starts[1][1])
+        self.assertIn("write_file", starts[0][0])
+        self.assertIn("write_file", starts[1][0])
+
+        # Both should succeed
+        self.assertEqual(len(ends), 2)
+        self.assertTrue(ends[0][0])
+        self.assertTrue(ends[1][0])
+
 
 def _mock_response(content: str = "", tool_calls=None) -> MagicMock:
     """Build a mocked requests.Response for use in side_effect lists."""

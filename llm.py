@@ -327,7 +327,7 @@ def run_agent_turn(
                     "give the final answer. If you truly need more turns, "
                     "continue — but be specific about what remains."
                 )
-                messages.append({"role": "system", "content": reminder})
+                messages.append({"role": "user", "content": reminder})
 
             msg = call_deepseek(messages, config, on_token=on_token, session=session)
 

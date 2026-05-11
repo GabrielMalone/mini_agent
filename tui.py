@@ -128,7 +128,7 @@ class _Error:
 class AgentWorker(threading.Thread):
     """Runs the agent loop in a background thread, pushing messages to a queue."""
 
-    def __init__(self, messages, config, write_gate, read_gate, out: Queue):
+    def __init__(self, messages, config, write_gate, read_gate, out: Queue, session):
         super().__init__(daemon=True)
         self.messages = messages
         self.config = config
@@ -136,11 +136,11 @@ class AgentWorker(threading.Thread):
         self.read_gate = read_gate
         self.out = out
         self.cancel = threading.Event()
+        self.session = session
 
     def run(self):
         config = self.config
         config.stream = True
-        session = requests.Session()
 
         try:
             msg = run_agent_turn(
@@ -150,7 +150,7 @@ class AgentWorker(threading.Thread):
                 on_tool_start=lambda s, parallel=False: self.out.put(_ToolStart(s, parallel)),
                 on_tool_end=lambda ok, d: self.out.put(_ToolEnd(ok, d)),
                 cancel_event=self.cancel,
-                session=session,
+                session=self.session,
             )
         except Exception as e:
             self.out.put(_Error(str(e)))
@@ -203,6 +203,7 @@ class MiniAgentTUI(App):
         memory_path = os.path.join(workspace, self.config.memory_filename)
         self.memory = MemoryStore(memory_path, max_messages=self.config.max_messages, max_tokens=self.config.max_tokens)
         set_context(exa_api_key=self.config.exa_api_key)
+        self.session = requests.Session()
 
         saved = self.memory.load()
         self.messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
@@ -241,6 +242,7 @@ class MiniAgentTUI(App):
             self._thinking_buf = ""
             self._thinking_flush_pos = 0
             self._in_thinking = False
+            self.memory.save(self.messages)
             log = self.query_one("#conversation", RichLog)
             log.write(f"[{YELLOW}]  ╼ Cancelled.[/]")
             self.query_one("#input", TextArea).focus()
@@ -312,6 +314,7 @@ class MiniAgentTUI(App):
             self.messages, self.config,
             self.write_gate, self.read_gate,
             self.queue,
+            self.session,
         )
         self.worker.start()
 
@@ -386,6 +389,7 @@ class MiniAgentTUI(App):
         text = msg.text
 
         if text.startswith(THINKING_START):
+            self._flush_buf()  # safety: flush any pending content first
             self._in_thinking = True
             self._thinking_buf = ""
             self._thinking_flush_pos = 0

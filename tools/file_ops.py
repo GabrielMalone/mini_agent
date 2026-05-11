@@ -17,6 +17,11 @@ from tools import _register, _summarize, ToolResult, _TOOL_CONTEXT
 # read_file
 # ---------------------------------------------------------------------------
 
+# Maximum lines returned by read_file (tool result sent to the LLM).
+# Beyond this, content is truncated with a note to use offset/limit.
+_MAX_READ_LINES = 300
+
+
 @_register("read_file")
 def _read_file(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
     path = args["path"]
@@ -29,9 +34,20 @@ def _read_file(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResu
     try:
         with open(safety_result.resolved_path, "r") as f:
             content = f.read()
-        return ToolResult(success=True, content=content)
     except Exception as e:
         return ToolResult(success=False, content=f"Error reading '{safety_result.resolved_path}': {e}")
+
+    lines = content.split("\n")
+    if len(lines) > _MAX_READ_LINES:
+        truncated = "\n".join(lines[:_MAX_READ_LINES])
+        msg = (
+            f"{truncated}\n"
+            f"… (truncated at {_MAX_READ_LINES} lines — {len(lines)} total. "
+            f"Use edit_file with a specific line range if you need more detail.)"
+        )
+        return ToolResult(success=True, content=msg)
+
+    return ToolResult(success=True, content=content)
 
 
 @_summarize("read_file")

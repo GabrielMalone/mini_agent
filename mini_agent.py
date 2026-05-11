@@ -29,6 +29,8 @@ import os
 import sys
 import time
 
+import requests
+
 from config import AgentConfig, CONFIG_FILENAME
 from llm import run_agent_turn
 from prompt import SYSTEM_PROMPT
@@ -36,7 +38,6 @@ from safety import ReadSafetyGate, WriteSafetyGate
 from memory import MemoryStore
 from terminal import c, _DIM, _CYAN, _YELLOW, _GREEN, _RED
 from tools import set_context
-import requests
 
 
 # ---------------------------------------------------------------------------
@@ -94,74 +95,77 @@ def main() -> None:
         _log(config.verbose, "(quiet mode — use without --quiet to see tool execution)")
     _log(config.verbose)
 
-    while True:
-        try:
-            user_input = input("> ").strip()
-        except (EOFError, KeyboardInterrupt):
-            print("\nGoodbye.")
-            memory.save(messages)
-            break
+    session = requests.Session()
+    try:
+        while True:
+            try:
+                user_input = input("> ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print("\nGoodbye.")
+                memory.save(messages)
+                break
 
-        if user_input.lower() == "quit":
-            memory.save(messages)
-            break
+            if user_input.lower() == "quit":
+                memory.save(messages)
+                break
 
-        if user_input.lower() == "clear":
-            messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-            memory.clear()
-            _log(config.verbose, "Memory cleared.\n")
-            continue
+            if user_input.lower() == "clear":
+                messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+                memory.clear()
+                _log(config.verbose, "Memory cleared.\n")
+                continue
 
-        if not user_input:
-            continue
+            if not user_input:
+                continue
 
-        # ----- User turn -----
-        messages.append({"role": "user", "content": user_input})
+            # ----- User turn -----
+            messages.append({"role": "user", "content": user_input})
 
-        # ----- Agent turn -----
-        _log(config.verbose,
-             f"  {c('⏳', _CYAN)} calling API…", file=sys.stderr)
-        t0 = time.monotonic()
+            # ----- Agent turn -----
+            _log(config.verbose,
+                 f"  {c('⏳', _CYAN)} calling API…", file=sys.stderr)
+            t0 = time.monotonic()
 
-        def _tool_start(summary: str, parallel: bool = False) -> None:
-            nonlocal t0
+            def _tool_start(summary: str, parallel: bool = False) -> None:
+                nonlocal t0
+                elapsed = time.monotonic() - t0
+                _log(config.verbose,
+                     f"  {c('←', _YELLOW)} tool call(s) after {elapsed:.1f}s",
+                     file=sys.stderr)
+                _log(config.verbose,
+                     f"  {c('🔧', _YELLOW)} {summary}",
+                     file=sys.stderr)
+
+            def _tool_end(ok: bool, detail: str) -> None:
+                if ok:
+                    _log(config.verbose,
+                         f"     {c('✓', _GREEN)}  ok",
+                         file=sys.stderr)
+                else:
+                    _log(config.verbose,
+                         f"     {c('✗', _RED)}  FAILED: {c(detail, _RED)}",
+                         file=sys.stderr)
+
+            msg = run_agent_turn(
+                messages, config, write_gate, read_gate,
+                on_tool_start=_tool_start,
+                on_tool_end=_tool_end,
+                session=session,
+            )
             elapsed = time.monotonic() - t0
-            _log(config.verbose,
-                 f"  {c('←', _YELLOW)} tool call(s) after {elapsed:.1f}s",
-                 file=sys.stderr)
-            _log(config.verbose,
-                 f"  {c('🔧', _YELLOW)} {summary}",
-                 file=sys.stderr)
 
-        def _tool_end(ok: bool, detail: str) -> None:
-            if ok:
+            if msg is not None and not msg.get("tool_calls"):
+                if not config.stream:
+                    print(msg.get("content", ""))
                 _log(config.verbose,
-                     f"     {c('✓', _GREEN)}  ok",
-                     file=sys.stderr)
-            else:
-                _log(config.verbose,
-                     f"     {c('✗', _RED)}  FAILED: {c(detail, _RED)}",
+                     f"  {c('←', _DIM)} text response ({elapsed:.1f}s)",
                      file=sys.stderr)
 
-        session = requests.Session()
-        msg = run_agent_turn(
-            messages, config, write_gate, read_gate,
-            on_tool_start=_tool_start,
-            on_tool_end=_tool_end,
-            session=session,
-        )
-        elapsed = time.monotonic() - t0
-
-        if msg is not None and not msg.get("tool_calls"):
-            if not config.stream:
-                print(msg.get("content", ""))
-            _log(config.verbose,
-                 f"  {c('←', _DIM)} text response ({elapsed:.1f}s)",
-                 file=sys.stderr)
-
-        # Persist after every turn
-        memory.save(messages)
-        _log(config.verbose, c("─" * 50, _DIM), file=sys.stderr)
+            # Persist after every turn
+            memory.save(messages)
+            _log(config.verbose, c("─" * 50, _DIM), file=sys.stderr)
+    finally:
+        session.close()
 
 
 if __name__ == "__main__":

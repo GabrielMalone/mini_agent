@@ -7,6 +7,7 @@ import os
 import tempfile
 import unittest
 from queue import Queue
+from unittest.mock import MagicMock, patch
 
 from tui import (
     MiniAgentTUI, AgentWorker,
@@ -93,7 +94,7 @@ class TestAgentWorker(unittest.TestCase):
     def test_worker_creates_and_cancels(self):
         messages = [{"role": "system", "content": "You are a test."}]
         out = Queue()
-        w = AgentWorker(messages, self.config, self.write_gate, self.read_gate, out)
+        w = AgentWorker(messages, self.config, self.write_gate, self.read_gate, out, MagicMock())
         self.assertFalse(w.cancel.is_set())
         w.cancel.set()
         w.start()
@@ -105,7 +106,7 @@ class TestAgentWorker(unittest.TestCase):
         out = Queue()
         config = self.config
         self.assertFalse(config.stream)
-        w = AgentWorker(messages, config, self.write_gate, self.read_gate, out)
+        w = AgentWorker(messages, config, self.write_gate, self.read_gate, out, MagicMock())
         w.cancel.set()
         w.start()
         w.join(timeout=5)
