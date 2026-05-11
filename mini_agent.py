@@ -10,11 +10,20 @@ LLM communication is handled by llm.py.
 The system prompt lives in prompt.py.
 
 Flags:
-  --workspace PATH    Set workspace root (default: current directory)
-  --stream            Stream responses token-by-token (default: off)
-  --quiet             Suppress tool execution logs
-  --no-color          Disable ANSI colours in output
-  --help, -h          Show this message and exit
+  --workspace PATH       Set workspace root (default: current directory)
+  --stream               Stream responses token-by-token (default: off)
+  --quiet                Suppress tool execution logs
+  --no-color             Disable ANSI colours in output
+  --allow-overwrites     Allow overwriting existing files without confirmation
+  --approve              Prompt for approval before each write/destructive op
+  --help, -h             Show this message and exit
+
+Environment:
+  AGENT_WORKSPACE        Workspace root (overridden by --workspace)
+  DEEPSEEK_API_KEY       API key for the LLM provider
+  EXA_API_KEY            API key for web search (Exa)
+
+Config file (.mini_agent.toml) can set model, stream, and other defaults.
 
 Session commands (type at the prompt):
   quit                Save memory and exit

@@ -2,7 +2,7 @@
 """
 tui.py — Textual TUI frontend for mini_agent.
 
-Usage: python tui.py [--workspace PATH] [--quiet]
+Usage: python tui.py [--workspace PATH] [--quiet] [--stream] [--allow-overwrites] [--approve]
 """
 
 import os

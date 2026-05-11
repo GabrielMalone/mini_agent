@@ -235,3 +235,10 @@ tool round. Aims to increase scratchpad usage.
 multiple candidate test paths when matching modified source files to test files.
 Now checks `test_<name>.py`, `tests/test_<name>.py`, `test/test_<name>.py`,
 and parent-directory tests (e.g. `tools/file_ops.py` → `test_tools.py`).
+
+## 2026-05-11 — Updated --help with all flags and env vars
+
+**What:** The `--help` output was missing `--allow-overwrites`, `--approve`, and
+environment variable documentation. Updated both `mini_agent.py` and `tui.py` to
+list all available flags plus relevant env vars (`AGENT_WORKSPACE`,
+`DEEPSEEK_API_KEY`, `EXA_API_KEY`) and mention `.mini_agent.toml`.
