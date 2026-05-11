@@ -29,7 +29,7 @@ from llm import run_agent_turn, THINKING_START, THINKING_END
 from prompt import SYSTEM_PROMPT
 from safety import ReadSafetyGate, WriteSafetyGate
 from memory import MemoryStore
-from tools import set_context
+from tools import set_context, build_symbol_index
 
 
 # ---------------------------------------------------------------------------
@@ -112,6 +112,10 @@ class _ToolEnd:
     detail: str
 
 @dataclass
+class _ToolOutput:
+    text: str
+
+@dataclass
 class _Done:
     usage: dict | None = None
     turn_count: int = 0
@@ -149,6 +153,7 @@ class AgentWorker(threading.Thread):
                 on_token=lambda t: self.out.put(_TokenMsg(t)),
                 on_tool_start=lambda s, parallel=False: self.out.put(_ToolStart(s, parallel)),
                 on_tool_end=lambda ok, d: self.out.put(_ToolEnd(ok, d)),
+                on_tool_output=lambda line: self.out.put(_ToolOutput(line)),
                 cancel_event=self.cancel,
                 session=self.session,
             )
@@ -204,6 +209,8 @@ class MiniAgentTUI(App):
         self.memory = MemoryStore(memory_path, max_messages=self.config.max_messages, max_tokens=self.config.max_tokens)
         set_context(exa_api_key=self.config.exa_api_key)
         self.session = requests.Session()
+        # Build symbol index in background (fast, <1s for most workspaces)
+        build_symbol_index(self.config.workspace)
 
         saved = self.memory.load()
         self.messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
@@ -366,6 +373,8 @@ class MiniAgentTUI(App):
                     symbol = "✓" if msg.ok else "✗"
                     color = GREEN if msg.ok else RED
                     log.write(f"    [{color}]{symbol}  {_safe(msg.detail)}[/]")
+                elif isinstance(msg, _ToolOutput):
+                    log.write(f"[{DIM}]{_safe(msg.text)}[/]")
                 elif isinstance(msg, _Error):
                     log.write(f"[{RED}]Error: {_safe(msg.msg)}[/]")
                 elif isinstance(msg, _Done):

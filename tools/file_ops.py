@@ -35,7 +35,10 @@ def _read_file(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResu
         with open(safety_result.resolved_path, "r") as f:
             content = f.read()
     except Exception as e:
-        return ToolResult(success=False, content=f"Error reading '{safety_result.resolved_path}': {e}")
+        hint = ""
+        if isinstance(e, FileNotFoundError) or "No such file" in str(e):
+            hint = "\nHint: Check the path spelling. Try list_directory to see available files."
+        return ToolResult(success=False, content=f"Error reading '{safety_result.resolved_path}': {e}{hint}")
 
     lines = content.split("\n")
     if len(lines) > _MAX_READ_LINES:
@@ -67,7 +70,10 @@ def _write_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolRes
     if not safety_result.allowed:
         return ToolResult(
             success=False,
-            content=f"Write blocked by safety layer: {safety_result.reason}",
+            content=(
+                f"Write blocked by safety layer: {safety_result.reason}\n"
+                f"Hint: Use a path inside the workspace ({wg.workspace_root})."
+            ),
         )
     try:
         parent = os.path.dirname(safety_result.resolved_path)
@@ -117,7 +123,11 @@ def _edit_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResu
         if old not in original:
             return ToolResult(
                 success=False,
-                content=f"Edit failed: old_string not found in '{safety_result.resolved_path}'",
+                content=(
+                    f"Edit failed: old_string not found in '{safety_result.resolved_path}'.\n"
+                    f"Hint: The string must match exactly — check whitespace, indentation, "
+                    f"and line endings. Try read_file first to verify the exact text."
+                ),
             )
         updated = original.replace(old, new, 1)
         with open(safety_result.resolved_path, "w") as f:

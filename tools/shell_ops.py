@@ -7,6 +7,8 @@ Tools: run_shell, search_files, run_tests, git
 
 import os
 import subprocess
+import sys
+import threading
 
 from safety import ReadSafetyGate, WriteSafetyGate
 from tools import _register, _summarize, ToolResult
@@ -41,14 +43,14 @@ def _check_destructive(command: str) -> str | None:
     for pat in _DESTRUCTIVE_PATTERNS:
         if re.search(pat, command):
             return (
-                f"Command blocked by safety guard (matches destructive pattern '{pat}'). "
-                f"Use force=True to bypass, or rephrase to use only safe operations."
+                f"Command blocked by safety guard (matches destructive pattern '{pat}').\n"
+                f"Hint: Use force=True to bypass this guard, or rephrase to use only safe operations."
             )
     return None
 
 
 @_register("run_shell")
-def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
+def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: callable = None) -> ToolResult:
     command = args["command"]
     force = args.get("force", False)
     if not force:
@@ -56,27 +58,75 @@ def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResu
         if block is not None:
             return ToolResult(success=False, content=block)
     try:
-        result = subprocess.run(
+        proc = subprocess.Popen(
             command,
             shell=True,
             cwd=rg.workspace_root,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=60,
         )
-        parts = [f"exit_code={result.returncode}"]
-        if result.stdout:
-            parts.append(f"stdout:\n{result.stdout.rstrip()}")
-        if result.stderr:
-            parts.append(f"stderr:\n{result.stderr.rstrip()}")
+
+        stdout_lines: list[str] = []
+        stderr_lines: list[str] = []
+
+        def _reader(stream, collector, forward):
+            for line in iter(stream.readline, ""):
+                line = line.rstrip("\n")
+                collector.append(line)
+                if forward and on_output:
+                    try:
+                        on_output(line)
+                    except Exception:
+                        pass
+            stream.close()
+
+        t_out = threading.Thread(target=_reader, args=(proc.stdout, stdout_lines, True), daemon=True)
+        t_err = threading.Thread(target=_reader, args=(proc.stderr, stderr_lines, False), daemon=True)
+        t_out.start()
+        t_err.start()
+
+        try:
+            proc.wait(timeout=60)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            t_out.join(timeout=2)
+            t_err.join(timeout=2)
+            return ToolResult(success=False, content="Command timed out after 60s")
+
+        t_out.join(timeout=2)
+        t_err.join(timeout=2)
+
+        stdout = "\n".join(stdout_lines)
+        stderr = "\n".join(stderr_lines)
+
+        parts = [f"exit_code={proc.returncode}"]
+        if stdout:
+            lines = stdout.split("\n")
+            if len(lines) > 500:
+                stdout = "\n".join(lines[:500])
+                stdout += f"\n… (truncated at 500 lines — {len(lines)} total. "
+                stdout += "Use read_file with offset/limit for the full log if needed.)"
+            parts.append(f"stdout:\n{stdout}")
+        if stderr:
+            err_output = stderr.rstrip()
+            err_lines = err_output.split("\n")
+            if len(err_lines) > 100:
+                err_output = "\n".join(err_lines[:100])
+                err_output += f"\n… (stderr truncated at 100 lines — {len(err_lines)} total)"
+            parts.append(f"stderr:\n{err_output}")
+        content = "\n".join(parts)
+        if proc.returncode == 127:
+            content += "\nHint: Command not found. Check the spelling and that it is installed."
         return ToolResult(
-            success=result.returncode == 0,
-            content="\n".join(parts),
+            success=proc.returncode == 0,
+            content=content,
         )
     except subprocess.TimeoutExpired:
         return ToolResult(success=False, content="Command timed out after 60s")
     except Exception as e:
-        return ToolResult(success=False, content=f"Error running command: {e}")
+        hint = "\nHint: Check the command and flag spelling. Try with --help first, or use search_files to find the right syntax."
+        return ToolResult(success=False, content=f"Error running command: {e}{hint}")
 
 
 @_summarize("run_shell")

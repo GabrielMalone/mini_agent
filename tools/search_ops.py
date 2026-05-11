@@ -13,6 +13,98 @@ from tools.shell_ops import _SKIP_DIRS
 
 
 # ---------------------------------------------------------------------------
+# symbol_index — fast workspace symbol lookup
+# ---------------------------------------------------------------------------
+
+_SYMBOL_INDEX: dict[str, list[dict]] | None = None  # name → [{"path","line","kind"}, ...]
+
+
+def build_symbol_index(root: str) -> dict[str, list[dict]]:
+    """Scan workspace .py files for def/class lines.  Fast — no parsing, just regex.
+
+    Returns {name: [{"path":..., "line":..., "kind":"def"|"class"}, ...]}.
+    The index is cached in _SYMBOL_INDEX and reused until rebuild_symbol_index is called.
+    """
+    global _SYMBOL_INDEX
+    import re
+    pattern = re.compile(r"^\s*(def|class)\s+(\w+)")
+
+    idx: dict[str, list[dict]] = {}
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS and not d.startswith(".")]
+        for fname in filenames:
+            if not fname.endswith(".py"):
+                continue
+            fpath = os.path.join(dirpath, fname)
+            try:
+                with open(fpath, "r") as f:
+                    for lineno, line in enumerate(f, 1):
+                        m = pattern.match(line)
+                        if m:
+                            kind, name = m.group(1), m.group(2)
+                            idx.setdefault(name, []).append({
+                                "path": fpath,
+                                "line": lineno,
+                                "kind": kind,
+                            })
+            except (OSError, PermissionError):
+                continue
+
+    _SYMBOL_INDEX = idx
+    return idx
+
+
+def _get_symbol_index(root: str) -> dict[str, list[dict]]:
+    """Return the symbol index, building it lazily if needed."""
+    global _SYMBOL_INDEX
+    if _SYMBOL_INDEX is None:
+        return build_symbol_index(root)
+    return _SYMBOL_INDEX
+
+
+@_register("find_symbol")
+def _find_symbol(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
+    """Find where a Python symbol (function, class, method) is defined in the workspace."""
+    import re
+    name = args.get("name", "")
+    if not name:
+        return ToolResult(success=False, content="Missing required parameter: 'name'.")
+
+    root = rg.workspace_root
+    idx = _get_symbol_index(root)
+
+    # Exact match first, then substring
+    if name in idx:
+        matches = [(name, entries) for name, entries in [(name, idx[name])]]
+    else:
+        # Substring search — case-insensitive
+        matches = []
+        pattern = re.compile(re.escape(name), re.IGNORECASE)
+        for key, entries in idx.items():
+            if pattern.search(key):
+                matches.append((key, entries))
+
+    if not matches:
+        return ToolResult(
+            success=True,
+            content=f"No symbols matching '{name}' found in workspace.",
+        )
+
+    lines: list[str] = []
+    for sym_name, entries in matches[:20]:
+        for e in entries[:5]:
+            lines.append(f"  {e['kind']:5s}  {sym_name}  →  {e['path']}:{e['line']}")
+
+    prefix = f"Found {sum(len(entries) for _, entries in matches)} location(s) for '{name}':"
+    return ToolResult(success=True, content=prefix + "\n" + "\n".join(lines))
+
+
+@_summarize("find_symbol")
+def _find_symbol_summary(args: dict) -> str:
+    return f"find_symbol({args.get('name', '?')})"
+
+
+# ---------------------------------------------------------------------------
 # semantic_search (sentence-transformers, local)
 # ---------------------------------------------------------------------------
 

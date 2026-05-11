@@ -30,6 +30,28 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "find_symbol",
+            "description": (
+                "Find where a Python symbol (function, class, method name) is defined "
+                "in the workspace. Returns file path and line number for each match. "
+                "Much faster than grep/search_files for symbol lookup. "
+                "Use this to locate definitions before editing code."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Symbol name to find (e.g. '_request_with_retry', 'ToolResult'). Supports substring matching.",
+                    }
+                },
+                "required": ["name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "read_file",
             "description": "Read the contents of a file at the given path.",
             "parameters": {
@@ -327,6 +349,14 @@ _TOOL_DISPATCH: dict[str, callable] = {}
 _TOOL_SUMMARIES: dict[str, callable] = {}
 _TOOL_CONTEXT: dict = {}
 
+# Per-turn cache for read-only tools. Cleared by run_agent_turn each turn.
+# Key: (tool_name, sorted_args_json). Cached read_file/file_info/etc.
+_TOOL_CACHE: dict[str, "ToolResult"] = {}
+_CACHEABLE = frozenset({
+    "read_file", "file_info", "list_directory",
+    "search_files", "semantic_search", "web_search",
+})
+
 
 def set_context(**kwargs) -> None:
     """Set module-level context accessible to tool implementations."""
@@ -349,17 +379,53 @@ def _summarize(name: str):
     return decorator
 
 
-def execute_tool(tool_call: dict, write_gate: WriteSafetyGate, read_gate: ReadSafetyGate) -> ToolResult:
-    """Execute a single tool call.  All read/write paths go through safety gates."""
+def clear_tool_cache() -> None:
+    """Clear the per-turn tool cache. Called at the start of each agent turn."""
+    _TOOL_CACHE.clear()
+
+
+def execute_tool(
+    tool_call: dict,
+    write_gate: WriteSafetyGate,
+    read_gate: ReadSafetyGate,
+    on_output: callable = None,
+) -> ToolResult:
+    """Execute a single tool call.  All read/write paths go through safety gates.
+
+    Read-only tools (read_file, file_info, etc.) are cached within a turn
+    so repeated reads of the same file hit the cache instead of disk.
+
+    If *on_output* is provided, it is called with (tool_name, line_str) for
+    real-time output streaming (currently only run_shell uses this).
+    """
     fn = tool_call["function"]
     name = fn["name"]
     args = json.loads(fn["arguments"])
+
+    # Check cache for read-only tools (skip if on_output is streaming)
+    if on_output is None and name in _CACHEABLE:
+        cache_key = json.dumps([name, args], sort_keys=True)
+        if cache_key in _TOOL_CACHE:
+            return _TOOL_CACHE[cache_key]
 
     dispatch = _TOOL_DISPATCH.get(name)
     if dispatch is None:
         return ToolResult(success=False, content=f"Unknown tool: {name}")
 
-    return dispatch(args, write_gate, read_gate)
+    # Pass on_output to the tool if it accepts it
+    import inspect
+    sig = inspect.signature(dispatch)
+    if "on_output" in sig.parameters:
+        result = dispatch(args, write_gate, read_gate, on_output=on_output)
+    else:
+        result = dispatch(args, write_gate, read_gate)
+
+    # Cache successful read-only results (only when not streaming)
+    if on_output is None and name in _CACHEABLE and result.success:
+        cache_key = json.dumps([name, args], sort_keys=True)
+        _TOOL_CACHE[cache_key] = result
+
+    return result
 
 
 def tool_summary(tc: dict) -> str:
@@ -384,3 +450,4 @@ def tool_summary(tc: dict) -> str:
 from tools import file_ops    # noqa: E402, F401
 from tools import shell_ops   # noqa: E402, F401
 from tools import search_ops  # noqa: E402, F401
+from tools.search_ops import build_symbol_index  # noqa: E402, F401

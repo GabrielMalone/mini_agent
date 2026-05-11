@@ -16,7 +16,7 @@ from tools import ToolResult, execute_tool, tool_summary
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_tool_call(name: str, **kwargs) -> dict:
+def _make_tool_call(name: str, /, **kwargs) -> dict:
     return {
         "id": "call_test",
         "function": {
@@ -600,3 +600,213 @@ class TestSemanticSearch(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ---------------------------------------------------------------------------
+# Tool cache tests
+# ---------------------------------------------------------------------------
+
+class TestToolCache(unittest.TestCase):
+
+    def setUp(self):
+        self.workspace = tempfile.mkdtemp()
+        self.write_gate, self.read_gate = _gates(self.workspace)
+
+    def tearDown(self):
+        import shutil
+        from tools import clear_tool_cache
+        clear_tool_cache()
+        shutil.rmtree(self.workspace, ignore_errors=True)
+
+    def test_read_file_is_cached(self):
+        """Reading the same file twice returns the same result object."""
+        path = os.path.join(self.workspace, "cache_test.txt")
+        with open(path, "w") as f:
+            f.write("hello cache\n")
+
+        tc = _make_tool_call("read_file", path=path)
+        r1 = execute_tool(tc, self.write_gate, self.read_gate)
+        r2 = execute_tool(tc, self.write_gate, self.read_gate)
+
+        self.assertTrue(r1.success)
+        self.assertTrue(r2.success)
+        # After caching, same object is returned (identity check)
+        self.assertIs(r1, r2)
+
+    def test_cache_cleared_between_turns(self):
+        """clear_tool_cache() invalidates cached results."""
+        from tools import clear_tool_cache
+
+        path = os.path.join(self.workspace, "cache_test.txt")
+        with open(path, "w") as f:
+            f.write("hello\n")
+
+        tc = _make_tool_call("read_file", path=path)
+        r1 = execute_tool(tc, self.write_gate, self.read_gate)
+
+        clear_tool_cache()
+        r2 = execute_tool(tc, self.write_gate, self.read_gate)
+
+        self.assertTrue(r1.success)
+        self.assertTrue(r2.success)
+        # Different objects after cache clear
+        self.assertIsNot(r1, r2)
+
+    def test_write_tools_are_not_cached(self):
+        """write_file results are never cached."""
+        path = os.path.join(self.workspace, "no_cache.txt")
+
+        tc = _make_tool_call("write_file", path=path, content="first")
+        r1 = execute_tool(tc, self.write_gate, self.read_gate)
+
+        tc2 = _make_tool_call("write_file", path=path, content="second")
+        r2 = execute_tool(tc2, self.write_gate, self.read_gate)
+
+        self.assertTrue(r1.success)
+        self.assertTrue(r2.success)
+        # Should be different objects (write ops skip cache)
+        self.assertIsNot(r1, r2)
+
+
+# ---------------------------------------------------------------------------
+# find_symbol tests
+# ---------------------------------------------------------------------------
+
+class TestFindSymbol(unittest.TestCase):
+
+    def setUp(self):
+        self.workspace = tempfile.mkdtemp()
+        self.write_gate, self.read_gate = _gates(self.workspace)
+        # Write a test file with known symbols
+        src = os.path.join(self.workspace, "demo.py")
+        with open(src, "w") as f:
+            f.write("def hello_world():\n    pass\n\n")
+            f.write("class MyClass:\n    def method_one(self):\n        pass\n")
+        # Build fresh index
+        from tools.search_ops import build_symbol_index
+        build_symbol_index(self.workspace)
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.workspace, ignore_errors=True)
+
+    def test_exact_match_finds_symbols(self):
+        tc = _make_tool_call("find_symbol", name="hello_world")
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertTrue(result.success)
+        self.assertIn("hello_world", result.content)
+        self.assertIn("demo.py:1", result.content)
+
+    def test_substring_match(self):
+        tc = _make_tool_call("find_symbol", name="hello")
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertTrue(result.success)
+        self.assertIn("hello_world", result.content)
+
+    def test_class_found(self):
+        tc = _make_tool_call("find_symbol", name="MyClass")
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertTrue(result.success)
+        self.assertIn("MyClass", result.content)
+        self.assertIn("class", result.content)
+
+    def test_method_found(self):
+        tc = _make_tool_call("find_symbol", name="method_one")
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertTrue(result.success)
+        self.assertIn("method_one", result.content)
+
+    def test_no_match_returns_gracefully(self):
+        tc = _make_tool_call("find_symbol", name="nonexistent_xyz")
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertTrue(result.success)
+        self.assertIn("No symbols matching", result.content)
+
+
+# ---------------------------------------------------------------------------
+# Error hint tests
+# ---------------------------------------------------------------------------
+
+class TestErrorHints(unittest.TestCase):
+
+    def setUp(self):
+        self.workspace = tempfile.mkdtemp()
+        self.write_gate, self.read_gate = _gates(self.workspace)
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.workspace, ignore_errors=True)
+
+    def test_read_file_not_found_includes_hint(self):
+        path = os.path.join(self.workspace, "nope.txt")
+        tc = _make_tool_call("read_file", path=path)
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertFalse(result.success)
+        self.assertIn("Hint:", result.content)
+        self.assertIn("list_directory", result.content.lower())
+
+    def test_write_blocked_includes_hint(self):
+        outside = tempfile.mkdtemp()
+        try:
+            tc = _make_tool_call("write_file",
+                                 path=os.path.join(outside, "x.txt"),
+                                 content="hello")
+            result = execute_tool(tc, self.write_gate, self.read_gate)
+            self.assertFalse(result.success)
+            self.assertIn("Hint:", result.content)
+            self.assertIn("workspace", result.content.lower())
+        finally:
+            import shutil
+            shutil.rmtree(outside, ignore_errors=True)
+
+    def test_edit_not_found_includes_hint(self):
+        path = os.path.join(self.workspace, "f.txt")
+        with open(path, "w") as f:
+            f.write("original content\n")
+        tc = _make_tool_call("edit_file", path=path,
+                             old_string="nonexistent", new_string="replacement")
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertFalse(result.success)
+        self.assertIn("Hint:", result.content)
+        self.assertIn("read_file", result.content.lower())
+
+    def test_destructive_guard_includes_hint(self):
+        tc = _make_tool_call("run_shell", command="rm -rf /tmp/nonexistent")
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertFalse(result.success)
+        self.assertIn("Hint:", result.content)
+        self.assertIn("force=True", result.content)
+
+    def test_bad_command_includes_hint(self):
+        tc = _make_tool_call("run_shell", command="nonexistent_cmd_xyz")
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertFalse(result.success)
+        self.assertIn("Hint:", result.content)
+
+    def test_shell_output_truncated_at_500_lines(self):
+        """Long shell output is truncated."""
+        cmd = "python3 -c 'for i in range(600): print(i)'"
+        tc = _make_tool_call("run_shell", command=cmd)
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertTrue(result.success)
+        self.assertIn("truncated at 500 lines", result.content)
+
+    def test_shell_streaming_calls_on_output(self):
+        """on_output is called for each line of shell stdout."""
+        cmd = "echo line1 && echo line2 && echo line3"
+        tc = _make_tool_call("run_shell", command=cmd)
+        lines = []
+        result = execute_tool(tc, self.write_gate, self.read_gate, on_output=lines.append)
+        self.assertTrue(result.success)
+        self.assertIn("line1", lines)
+        self.assertIn("line2", lines)
+        self.assertIn("line3", lines)
+
+
+class TestPlanningPrompt(unittest.TestCase):
+
+    def test_prompt_includes_planning_instruction(self):
+        """System prompt tells agent to state a plan before tools."""
+        from prompt import SYSTEM_PROMPT
+        self.assertIn("state your plan", SYSTEM_PROMPT.lower())
+        self.assertIn("1-3 sentences", SYSTEM_PROMPT)

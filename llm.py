@@ -17,7 +17,7 @@ import requests
 
 from config import AgentConfig
 from terminal import c, _DIM
-from tools import TOOLS, execute_tool, tool_summary
+from tools import TOOLS, execute_tool, tool_summary, clear_tool_cache
 from safety import ReadSafetyGate, WriteSafetyGate
 
 # Thinking-mode delimiters sent through the on_token stream
@@ -286,6 +286,7 @@ def run_agent_turn(
     on_token: callable = None,
     on_tool_start: callable = None,
     on_tool_end: callable = None,
+    on_tool_output: callable = None,
     cancel_event: threading.Event = None,
     max_turns: int = 100,
     session=None,
@@ -312,6 +313,7 @@ def run_agent_turn(
     turn_count = 0
     if session is None:
         session = requests  # test-friendly: mockable via patch("llm.requests.post")
+    clear_tool_cache()
     try:
         for _ in range(max_turns):
             turn_count += 1
@@ -363,7 +365,7 @@ def run_agent_turn(
                     return None
                 if on_tool_start is not None:
                     on_tool_start(tool_summary(tc))
-                result = execute_tool(tc, write_gate, read_gate)
+                result = execute_tool(tc, write_gate, read_gate, on_output=on_tool_output)
                 _append_tool_result(messages, tc, result, on_tool_end)
                 continue
 
@@ -373,7 +375,7 @@ def run_agent_turn(
                     on_tool_start(tool_summary(tc), True)
 
             def _run_tool(tc):
-                return tc, execute_tool(tc, write_gate, read_gate)
+                return tc, execute_tool(tc, write_gate, read_gate, on_output=on_tool_output)
 
             with ThreadPoolExecutor(max_workers=len(tool_calls)) as pool:
                 futures = {pool.submit(_run_tool, tc): tc for tc in tool_calls}
