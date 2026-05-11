@@ -24,3 +24,41 @@ def c(text: str, code: str) -> str:
     if _ENABLED:
         return f"{code}{text}{_RESET}"
     return text
+
+
+def format_table(headers: list[str], rows: list[list[str]]) -> str:
+    """Build a consistently padded pipe-delimited table.
+
+    Example:
+        format_table(["Col", "Desc"], [["a", "first"], ["b", "second"]])
+        →
+        | Col | Desc   |
+        |-----|--------|
+        | a   | first  |
+        | b   | second |
+    """
+    # Calculate column widths
+    col_widths = [len(h) for h in headers]
+    for row in rows:
+        for i, cell in enumerate(row):
+            if i < len(col_widths):
+                col_widths[i] = max(col_widths[i], len(cell))
+
+    def _row(cells: list[str], sep: str = "|") -> str:
+        parts = []
+        for i, cell in enumerate(cells):
+            if i < len(col_widths):
+                parts.append(f" {cell.ljust(col_widths[i])} ")
+            else:
+                parts.append(f" {cell} ")
+        return sep.join([""] + parts + [""])
+
+    parts = [
+        _row(headers),
+        _row(["-" * w for w in col_widths], sep="|"),
+    ]
+    for row in rows:
+        parts.append(_row(row))
+
+    # Also add a small row between header and first data row
+    return "\n".join(parts)

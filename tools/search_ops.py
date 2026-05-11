@@ -22,14 +22,65 @@ _SYMBOL_INDEX: dict[str, list[dict]] | None = None  # name → [{"path","line","
 def build_symbol_index(root: str) -> dict[str, list[dict]]:
     """Scan workspace .py files for def/class lines.  Fast — no parsing, just regex.
 
-    Returns {name: [{"path":..., "line":..., "kind":"def"|"class"}, ...]}.
-    The index is cached in _SYMBOL_INDEX and reused until rebuild_symbol_index is called.
-    """
-    global _SYMBOL_INDEX
-    import re
-    pattern = re.compile(r"^\s*(def|class)\s+(\w+)")
+    Also builds the reference index (_REF_INDEX) in the same pass — no
+    second file walk needed.  Both indices are cached in memory.
 
-    idx: dict[str, list[dict]] = {}
+    Returns {name: [{"path":..., "line":..., "kind":"def"|"class"}, ...]}.
+    The index is cached and reused until rebuild_symbol_index is called.
+    """
+    global _SYMBOL_INDEX, _REF_INDEX
+    import re
+    import json as _json
+
+    # --- disk cache: avoid re-scanning on every session ---
+    cache_path = os.path.join(root, ".mini_agent_index.json")
+    try:
+        if os.path.exists(cache_path):
+            cache_mtime = os.path.getmtime(cache_path)
+            # Check if cache is newer than all .py files
+            needs_rebuild = False
+            for dirpath, dirnames, filenames in os.walk(root):
+                dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS and not d.startswith(".")]
+                for fname in filenames:
+                    if fname.endswith(".py"):
+                        fpath = os.path.join(dirpath, fname)
+                        try:
+                            if os.path.getmtime(fpath) > cache_mtime:
+                                needs_rebuild = True
+                                break
+                        except OSError:
+                            pass
+                if needs_rebuild:
+                    break
+            if not needs_rebuild:
+                cached = _json.loads(open(cache_path).read())
+                sym = {k: v for k, v in cached.get("symbols", {}).items()}
+                ref = {k: v for k, v in cached.get("references", {}).items()}
+                _SYMBOL_INDEX = sym
+                _REF_INDEX = ref
+                return sym
+    except Exception:
+        pass  # any failure → fall through to rebuild
+    def_pat = re.compile(r"^\s*(def|class)\s+(\w+)")
+    word_pat = re.compile(r"\b(\w+)\b")
+
+    # Names we never track as references (builtins, common patterns, etc.)
+    _SKIP_REF_NAMES = frozenset({
+        "self", "cls", "True", "False", "None", "int", "str", "list", "dict",
+        "set", "tuple", "bool", "float", "bytes", "type", "object", "super",
+        "range", "len", "print", "isinstance", "hasattr", "getattr", "setattr",
+        "enumerate", "zip", "map", "filter", "iter", "next", "any", "all",
+        "sorted", "reversed", "min", "max", "sum", "abs", "round", "ord", "chr",
+        "open", "Exception", "ValueError", "TypeError", "KeyError", "OSError",
+        "RuntimeError", "ImportError", "AttributeError", "StopIteration",
+        "__init__", "__name__", "__main__", "__file__", "__doc__",
+        "unittest", "TestCase", "json", "os", "sys", "re", "time",
+    })
+
+    symbol_idx: dict[str, list[dict]] = {}
+    ref_idx: dict[str, list[dict]] = {}
+
+    # 1. First pass: collect all symbol definitions
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS and not d.startswith(".")]
         for fname in filenames:
@@ -39,10 +90,10 @@ def build_symbol_index(root: str) -> dict[str, list[dict]]:
             try:
                 with open(fpath, "r") as f:
                     for lineno, line in enumerate(f, 1):
-                        m = pattern.match(line)
+                        m = def_pat.match(line)
                         if m:
                             kind, name = m.group(1), m.group(2)
-                            idx.setdefault(name, []).append({
+                            symbol_idx.setdefault(name, []).append({
                                 "path": fpath,
                                 "line": lineno,
                                 "kind": kind,
@@ -50,8 +101,54 @@ def build_symbol_index(root: str) -> dict[str, list[dict]]:
             except (OSError, PermissionError):
                 continue
 
-    _SYMBOL_INDEX = idx
-    return idx
+    known_names = set(symbol_idx.keys())
+
+    # 2. Second pass: collect references (only for known symbol names)
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS and not d.startswith(".")]
+        for fname in filenames:
+            if not fname.endswith(".py"):
+                continue
+            fpath = os.path.join(dirpath, fname)
+            try:
+                with open(fpath, "r") as f:
+                    for lineno, line in enumerate(f, 1):
+                        stripped = line.strip()
+                        for match in word_pat.finditer(line):
+                            word = match.group(1)
+                            if word in _SKIP_REF_NAMES or word not in known_names:
+                                continue
+                            ref_idx.setdefault(word, []).append({
+                                "path": fpath,
+                                "line": lineno,
+                                "context": stripped[:120],
+                            })
+            except (OSError, PermissionError):
+                continue
+
+    # Deduplicate references per file+line
+    for name in ref_idx:
+        seen = set()
+        unique = []
+        for ref in ref_idx[name]:
+            key = (ref["path"], ref["line"])
+            if key not in seen:
+                seen.add(key)
+                unique.append(ref)
+        ref_idx[name] = unique
+
+    _SYMBOL_INDEX = symbol_idx
+    _REF_INDEX = ref_idx
+
+    # Persist to disk cache
+    try:
+        cache_path = os.path.join(root, ".mini_agent_index.json")
+        with open(cache_path, "w") as f:
+            _json.dump({"symbols": symbol_idx, "references": ref_idx}, f)
+    except Exception:
+        pass
+
+    return symbol_idx
 
 
 def _get_symbol_index(root: str) -> dict[str, list[dict]]:

@@ -395,6 +395,28 @@ def run_agent_turn(
     total_usage: dict[str, int] = {}
     turn_count = 0
     recent_tool_keys: list[str] = []  # circuit breaker tracking
+
+    # --- inject recent git changes (first turn only) ---
+    if turn_count == 0 and memory_store is not None:
+        try:
+            import subprocess as _sp
+            result = _sp.run(
+                ["git", "diff", "--stat", "HEAD~1"],
+                capture_output=True, text=True, timeout=5,
+                cwd=read_gate.workspace_root,
+            )
+            if result.stdout.strip():
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "Recent git changes since last commit:\n\n"
+                        + result.stdout.strip()
+                        + "\n\nFocus on these files first when making changes."
+                    ),
+                    "_transient": True,
+                })
+        except Exception:
+            pass
     if session is None:
         session = requests  # test-friendly: mockable via patch("llm.requests.post")
     clear_tool_cache()

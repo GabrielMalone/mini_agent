@@ -320,3 +320,26 @@ messages) before save.  The `_` prefix is already stripped by
 | Circuit breaker warning | persisted every time | stripped on save |
 
 **Tests:** 3 new tests (TestTransientMessages). **Status:** 246 pass.
+
+## 2026-05-11 — Speed improvements + table formatting
+
+### 1. Combined forward + reverse index (`tools/search_ops.py`)
+Previously `build_symbol_index` and `build_ref_index` each did a full file
+walk.  Now `build_symbol_index` builds both in one two-pass scan —
+first pass collects def/class symbols, second pass finds references to them.
+`find_usages` is instant after `find_symbol`.
+
+### 2. Cached symbol index to disk
+`build_symbol_index` now writes `.mini_agent_index.json` after building.
+On next session, if no .py file is newer, loads from disk instantly instead
+of re-scanning.  Near-zero startup on repeat sessions.
+
+### 3. Git diff awareness (`llm.py`)
+On the first turn of a session, `run_agent_turn` runs `git diff --stat HEAD~1`
+and injects the changed-files summary as a transient message.  Agent knows
+what was recently modified without needing to search.
+
+### 4. Table formatting utility (`terminal.py`)
+`format_table(headers, rows)` returns a consistently-padded pipe-delimited
+table suitable for display in the TUI.  Columns are aligned, headers have
+separator rows.
