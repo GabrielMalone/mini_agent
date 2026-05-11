@@ -274,6 +274,7 @@ def _write_scratchpad(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> 
             )
             conn.commit()
             conn.close()
+            _TOOL_CONTEXT["_scratchpad_updated"] = True
             return ToolResult(
                 success=True,
                 content=f"Scratchpad updated ({len(content_text)} chars).",

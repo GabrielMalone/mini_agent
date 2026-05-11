@@ -466,6 +466,21 @@ def run_agent_turn(
             if warning:
                 messages.append({"role": "user", "content": warning, "_transient": True})
 
+            # Scratchpad staleness nudge — warn if not updated in several turns
+            from tools import _TOOL_CONTEXT
+            if turn_count > 4 and (turn_count - 1) % 3 == 0:
+                if not _TOOL_CONTEXT.get("_scratchpad_updated"):
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            "⚠️ Your scratchpad hasn't been updated in several turns. "
+                            "Consider using write_scratchpad to capture your current "
+                            "plan, progress, and decisions before continuing."
+                        ),
+                        "_transient": True,
+                    })
+                _TOOL_CONTEXT["_scratchpad_updated"] = False
+
             # Collect tools executed incrementally during the stream.
             # Tool results MUST be appended AFTER the assistant message (which
             # contains tool_calls), not before — otherwise DeepSeek returns 400

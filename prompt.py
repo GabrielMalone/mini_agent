@@ -32,6 +32,8 @@ SYSTEM_PROMPT = (
     "- The scratchpad is shown to you at the start of each turn — use it as external memory.\n"
     "- Structure it with headings: ## Plan, ## Progress, ## Decisions, ## Open Questions.\n"
     "- A good scratchpad helps you avoid repeating yourself and losing context.\n"
+    "- If you haven't used write_scratchpad in the last 4 turns, you are probably\n"
+    "  losing context — stop and update it before continuing.\n"
     "\n"
     "Tool-specific guidance:\n"
     "- **find_symbol** is the fastest way to locate function/class definitions — it is\n"
