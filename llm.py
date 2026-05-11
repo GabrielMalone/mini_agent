@@ -75,7 +75,7 @@ def _request_with_retry(
 # API call
 # ---------------------------------------------------------------------------
 
-def call_deepseek(messages: list[dict], config: AgentConfig) -> dict:
+def call_deepseek(messages: list[dict], config: AgentConfig, on_token: callable = None) -> dict:
     """Send messages to DeepSeek, return the assistant message dict.
 
     DeepSeek thinking mode requires ``reasoning_content`` to be passed back
@@ -122,18 +122,21 @@ def call_deepseek(messages: list[dict], config: AgentConfig) -> dict:
     r.raise_for_status()
 
     if config.stream:
-        return _parse_stream(r)
+        return _parse_stream(r, on_token)
     else:
         return r.json()["choices"][0]["message"]
 
 
-def _parse_stream(response: requests.Response) -> dict:
+def _parse_stream(response: requests.Response, on_token: callable = None) -> dict:
     """Parse an SSE streamed response, printing text as it arrives.
 
     Accumulates both text content and tool_calls from deltas.  Tool call
     arguments arrive in fragments across multiple chunks and are reassembled
     by index.  Reasoning (thinking) content is printed dimmed in real-time
     for debugging visibility.
+
+    If *on_token* is provided, it is called with each content token (str)
+    instead of printing to stdout.
 
     If the connection drops mid-stream, whatever was accumulated so far is
     returned rather than crashing — a warning is printed to stderr.
@@ -161,7 +164,10 @@ def _parse_stream(response: requests.Response) -> dict:
                 # Text content — print and accumulate
                 if "content" in delta and delta["content"]:
                     full_content += delta["content"]
-                    print(delta["content"], end="", flush=True)
+                    if on_token:
+                        on_token(delta["content"])
+                    else:
+                        print(delta["content"], end="", flush=True)
 
                 # Reasoning content (thinking mode) — print dimmed to stderr
                 if "reasoning_content" in delta and delta["reasoning_content"]:
