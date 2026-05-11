@@ -265,6 +265,12 @@ the SQLite DB) was invisible to the user.
 **Fix:** Added `scratchpad_path=self.memory._db_path` to `tui.py`'s
 `set_context()` call. Also updated the stale `.md` file with current content.
 
+**Test** (`test_resilience.py`): Added two tests:
+`test_tool_writes_to_sqlite_when_path_set` and
+`test_tool_falls_back_to_file_when_no_path`. Together they verify both
+`write_scratchpad` code paths — SQLite and fallback file — and catch the
+regression where the TUI was missing `scratchpad_path`.
+
 ## 2026-05-11 — TUI [/code] crash fix v2: single write() for table flush
 
 **Root cause:** The table buffer flush wrote `[code]`, table rows, and `[/code]`

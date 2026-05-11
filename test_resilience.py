@@ -378,6 +378,43 @@ class TestScratchpad(unittest.TestCase):
         store2 = MemoryStore(self.db_path)
         self.assertEqual(store2.get_scratchpad(), "persistent content")
 
+    def test_tool_writes_to_sqlite_when_path_set(self):
+        """write_scratchpad uses SQLite when scratchpad_path is configured."""
+        from memory import MemoryStore
+        from tools import execute_tool, set_context
+        from safety import WriteSafetyGate, ReadSafetyGate
+        store = MemoryStore(self.db_path)
+        set_context(scratchpad_path=store._db_path)
+        wg = WriteSafetyGate(self.tmp, allow_overwrites=True)
+        rg = ReadSafetyGate(self.tmp)
+        tc = {"id": "test_sp", "function": {"name": "write_scratchpad",
+              "arguments": '{"content": "tool-layer test"}'}}
+        result = execute_tool(tc, wg, rg)
+        self.assertTrue(result.success, f"write_scratchpad failed: {result.content}")
+        loaded = store.get_scratchpad()
+        self.assertEqual(loaded, "tool-layer test")
+
+    def test_tool_falls_back_to_file_when_no_path(self):
+        """write_scratchpad writes to .mini_agent_scratchpad.md when no SQLite path."""
+        import os as _os
+        from tools import execute_tool, set_context
+        from safety import WriteSafetyGate, ReadSafetyGate
+        # Clear any previous scratchpad_path
+        set_context(scratchpad_path=None, workspace=self.tmp)
+        md_path = _os.path.join(self.tmp, ".mini_agent_scratchpad.md")
+        # Remove stale file if it exists
+        if _os.path.exists(md_path):
+            _os.remove(md_path)
+        wg = WriteSafetyGate(self.tmp, allow_overwrites=True)
+        rg = ReadSafetyGate(self.tmp)
+        tc = {"id": "test_sp2", "function": {"name": "write_scratchpad",
+              "arguments": '{"content": "fallback file test"}'}}
+        result = execute_tool(tc, wg, rg)
+        self.assertTrue(result.success, f"write_scratchpad failed: {result.content}")
+        self.assertTrue(_os.path.exists(md_path), f"Fallback file not created at {md_path}")
+        with open(md_path) as f:
+            self.assertIn("fallback file test", f.read())
+
 
 # ---------------------------------------------------------------------------
 # 7. Diff output in edit_file
