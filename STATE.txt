@@ -163,3 +163,9 @@ Model attention also degrades in the "middle" of very long contexts. 300 message
 for pruned context.
 
 **Change:** `memory.py` `DEFAULT_MAX_MESSAGES`: 500 → 300
+
+## TODO
+
+- [ ] **Responsive table widths** — `terminal.py` / `tui.py`: detect terminal width
+      and truncate columns to fit, with overflow indicators (`…`). Currently pipe
+      tables are fixed-width and break if the terminal is narrower than the table.
