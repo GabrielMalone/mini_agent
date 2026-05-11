@@ -6,8 +6,9 @@
 mini_agent/
 ├── mini_agent.py      # Terminal REPL (--help, --workspace, --stream, --quiet, --no-color)
 ├── tui.py             # Textual TUI: dark theme, streaming, cancel, multi-line paste, /clear
-├── llm.py             # LLM: retry, streaming, on_token, THINKING_START/END, run_agent_turn
-├── prompt.py          # SYSTEM_PROMPT (confirm-before-planning rule)
+├── llm.py             # LLM: retry, streaming, on_token, THINKING_START/END,
+│                      #   run_agent_turn: parallel tools, session reuse, progress checks
+├── prompt.py          # SYSTEM_PROMPT (confirm-before-planning, parallel-tool hint)
 ├── terminal.py        # ANSI colour helpers
 ├── config.py          # AgentConfig: TOML + env + CLI, exa_api_key
 ├── tools/             # 11 tools split across 4 modules
@@ -16,7 +17,7 @@ mini_agent/
 │   ├── shell_ops.py   # run_shell, search_files, run_tests, git
 │   └── search_ops.py  # semantic_search, web_search
 ├── safety.py          # ReadSafetyGate + WriteSafetyGate
-├── memory.py          # SQLite: save/load/clear/prune/migrate
+├── memory.py          # SQLite: save/load/clear, token-aware prune, tool compression, summarization
 ├── .gitignore
 ├── .mini_agent.toml
 ├── requirements.txt   # exa-py, sentence-transformers, requests, tomli, textual
@@ -24,13 +25,14 @@ mini_agent/
 ├── test_memory.py     # 22 tests
 ├── test_tools.py      # 53 tests (web_search API tests disabled to save tokens)
 ├── test_tui.py        # 12 tests
-├── test_agent_loop.py # 15 tests
+├── test_agent_loop.py # 16 tests (includes parallel tool exec)
 ├── test_config.py     # 18 tests
 ├── test_git.py        # 16 tests
+├── test_lint.py       # 1 test (compiles all sources)
 └── STATE.txt
 ```
 
-163 tests total.
+165 tests total.
 
 ### Tools (11)
 
@@ -66,19 +68,22 @@ mini_agent/
 ### TUI (tui.py)
 
 - **Dark theme**: #111111 background, #1b1b1b surface
-- **Streaming**: thinking buffered by newlines and written inline to RichLog (dim italic).
-  Content buffered by newlines and flushed to RichLog. No separate stream widget.
+- **Streaming**: Thinking flushed on sentence boundaries (. ? ! :) or every ~400 chars,
+  with `┃` left-border prefix for visual grouping. Content flushed on newlines or
+  every ~300 chars at word boundaries. No more paragraphs held hostage.
+- **Thinking separator**: `▔▔▔ thinking ▔▔▔` header marks the start of each reasoning block.
 - **Markup safety**: all user/LLM content escaped via `_safe()` to prevent Rich markup errors.
 - **Multi-line input**: TextArea widget. Enter submits, Shift+Enter inserts newline.
-- **Cancel**: Ctrl+C sets cancel flag, worker thread exits cleanly.
-- **Tool visibility**: ⚙ tool_name(args) on start, ✓/✗ detail on end.
+- **Cancel**: Ctrl+C sets cancel flag, worker thread exits cleanly.  Memory saved on cancel.
+- **Tool visibility**: `⚙` for single tools, `⫼` for parallel tools.  ✓/✗ detail on end.
 - **Queue architecture**: AgentWorker pushes messages to a thread-safe Queue;
   set_interval(50ms) drain loop reads them on the main thread.
 - **Shared agent loop**: `run_agent_turn()` in llm.py used by both TUI and terminal REPL.
 - **Double-submit guard**: Enter is ignored while a worker is active.
-- **Token usage**: displayed in status line when available (e.g. `— 42 msgs | 1.2k tok | model`).
-- **Commands**: `/clear` resets conversation memory. Unknown commands show a warning.
+- **Token usage**: displayed in status line when available (e.g. `— 42 msgs | 1.2k tok | turn 3 | model`).
+- **Commands**: `/clear` resets conversation memory, `/help` lists commands.
 - **Input history**: Up/Down when input is empty cycles through submitted messages.
+- **Session reuse**: one requests.Session per app session, reused across all turns.
 
 ### Flags (both mini_agent.py and tui.py)
 
@@ -89,3 +94,33 @@ mini_agent/
   --no-color          Disable ANSI colours (terminal only)
   --help, -h          Show usage
 ```
+
+### LLM agent loop (llm.py)
+
+- **Parallel tool execution**: When the LLM returns 2+ independent tool calls, they run
+  concurrently via ThreadPoolExecutor. Single tools stay inline (no thread overhead).
+- **Session reuse**: One requests.Session per app session eliminates per-turn TCP+TLS handshake.
+- **Progress checks**: Every 5 tool-using turns, a user-role reminder is injected so the
+  agent assesses progress and decides whether to continue or wrap up.
+- **max_turns**: Default 100 (effectively unlimited; user controls cancellation).
+- **Retry**: Exponential backoff (1s, 2s, 4s) on 429/5xx. Connection-drop resilience in streaming.
+
+### Memory (memory.py)
+
+Three-tier memory management applied on every save:
+
+1. **Token-aware pruning** — `max_tokens=800_000` (~1M context). Rough estimator
+   (4 chars ≈ 1 token) prunes oldest turns, preserving tool-call sequences and
+   turn boundaries. `max_messages=500` is a hard cap applied first.
+2. **Tool result compression** — Tool outputs >6 messages from the tail are trimmed
+   to their first line only.
+3. **Conversation summarization** — When pruning drops turns, a synthetic
+   "Earlier in this conversation: …" message lists files read/written, commands
+   run, and recent user prompts.
+
+### Tool notes
+
+- **read_file** truncates at 300 lines (saves LLM tokens on large files). The truncation
+  note points to edit_file for fine-grained access.
+- **semantic_search** lazy-loads all-MiniLM-L6-v2 (~80 MB). Unchanged files are
+  skipped on re-index (mtime-based cache).
