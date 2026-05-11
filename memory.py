@@ -554,3 +554,40 @@ def _migrate_json(json_path: str, db_path: str) -> None:
             conn.commit()
     except sqlite3.Error:
         return
+
+
+# ---------------------------------------------------------------------------
+# Shared export helper — used by both terminal REPL and TUI
+# ---------------------------------------------------------------------------
+
+def export_conversation_markdown(messages: list[dict]) -> str:
+    """Generate markdown text for a conversation export.
+
+    Returns the complete markdown string. Callers handle path/timestamp logic.
+    """
+    blocks: list[str] = []
+    blocks.append("# mini_agent conversation\n")
+    for m in messages:
+        role = m.get("role", "?")
+        if role == "system":
+            blocks.append(f"### System\n\n{m.get('content', '')}\n")
+        elif role == "user":
+            blocks.append(f"### User\n\n{m.get('content', '')}\n")
+        elif role == "assistant":
+            content = m.get("content", "")
+            if m.get("reasoning_content"):
+                blocks.append("> **Thinking**\n>")
+                for line in m["reasoning_content"].split("\n"):
+                    blocks.append(f"> {line}")
+                blocks.append("")
+            if content:
+                blocks.append(f"### Assistant\n\n{content}\n")
+            if m.get("tool_calls"):
+                for tc in m["tool_calls"]:
+                    fn = tc.get("function", {})
+                    name = fn.get("name", "?")
+                    args = fn.get("arguments", "{}")
+                    blocks.append(f"```\n{name}({args})\n```\n")
+        elif role == "tool":
+            blocks.append(f"> Tool result:\n>\n> {m.get('content', '')[:500]}\n")
+    return "\n".join(blocks)

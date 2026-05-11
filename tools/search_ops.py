@@ -78,9 +78,10 @@ def build_symbol_index(root: str) -> dict[str, list[dict]]:
     })
 
     symbol_idx: dict[str, list[dict]] = {}
-    ref_idx: dict[str, list[dict]] = {}
+    # Raw word references collected in a single pass (word, path, line, context).
+    # Filtered to known symbol names after the walk completes.
+    _raw_refs: list[tuple[str, str, int, str]] = []
 
-    # 1. First pass: collect all symbol definitions
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS and not d.startswith(".")]
         for fname in filenames:
@@ -90,6 +91,7 @@ def build_symbol_index(root: str) -> dict[str, list[dict]]:
             try:
                 with open(fpath, "r") as f:
                     for lineno, line in enumerate(f, 1):
+                        # Collect def/class definitions
                         m = def_pat.match(line)
                         if m:
                             kind, name = m.group(1), m.group(2)
@@ -98,33 +100,25 @@ def build_symbol_index(root: str) -> dict[str, list[dict]]:
                                 "line": lineno,
                                 "kind": kind,
                             })
-            except (OSError, PermissionError):
-                continue
-
-    known_names = set(symbol_idx.keys())
-
-    # 2. Second pass: collect references (only for known symbol names)
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS and not d.startswith(".")]
-        for fname in filenames:
-            if not fname.endswith(".py"):
-                continue
-            fpath = os.path.join(dirpath, fname)
-            try:
-                with open(fpath, "r") as f:
-                    for lineno, line in enumerate(f, 1):
+                        # Collect all word occurrences for reference index
                         stripped = line.strip()
                         for match in word_pat.finditer(line):
                             word = match.group(1)
-                            if word in _SKIP_REF_NAMES or word not in known_names:
-                                continue
-                            ref_idx.setdefault(word, []).append({
-                                "path": fpath,
-                                "line": lineno,
-                                "context": stripped[:120],
-                            })
+                            if word not in _SKIP_REF_NAMES:
+                                _raw_refs.append((word, fpath, lineno, stripped[:120]))
             except (OSError, PermissionError):
                 continue
+
+    # Filter raw references to only known symbol names
+    known_names = set(symbol_idx.keys())
+    ref_idx: dict[str, list[dict]] = {}
+    for word, fpath, lineno, context in _raw_refs:
+        if word in known_names:
+            ref_idx.setdefault(word, []).append({
+                "path": fpath,
+                "line": lineno,
+                "context": context,
+            })
 
     # Deduplicate references per file+line
     for name in ref_idx:
@@ -240,7 +234,26 @@ def _sem_chunk_py(filepath: str) -> list[tuple[int, int, str]]:
 
 
 def _sem_index(root: str) -> None:
-    """Build/update in-memory index of .py files."""
+    """Build/update in-memory index of .py files.
+
+    Returns immediately if no .py file mtimes have changed since the last
+    build (fast no-op on repeated calls).
+    """
+    # Quick check: stat-only walk to see if anything changed
+    new_max = 0.0
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS and not d.startswith(".")]
+        for fname in filenames:
+            if fname.endswith(".py"):
+                try:
+                    mt = os.path.getmtime(os.path.join(dirpath, fname))
+                    if mt > new_max:
+                        new_max = mt
+                except OSError:
+                    pass
+    if _SEMANTIC_STORE.get("_max_mtime", 0.0) == new_max and new_max > 0:
+        return  # nothing changed
+
     current = set()
     import numpy as np
 
@@ -270,9 +283,10 @@ def _sem_index(root: str) -> None:
                 texts,
                 list(embeddings),
             )))
-    stale = [p for p in _SEMANTIC_STORE if p not in current]
+    stale = [p for p in _SEMANTIC_STORE if p not in current and p != "_max_mtime"]
     for p in stale:
         del _SEMANTIC_STORE[p]
+    _SEMANTIC_STORE["_max_mtime"] = new_max
 
 
 @_register("semantic_search")
@@ -294,7 +308,10 @@ def _semantic_search(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> To
     query_emb = model.encode([query], show_progress_bar=False)[0]
 
     scored: list[tuple[float, str, int, int, str]] = []
-    for fpath, (_, chunks) in _SEMANTIC_STORE.items():
+    for fpath, value in _SEMANTIC_STORE.items():
+        if fpath == "_max_mtime":
+            continue
+        _, chunks = value
         for start, end, text, emb in chunks:
             a = np.asarray(query_emb)
             b = np.asarray(emb)

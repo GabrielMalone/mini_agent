@@ -24,7 +24,7 @@ from textual.binding import Binding
 
 import requests
 
-from config import AgentConfig
+from config import AgentConfig, resolve_workspace
 from llm import run_agent_turn, THINKING_START, THINKING_END
 from prompt import SYSTEM_PROMPT
 from safety import ReadSafetyGate, WriteSafetyGate
@@ -195,13 +195,7 @@ class MiniAgentTUI(App):
         yield Footer()
 
     def on_mount(self) -> None:
-        workspace = os.getcwd()
-        args = sys.argv[1:]
-        for i, arg in enumerate(args):
-            if arg == "--workspace" and i + 1 < len(args):
-                workspace = args[i + 1]
-                break
-        workspace = os.environ.get("AGENT_WORKSPACE", workspace)
+        workspace = resolve_workspace()
 
         self.config = AgentConfig.load(workspace)
         self.config.verbose = "--quiet" not in sys.argv
@@ -301,33 +295,10 @@ class MiniAgentTUI(App):
 
     def _export_to_file(self, path: str) -> None:
         """Write current conversation to a markdown file."""
-        blocks: list[str] = []
-        blocks.append("# mini_agent conversation\n")
-        for m in self.messages:
-            role = m.get("role", "?")
-            if role == "system":
-                blocks.append(f"### System\n\n{m.get('content', '')}\n")
-            elif role == "user":
-                blocks.append(f"### User\n\n{m.get('content', '')}\n")
-            elif role == "assistant":
-                content = m.get("content", "")
-                if m.get("reasoning_content"):
-                    blocks.append("> **Thinking**\n>")
-                    for line in m["reasoning_content"].split("\n"):
-                        blocks.append(f"> {line}")
-                    blocks.append("")
-                if content:
-                    blocks.append(f"### Assistant\n\n{content}\n")
-                if m.get("tool_calls"):
-                    for tc in m["tool_calls"]:
-                        fn = tc.get("function", {})
-                        name = fn.get("name", "?")
-                        args = fn.get("arguments", "{}")
-                        blocks.append(f"```\n{name}({args})\n```\n")
-            elif role == "tool":
-                blocks.append(f"> Tool result:\n>\n> {m.get('content', '')[:500]}\n")
+        from memory import export_conversation_markdown
+        md = export_conversation_markdown(self.messages)
         with open(path, "w") as f:
-            f.write("\n".join(blocks))
+            f.write(md)
 
     def _submit(self) -> None:
         """Send user message to the agent."""

@@ -143,3 +143,16 @@ def _apply_toml(config: AgentConfig, data: dict) -> None:
             )
             continue
         setattr(config, key, value)
+
+
+def resolve_workspace() -> str:
+    """Resolve workspace root from CLI arg, env var, or default to cwd.
+
+    Used by both the terminal REPL (mini_agent.py) and TUI (tui.py).
+    """
+    import sys as _sys
+    args = _sys.argv[1:]
+    for i, arg in enumerate(args):
+        if arg == "--workspace" and i + 1 < len(args):
+            return args[i + 1]
+    return os.environ.get("AGENT_WORKSPACE", os.getcwd())

@@ -32,7 +32,7 @@ import time
 
 import requests
 
-from config import AgentConfig, CONFIG_FILENAME
+from config import AgentConfig, CONFIG_FILENAME, resolve_workspace
 from llm import run_agent_turn
 from prompt import SYSTEM_PROMPT
 from safety import ReadSafetyGate, WriteSafetyGate
@@ -69,53 +69,20 @@ def _log(verbose: bool, *args, **kwargs) -> None:
 def _export_conversation(messages: list[dict], workspace: str) -> str:
     """Write conversation to a timestamped markdown file."""
     import datetime
+    from memory import export_conversation_markdown
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     fname = f"conversation_{ts}.md"
     path = os.path.join(workspace, fname)
-
-    blocks: list[str] = []
-    blocks.append(f"# mini_agent conversation — {ts}\n")
-    for m in messages:
-        role = m.get("role", "?")
-        if role == "system":
-            blocks.append(f"### System\n\n{m.get('content', '')}\n")
-        elif role == "user":
-            blocks.append(f"### User\n\n{m.get('content', '')}\n")
-        elif role == "assistant":
-            content = m.get("content", "")
-            if m.get("reasoning_content"):
-                blocks.append("> **Thinking**\n>")
-                for line in m["reasoning_content"].split("\n"):
-                    blocks.append(f"> {line}")
-                blocks.append("")
-            if content:
-                blocks.append(f"### Assistant\n\n{content}\n")
-            if m.get("tool_calls"):
-                for tc in m["tool_calls"]:
-                    fn = tc.get("function", {})
-                    name = fn.get("name", "?")
-                    args = fn.get("arguments", "{}")
-                    blocks.append(f"```\n{name}({args})\n```\n")
-        elif role == "tool":
-            blocks.append(f"> Tool result:\n>\n> {m.get('content', '')[:500]}\n")
-
+    md = export_conversation_markdown(messages)
+    md = md.replace("mini_agent conversation", f"mini_agent conversation — {ts}", 1)
     with open(path, "w") as f:
-        f.write("\n".join(blocks))
+        f.write(md)
     return path
 
 
 # ---------------------------------------------------------------------------
 # Main loop
 # ---------------------------------------------------------------------------
-
-def resolve_workspace() -> str:
-    """Resolve workspace root from CLI arg, env var, or default to cwd."""
-    args = sys.argv[1:]
-    for i, arg in enumerate(args):
-        if arg == "--workspace" and i + 1 < len(args):
-            return args[i + 1]
-    return os.environ.get("AGENT_WORKSPACE", os.getcwd())
-
 
 def main() -> None:
     # --help

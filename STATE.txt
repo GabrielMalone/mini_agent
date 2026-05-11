@@ -169,3 +169,23 @@ for pruned context.
 - [ ] **Responsive table widths** — `terminal.py` / `tui.py`: detect terminal width
       and truncate columns to fit, with overflow indicators (`…`). Currently pipe
       tables are fixed-width and break if the terminal is narrower than the table.
+
+## 2026-05-11 — Performance + DRY refactoring round
+
+**Single-pass symbol index** (`tools/search_ops.py`): `build_symbol_index()` used
+two `os.walk()` + two `open()` per .py file (first for defs, second for refs).
+Merged into one walk: collect defs + raw word refs in a single pass, then filter
+raw refs to known names after the walk. Halves I/O for index building.
+
+**Semantic search mtime guard** (`tools/search_ops.py`): `_sem_index()` was
+`os.walk()`-ing on every `semantic_search` call even when no files changed. Added
+a quick stat-only pre-check that compares max .py mtime against stored value;
+returns immediately if nothing changed. Avoids redundant walks in repeated queries.
+
+**DRY export conversation** (`memory.py`): Extracted `export_conversation_markdown()`
+from two nearly-identical copies in `mini_agent.py:_export_conversation()` and
+`tui.py:_export_to_file()`. Both callers now delegate to the shared function.
+
+**DRY workspace resolution** (`config.py`): Moved `resolve_workspace()` from
+`mini_agent.py` (with duplicate inline logic in `tui.py:on_mount()`) to `config.py`.
+Both entry points now import and call the same function.
