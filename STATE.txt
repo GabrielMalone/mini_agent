@@ -208,3 +208,18 @@ STATE.txt excerpt, and recent git log. Saves 2-3 discovery turns.
 **How:** `config.py:build_startup_context()` generates the context string.
 Both `mini_agent.py:main()` and `tui.py:on_mount()` prepend it as the first
 system message (before the main prompt and any restored history).
+
+## 2026-05-11 — Agent improvement round: checkpoint, edit-hint, diff tool
+
+**Pre-turn checkpoint** (`llm.py`): After the first tool round, inject a transient
+message listing files modified so far and suggesting which test files to run.
+Prevents the agent from losing track of what it changed.
+
+**edit_file pre-verification hint** (`tools/file_ops.py`): When `edit_file` fails
+with "old_string not found", scan the file for lines containing the first 30
+chars of the search string and include up to 3 candidates in the error hint.
+Helps the agent self-correct typos/whitespace mismatches.
+
+**Standalone diff tool** (`tools/file_ops.py`, `tools/__init__.py`): New `diff`
+tool. Runs `git diff` for the workspace or a specific file. Returns raw diff
+output or "No unstaged changes." Useful for verifying edits before committing.

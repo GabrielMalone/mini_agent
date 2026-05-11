@@ -121,14 +121,22 @@ def _edit_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResu
         with open(safety_result.resolved_path, "r") as f:
             original = f.read()
         if old not in original:
-            return ToolResult(
-                success=False,
-                content=(
-                    f"Edit failed: old_string not found in '{safety_result.resolved_path}'.\n"
-                    f"Hint: The string must match exactly — check whitespace, indentation, "
-                    f"and line endings. Try read_file first to verify the exact text."
-                ),
+            # Search for similar substrings to help the agent self-correct
+            candidates: list[str] = []
+            old_first_line = old.split("\n")[0].strip()
+            for lineno, line in enumerate(original.split("\n"), 1):
+                if old_first_line and old_first_line[:30] in line:
+                    candidates.append(f"  line {lineno}: {line.rstrip()[:120]}")
+                if len(candidates) >= 3:
+                    break
+            hint = (
+                f"Edit failed: old_string not found in '{safety_result.resolved_path}'.\n"
+                f"Hint: The string must match exactly — check whitespace, indentation, "
+                f"and line endings. Try read_file first to verify the exact text."
             )
+            if candidates:
+                hint += "\nSimilar lines found (did you mean one of these?):\n" + "\n".join(candidates)
+            return ToolResult(success=False, content=hint)
         updated = original.replace(old, new, 1)
         with open(safety_result.resolved_path, "w") as f:
             f.write(updated)
@@ -301,3 +309,38 @@ def _write_scratchpad_summary(args: dict) -> str:
     if len(content) > 60:
         preview += "…"
     return f"write_scratchpad(…{len(content)} chars → \"{preview}\")"
+
+
+# ---------------------------------------------------------------------------
+# diff tool — show unstaged changes via git
+# ---------------------------------------------------------------------------
+
+@_register("diff")
+def _diff(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
+    """Show unstaged changes (git diff) for the workspace or a specific file."""
+    import subprocess
+    path = args.get("path", "")
+    cmd = ["git", "-C", rg.workspace_root, "diff"]
+    if path:
+        cmd.append(path)
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        if r.returncode != 0:
+            return ToolResult(success=False, content=r.stderr or "git diff failed")
+        if not r.stdout.strip():
+            return ToolResult(success=True, content="No unstaged changes.")
+        return ToolResult(success=True, content=r.stdout.rstrip())
+    except FileNotFoundError:
+        return ToolResult(success=False, content="git not found")
+    except subprocess.TimeoutExpired:
+        return ToolResult(success=False, content="diff timed out")
+    except Exception as e:
+        return ToolResult(success=False, content=f"Error running diff: {e}")
+
+
+@_summarize("diff")
+def _diff_summary(args: dict) -> str:
+    path = args.get("path", "")
+    if path:
+        return f"diff({path})"
+    return "diff()"

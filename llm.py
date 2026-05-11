@@ -8,6 +8,7 @@ for SSE parsing with tool-call accumulation and connection-drop resilience.
 """
 
 import json
+import os
 import sys
 import time
 import threading
@@ -436,6 +437,29 @@ def run_agent_turn(
                     "continue — but be specific about what remains."
                 )
                 messages.append({"role": "user", "content": reminder, "_transient": True})
+
+            # Pre-turn checkpoint — remind agent of files modified and tests to run
+            if turn_count == 2 and hasattr(read_gate, "workspace_root"):
+                from tools import _MODIFIED_FILES
+                if _MODIFIED_FILES:
+                    mod_list = "\n".join(f"  - {f}" for f in sorted(_MODIFIED_FILES))
+                    test_hint = ""
+                    for mf in _MODIFIED_FILES:
+                        base = os.path.basename(mf)
+                        if base.startswith("test_") and base.endswith(".py"):
+                            test_hint += f"\n  Relevant test: {base}"
+                        elif base.endswith(".py") and not base.startswith("test_"):
+                            candidate = f"test_{base}"
+                            dp = os.path.dirname(mf)
+                            test_path = os.path.join(dp, candidate) if dp else candidate
+                            if os.path.isfile(os.path.join(read_gate.workspace_root, test_path)):
+                                test_hint += f"\n  Relevant test: {test_path}"
+                    ckpt = (
+                        f"Files modified this session:\n{mod_list}\n"
+                        f"Running `verify` or `run_tests`{test_hint if test_hint else ''} "
+                        f"after changes is recommended."
+                    )
+                    messages.append({"role": "user", "content": ckpt, "_transient": True})
 
             # Circuit breaker check — inject warning if identical tool calls repeat
             warning = _check_circuit(recent_tool_keys)

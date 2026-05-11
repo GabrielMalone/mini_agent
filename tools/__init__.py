@@ -307,6 +307,23 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "diff",
+            "description": "Show unstaged changes (git diff) in the workspace. If 'path' is given, shows diff for that file only; otherwise shows all unstaged changes. Returns the raw diff output. Works even on files that haven't been staged.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Optional: specific file path to diff. If omitted, shows all unstaged changes."
+                    }
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "task_status",
             "description": "Check the status of a background shell task by its ID. background=True in run_shell returns a task_id.",
             "parameters": {
