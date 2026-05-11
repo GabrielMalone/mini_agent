@@ -148,7 +148,8 @@ def _parse_stream(response: requests.Response, on_token: callable = None) -> dic
     tool_calls_by_index: dict[int, dict] = {}  # index → accumulated tc dict
     reasoning_header_printed = False
 
-    print(flush=True)  # separate streaming output from the prompt line
+    if not on_token:
+        print(flush=True)  # separate streaming output from the prompt line
 
     try:
         for line in response.iter_lines(decode_unicode=True):
@@ -163,19 +164,29 @@ def _parse_stream(response: requests.Response, on_token: callable = None) -> dic
 
                 # Text content — print and accumulate
                 if "content" in delta and delta["content"]:
+                    if full_reasoning and not full_content:
+                        # First content token after reasoning — signal end of thinking
+                        if on_token:
+                            on_token("\n[/thinking]")
                     full_content += delta["content"]
                     if on_token:
                         on_token(delta["content"])
                     else:
                         print(delta["content"], end="", flush=True)
 
-                # Reasoning content (thinking mode) — print dimmed to stderr
+                # Reasoning content (thinking mode) — forward via on_token or print
                 if "reasoning_content" in delta and delta["reasoning_content"]:
                     if not reasoning_header_printed and not full_content:
-                        print(c("  thinking…", _DIM), file=sys.stderr, flush=True)
+                        if on_token:
+                            on_token("\n[thinking] ")
+                        else:
+                            print(c("  thinking…", _DIM), file=sys.stderr, flush=True)
                         reasoning_header_printed = True
                     full_reasoning += delta["reasoning_content"]
-                    print(c(delta["reasoning_content"], _DIM), end="", flush=True)
+                    if on_token:
+                        on_token(delta["reasoning_content"])
+                    else:
+                        print(c(delta["reasoning_content"], _DIM), end="", flush=True)
 
                 # Tool calls — accumulate fragments by index
                 if "tool_calls" in delta:
@@ -212,10 +223,10 @@ def _parse_stream(response: requests.Response, on_token: callable = None) -> dic
             file=sys.stderr, flush=True,
         )
 
-    if full_reasoning:
+    if full_reasoning and not on_token:
         print(file=sys.stderr, flush=True)  # newline after dimmed reasoning block
 
-    if full_content:
+    if full_content and not on_token:
         print(flush=True)  # final newline after streamed text
 
     msg: dict = {"role": "assistant", "content": full_content}

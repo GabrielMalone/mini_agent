@@ -497,7 +497,6 @@ class TestWebSearch(unittest.TestCase):
     def setUp(self):
         self.workspace = tempfile.mkdtemp()
         self.write_gate, self.read_gate = _gates(self.workspace)
-        # Set API key for tool context
         from config import DEFAULT_EXA_API_KEY
         from tools import set_context
         set_context(exa_api_key=os.environ.get("EXA_API_KEY", DEFAULT_EXA_API_KEY))
@@ -509,31 +508,29 @@ class TestWebSearch(unittest.TestCase):
     def test_requires_query(self):
         tc = _make_tool_call("web_search")
         result = execute_tool(tc, self.write_gate, self.read_gate)
-        # Should fail because 'query' is missing (or succeed if it somehow works)
         self.assertIsInstance(result, ToolResult)
 
-    def test_valid_search_returns_results(self):
-        """Integration test — requires EXA_API_KEY."""
-        from config import DEFAULT_EXA_API_KEY
-        api_key = os.environ.get("EXA_API_KEY", DEFAULT_EXA_API_KEY)
-        if not api_key:
-            self.skipTest("EXA_API_KEY not set")
-        tc = _make_tool_call("web_search", query="Python typing module best practices", num_results=3)
-        result = execute_tool(tc, self.write_gate, self.read_gate)
-        self.assertTrue(result.success)
-        # Should have numbered results with URLs
-        self.assertIn("1.", result.content)
-        self.assertIn("http", result.content)
-
-    def test_no_results_for_nonsense_query(self):
-        from config import DEFAULT_EXA_API_KEY
-        api_key = os.environ.get("EXA_API_KEY", DEFAULT_EXA_API_KEY)
-        if not api_key:
-            self.skipTest("EXA_API_KEY not set")
-        tc = _make_tool_call("web_search", query="xxyzzzblargnothingatall123456789")
-        result = execute_tool(tc, self.write_gate, self.read_gate)
-        self.assertTrue(result.success)
-        # Either "No results" or some surprising find — both are ok
+    # --- API-call tests disabled to save Exa tokens ---
+    #
+    # def test_valid_search_returns_results(self):
+    #     from config import DEFAULT_EXA_API_KEY
+    #     api_key = os.environ.get("EXA_API_KEY", DEFAULT_EXA_API_KEY)
+    #     if not api_key:
+    #         self.skipTest("EXA_API_KEY not set")
+    #     tc = _make_tool_call("web_search", query="Python typing module best practices", num_results=3)
+    #     result = execute_tool(tc, self.write_gate, self.read_gate)
+    #     self.assertTrue(result.success)
+    #     self.assertIn("1.", result.content)
+    #     self.assertIn("http", result.content)
+    #
+    # def test_no_results_for_nonsense_query(self):
+    #     from config import DEFAULT_EXA_API_KEY
+    #     api_key = os.environ.get("EXA_API_KEY", DEFAULT_EXA_API_KEY)
+    #     if not api_key:
+    #         self.skipTest("EXA_API_KEY not set")
+    #     tc = _make_tool_call("web_search", query="xxyzzzblargnothingatall123456789")
+    #     result = execute_tool(tc, self.write_gate, self.read_gate)
+    #     self.assertTrue(result.success)
 
 
 # ---------------------------------------------------------------------------

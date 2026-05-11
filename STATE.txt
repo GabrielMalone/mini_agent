@@ -4,26 +4,29 @@
 
 ```
 mini_agent/
-├── mini_agent.py      # Orchestrator, set_context() for tool globals
-├── llm.py             # LLM: retry, streaming, resilience
+├── mini_agent.py      # Terminal REPL (--help, --workspace, --stream, --quiet, --no-color)
+├── tui.py             # Textual TUI: dark theme, streaming, cancel, multi-line paste
+├── llm.py             # LLM: retry, streaming, on_token callback for TUI
 ├── prompt.py          # SYSTEM_PROMPT (confirm-before-planning rule)
 ├── terminal.py        # ANSI colour helpers
 ├── config.py          # AgentConfig: TOML + env + CLI, exa_api_key
-├── tools.py           # 11 tools, registry + context, sentence-transformers
+├── tools.py           # 11 tools, registry + context, sentence-transformers, shell guard
 ├── safety.py          # ReadSafetyGate + WriteSafetyGate
 ├── memory.py          # SQLite: save/load/clear/prune/migrate
 ├── .gitignore
 ├── .mini_agent.toml
+├── requirements.txt   # exa-py, sentence-transformers, requests, tomli, textual
 ├── test_safety.py     # 25 tests
 ├── test_memory.py     # 22 tests
-├── test_tools.py      # 45 tests
+├── test_tools.py      # 54 tests (includes shell guard, semantic_search, web_search)
+├── test_tui.py        # 12 tests
 ├── test_agent_loop.py # 9 tests
 ├── test_config.py     # 18 tests
 ├── test_git.py        # 16 tests
 └── STATE.txt
 ```
 
-136 tests total.
+157 tests total.
 
 ### Tools (11)
 
@@ -33,7 +36,7 @@ mini_agent/
 | 2 | `write_file` | `path`, `content` | write | |
 | 3 | `edit_file` | `path`, `old`, `new` | write | First occurrence |
 | 4 | `list_directory` | `path` | read | |
-| 5 | `run_shell` | `command` | — | cwd locked, 60s timeout |
+| 5 | `run_shell` | `command`, `force?` | — | cwd locked, 60s timeout, destructive guard |
 | 6 | `search_files` | `pattern`, `path?`, `regex?`, `ignore_case?` | read | 50-result cap |
 | 7 | `file_info` | `path` | read | Size, mode, mtime, type |
 | 8 | `run_tests` | `path?` | — | Structured pass/fail |
@@ -41,7 +44,13 @@ mini_agent/
 | 10 | `web_search` | `query`, `num_results?`, `search_type?` | — | Exa API, highlights |
 | 11 | `git` | `subcommand`, `args?` | — | status/diff/log/init/add/commit/show/restore |
 
-### Search strategy (how the agent decides)
+### Shell guard (run_shell)
+
+15 destructive patterns blocked (`rm`, `rmdir`, `dd`, `mkfs`, `mkswap`, `chmod 777`,
+`chown`, `>/dev/`, `format`, `wiped`, `wipefs`, `parted`, `fdisk`, fork bomb,
+`>/dev/null && rm`). `force=True` bypasses.
+
+### Search strategy
 
 | What you need | Tool |
 |:---|:---|
@@ -50,13 +59,20 @@ mini_agent/
 | Code by meaning / concept | `semantic_search` |
 | Documentation, APIs, current info | `web_search` |
 
-### Key features
+### TUI (tui.py)
 
-- **Semantic search** — sentence-transformers (all-MiniLM-L6-v2), chunks at def/class boundaries, mtime-based cache, fully local
-- **Web search** — Exa API with highlights, `type=auto` by default
-- **SQLite memory** — ACID, auto-migration from JSON, auto-prune at 200 messages
-- **Git integration** — local-only, restore-all for disaster recovery
-- **Regex + case-insensitive search**
-- **Structured test runner**
-- **Confirm-before-planning rule** in system prompt
-- **Tool context** — `set_context()` for API keys and globals
+- **Dark theme**: #16162a background
+- **Streaming**: typewriter token display via `on_token` callback (llm.py)
+- **Cancel**: Ctrl+C sets cancel flag, worker thread exits cleanly
+- **Multi-line**: Shift+Enter inserts newline, paste preserves newlines
+- **Zones**: agent output (cyan), user input (green), tools (yellow), errors (red)
+
+### Flags (both mini_agent.py and tui.py)
+
+```
+  --workspace PATH    Set workspace root (default: cwd)
+  --stream            Stream responses token-by-token (terminal only; TUI always streams)
+  --quiet             Suppress tool execution logs
+  --no-color          Disable ANSI colours (terminal only)
+  --help, -h          Show usage
+```

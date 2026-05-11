@@ -2,24 +2,20 @@
 """
 tui.py — Textual TUI frontend for mini_agent.
 
-Provides a dark terminal interface with separate agent/user zones,
-streaming typewriter output, cancel support, and multi-line paste.
-
-Usage:
-    python tui.py [--workspace PATH] [--quiet]
+Usage: python tui.py [--workspace PATH] [--quiet]
 """
 
 import os
 import sys
 import threading
 from queue import Queue, Empty
+from dataclasses import dataclass
 
 from textual.app import App, ComposeResult
 from textual.containers import Container
-from textual.widgets import Header, Footer, RichLog, TextArea
-from textual.reactive import var
+from textual.widgets import Header, Footer, RichLog, Input
 
-from config import AgentConfig, CONFIG_FILENAME
+from config import AgentConfig
 from llm import call_deepseek
 from prompt import SYSTEM_PROMPT
 from safety import ReadSafetyGate, WriteSafetyGate
@@ -28,109 +24,96 @@ from tools import execute_tool, tool_summary, set_context
 
 
 # ---------------------------------------------------------------------------
-# TUI message types (on worker→UI queue)
+# Colour palette
 # ---------------------------------------------------------------------------
 
-class _TokenMsg:
-    """A content token from the streaming LLM response."""
-    __slots__ = ("text",)
-    def __init__(self, text: str):
-        self.text = text
-
-
-class _ToolStart:
-    """A tool call is about to execute."""
-    __slots__ = ("summary",)
-    def __init__(self, summary: str):
-        self.summary = summary
-
-
-class _ToolEnd:
-    """A tool call finished."""
-    __slots__ = ("ok", "detail")
-    def __init__(self, ok: bool, detail: str):
-        self.ok = ok
-        self.detail = detail
-
-
-class _Thinking:
-    """Reasoning content arrived."""
-    __slots__ = ("text",)
-    def __init__(self, text: str):
-        self.text = text
-
-
-class _Done:
-    """Agent turn complete."""
-    pass
-
-
-# Sentinel for stopping the worker
-_STOP = object()
-
-
-# ---------------------------------------------------------------------------
-# Colour constants (dark theme)
-# ---------------------------------------------------------------------------
-
-BG       = "#16162a"
-SURFACE  = "#1e1e3a"
-BORDER   = "#3a3a5a"
-ACCENT   = "#6c6cf0"
-TEXT     = "#c8c8e0"
-DIM      = "#6a6a8a"
-GREEN    = "#5cdb5c"
-YELLOW   = "#e0e060"
-RED      = "#e05050"
+BG      = "#1a1a1a"
+SURFACE = "#262626"
+BORDER  = "#3a3a3a"
+ACCENT  = "#aaaaaa"
+TEXT    = "#c8c8c8"
+DIM     = "#6a6a6a"
+GREEN   = "#5cdb5c"
+YELLOW  = "#e0c860"
+RED     = "#e05050"
 
 CSS = f"""
 Screen {{
     background: {BG};
 }}
 
-#header {{
+Header {{
     background: {SURFACE};
     color: {ACCENT};
     text-style: bold;
 }}
 
-#footer {{
+Footer {{
     background: {SURFACE};
     color: {DIM};
 }}
 
 #conversation {{
     background: {BG};
+    color: {TEXT};
     border: none;
-    padding: 1 2;
+    padding: 0 1;
+    height: 1fr;
     scrollbar-background: {BG};
     scrollbar-color: {BORDER};
 }}
 
 #input-area {{
     background: {SURFACE};
-    border: solid {BORDER};
+    padding: 1 2;
     height: auto;
     min-height: 3;
     max-height: 12;
 }}
 
-#input-area:focus-within {{
-    border: solid {ACCENT};
+#input {{
+    background: {SURFACE};
+    color: {TEXT};
+    border: none;
+    width: 100%;
 }}
 """
 
 
 # ---------------------------------------------------------------------------
-# Worker: runs the agent loop in a background thread
+# Queue messages
+# ---------------------------------------------------------------------------
+
+@dataclass
+class _TokenMsg:
+    text: str
+
+@dataclass
+class _ToolStart:
+    summary: str
+
+@dataclass
+class _ToolEnd:
+    ok: bool
+    detail: str
+
+@dataclass
+class _Done:
+    pass
+
+@dataclass
+class _Error:
+    msg: str
+
+
+# ---------------------------------------------------------------------------
+# Worker thread
 # ---------------------------------------------------------------------------
 
 class AgentWorker(threading.Thread):
-    """Runs the agent's LLM+tool loop, pushing display updates to the UI queue."""
+    """Runs the agent loop in a background thread, pushing messages to a queue."""
 
-    def __init__(self, messages: list[dict], config: AgentConfig,
-                 write_gate: WriteSafetyGate, read_gate: ReadSafetyGate,
-                 out: Queue):
+    def __init__(self, messages, config, write_gate, read_gate, out: Queue):
         super().__init__(daemon=True)
         self.messages = messages
         self.config = config
@@ -139,11 +122,9 @@ class AgentWorker(threading.Thread):
         self.out = out
         self.cancel = threading.Event()
 
-    def run(self) -> None:
+    def run(self):
         messages = self.messages
         config = self.config
-
-        # Force streaming so we get tokens
         config.stream = True
 
         while True:
@@ -151,10 +132,12 @@ class AgentWorker(threading.Thread):
                 return
 
             try:
-                msg = call_deepseek(messages, config,
-                                    on_token=lambda t: self.out.put(_TokenMsg(t)))
+                msg = call_deepseek(
+                    messages, config,
+                    on_token=lambda t: self.out.put(_TokenMsg(t)),
+                )
             except Exception as e:
-                self.out.put(_TokenMsg(f"\n[Error: {e}]\n"))
+                self.out.put(_Error(str(e)))
                 self.out.put(_Done())
                 return
 
@@ -197,22 +180,22 @@ class MiniAgentTUI(App):
         ("ctrl+q", "quit", "Quit"),
     ]
 
-    worker: AgentWorker | None = var(None, init=False)
-
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
         yield RichLog(id="conversation", highlight=True, markup=True, wrap=True)
         with Container(id="input-area"):
-            yield TextArea("", id="input", language=None)
+            yield Input(
+                placeholder="Type a message… (Enter to send, paste for multi-line)",
+                id="input",
+            )
         yield Footer()
 
     def on_mount(self) -> None:
-        """Start the agent session — restore memory, show banner."""
-        # Resolve workspace (same logic as mini_agent.py)
         workspace = os.getcwd()
-        for i, arg in enumerate(sys.argv[1:]):
-            if arg == "--workspace" and i + 1 < len(sys.argv):
-                workspace = sys.argv[i + 2]
+        args = sys.argv[1:]
+        for i, arg in enumerate(args):
+            if arg == "--workspace" and i + 1 < len(args):
+                workspace = args[i + 1]
                 break
         workspace = os.environ.get("AGENT_WORKSPACE", workspace)
 
@@ -230,105 +213,113 @@ class MiniAgentTUI(App):
             self.messages.extend(saved)
 
         log = self.query_one("#conversation", RichLog)
-
-        # Banner
-        log.write(f"[bold {ACCENT}]mini_agent[/] — {self.config.model}")
+        log.write(f"[bold {ACCENT}]mini_agent[/]  —  {self.config.model}")
         log.write(f"Workspace: {workspace}")
         if saved:
             log.write(f"Restored {len(saved)} messages from previous session")
-        log.write(f"Type [bold]Ctrl+Q[/] to quit, [bold]Ctrl+C[/] to cancel, [bold]Shift+Enter[/] for newline")
         log.write("—" * 50)
 
-        self.query_one("#input", TextArea).focus()
-
-        # Queue for worker→UI communication
+        self.query_one("#input", Input).focus()
         self.queue: Queue = Queue()
+        self.worker: AgentWorker | None = None
+        self._buf = ""
+        self._thinking_buf = ""
+        self._in_thinking = False
+        self._poll_timer = self.set_interval(0.05, self._drain)
+
+    # ------------------------------------------------------------------
+    # Actions
+    # ------------------------------------------------------------------
 
     def action_cancel(self) -> None:
-        """Cancel the currently running agent turn."""
         if self.worker is not None and self.worker.is_alive():
             self.worker.cancel.set()
+            self._flush_buf()
             log = self.query_one("#conversation", RichLog)
-            log.write(f"[{YELLOW}]╼ Cancelled.[/]")
-            self.worker = None
+            log.write(f"[{YELLOW}]  ╼ Cancelled.[/]")
+            self.query_one("#input", Input).focus()
 
-    def on_text_area_changed(self, event) -> None:
-        """No-op, handled via key intercept."""
-        pass
-
-    def on_key(self, event) -> None:
-        """Intercept Enter in the TextArea to submit."""
-        focused = self.focused
-        if not isinstance(focused, TextArea) or focused.id != "input":
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id != "input":
             return
-
-        if event.key == "enter":
-            event.stop()
-            event.prevent_default()
-            self._submit()
-        elif event.key == "shift+enter":
-            event.stop()
-            event.prevent_default()
-            focused.insert("\n")
-
-    def _submit(self) -> None:
-        """Send user message to the agent."""
-        input_widget = self.query_one("#input", TextArea)
-        text = input_widget.text.strip()
+        text = event.value.strip()
         if not text:
             return
-        input_widget.clear()
 
-        log = self.query_one("#conversation", RichLog)
-        # Echo user message
-        log.write(f"\n[{GREEN}]▸ {text}[/]\n")
+        event.input.value = ""
 
-        # Append to conversation
         self.messages.append({"role": "user", "content": text})
+        log = self.query_one("#conversation", RichLog)
+        log.write(f"\n[{GREEN}]▸ {text}[/]")
 
-        # Start worker
-        self.queue = Queue()
+        self._buf = ""
+        self._thinking_buf = ""
+        self._in_thinking = False
+
         self.worker = AgentWorker(
             self.messages, self.config,
             self.write_gate, self.read_gate,
             self.queue,
         )
         self.worker.start()
-        self.set_interval(0.05, self._poll_worker)
 
-    def _poll_worker(self) -> None:
-        """Drain the worker queue and update the UI."""
+    # ------------------------------------------------------------------
+    # Drain queue (called by timer every 50ms)
+    # ------------------------------------------------------------------
+
+    def _drain(self) -> None:
+        """Pull messages off the queue and write to the conversation log."""
         log = self.query_one("#conversation", RichLog)
-        first_token = True
 
         try:
             while True:
                 msg = self.queue.get_nowait()
 
                 if isinstance(msg, _TokenMsg):
-                    if first_token:
-                        log.write(f"[{ACCENT}]", scroll_end=False)
-                        first_token = False
-                    log.write(f"{msg.text}", scroll_end=False)
-
-                elif isinstance(msg, _Thinking):
-                    log.write(f"[{DIM} italic]{msg.text}[/]", scroll_end=False)
+                    text = msg.text
+                    # Handle thinking delimiters
+                    if text.startswith("\n[thinking] "):
+                        self._in_thinking = True
+                        self._thinking_buf = ""
+                        log.write(f"[{DIM} italic]  thinking…[/]")
+                        continue
+                    if text == "\n[/thinking]":
+                        if self._thinking_buf.strip():
+                            log.write(f"[{DIM} italic]  {self._thinking_buf.rstrip()}[/]")
+                        self._in_thinking = False
+                        self._thinking_buf = ""
+                        continue
+                    if self._in_thinking:
+                        self._thinking_buf += text
+                        continue
+                    # Content
+                    self._buf += text
+                    while "\n" in self._buf:
+                        idx = self._buf.index("\n")
+                        line = self._buf[:idx].rstrip()
+                        self._buf = self._buf[idx + 1:]
+                        if line:
+                            log.write(line)
 
                 elif isinstance(msg, _ToolStart):
-                    if not first_token:
-                        log.write("\n", scroll_end=False)
-                        first_token = True
-                    log.write(f"  [{YELLOW}]⚙ {msg.summary}[/]", scroll_end=False)
+                    self._flush_buf()
+                    self._in_thinking = False
+                    log.write(f"  [{YELLOW}]⚙ {msg.summary}[/]")
 
                 elif isinstance(msg, _ToolEnd):
                     symbol = "✓" if msg.ok else "✗"
                     color = GREEN if msg.ok else RED
-                    log.write(f" [{color}]{symbol}[/]", scroll_end=False)
+                    log.write(f"    [{color}]{symbol}  {msg.detail}[/]")
+
+                elif isinstance(msg, _Error):
+                    log.write(f"[{RED}]Error: {msg.msg}[/]")
 
                 elif isinstance(msg, _Done):
-                    if not first_token:
-                        log.write(f"[/{ACCENT}]", scroll_end=False)
-                    log.write("")
+                    self._flush_buf()
+                    self._in_thinking = False
+                    if self._thinking_buf.strip():
+                        log.write(f"[{DIM} italic]  {self._thinking_buf.rstrip()}[/]")
+                    self._thinking_buf = ""
                     self.memory.save(self.messages)
                     self.worker = None
                     return
@@ -337,8 +328,20 @@ class MiniAgentTUI(App):
             pass
 
         if self.worker is None or not self.worker.is_alive():
+            self._flush_buf()
+            if self._thinking_buf.strip():
+                log.write(f"[{DIM} italic]  {self._thinking_buf.rstrip()}[/]")
+            self._thinking_buf = ""
+            self._buf = ""
             self.memory.save(self.messages)
             self.worker = None
+            self.query_one("#input", Input).focus()
+
+    def _flush_buf(self) -> None:
+        if self._buf.strip():
+            log = self.query_one("#conversation", RichLog)
+            log.write(self._buf.rstrip())
+        self._buf = ""
 
 
 if __name__ == "__main__":

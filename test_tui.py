@@ -8,10 +8,9 @@ import tempfile
 import unittest
 from queue import Queue
 
-# These must import cleanly without starting a TUI loop
 from tui import (
     MiniAgentTUI, AgentWorker,
-    _TokenMsg, _ToolStart, _ToolEnd, _Thinking, _Done,
+    _TokenMsg, _ToolStart, _ToolEnd, _Done, _Error,
 )
 from config import AgentConfig, DEFAULT_API_KEY
 from safety import ReadSafetyGate, WriteSafetyGate
@@ -38,6 +37,11 @@ class TestTUIImports(unittest.TestCase):
         self.assertIn("ctrl+q", binds)
         self.assertEqual(binds["ctrl+q"], "quit")
 
+    def test_css_dark_gray_palette(self):
+        css = MiniAgentTUI.CSS
+        self.assertIn("#1a1a1a", css)
+        self.assertNotIn("16162a", css)
+
 
 class TestMessageTypes(unittest.TestCase):
     """Verify worker→UI message dataclass-like types."""
@@ -59,12 +63,12 @@ class TestMessageTypes(unittest.TestCase):
         m = _ToolEnd(False, "blocked")
         self.assertFalse(m.ok)
 
-    def test_thinking(self):
-        m = _Thinking("hmm...")
-        self.assertEqual(m.text, "hmm...")
-
     def test_done(self):
         self.assertIsInstance(_Done(), _Done)
+
+    def test_error(self):
+        m = _Error("something broke")
+        self.assertEqual(m.msg, "something broke")
 
 
 class TestAgentWorker(unittest.TestCase):
@@ -100,7 +104,6 @@ class TestAgentWorker(unittest.TestCase):
         w.cancel.set()
         w.start()
         w.join(timeout=5)
-        # Worker forces stream=True
         self.assertTrue(config.stream)
 
 
