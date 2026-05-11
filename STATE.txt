@@ -8,7 +8,7 @@ mini_agent/
 │                      #   --approve, --allow-overwrites, /export command)
 ├── tui.py             # Textual TUI: dark theme, streaming, cancel, multi-line paste,
 │                      #   real-time shell output, /clear, /help, /export, turn counter,
-│                      #   approval-mode visual indicator
+│                      #   approval-mode visual indicator, pipe-table monospace rendering
 ├── llm.py             # LLM: retry, streaming, on_token, run_agent_turn,
 │                      #   parallel tools, session reuse, progress checks, tool cache,
 │                      #   incremental tool execution, circuit breaker, git-diff injection
@@ -21,7 +21,7 @@ mini_agent/
 │   │                  #   cache, task registry, JSON repair, schema validation
 │   ├── file_ops.py    # read_file, write_file, edit_file, list_directory, file_info,
 │   │                  #   write_scratchpad (diff output in edit_file)
-│   ├── shell_ops.py   # run_shell, search_files, run_tests, git, task_status
+│   ├── shell_ops.py   # run_shell, search_files, run_tests, git, task_status, verify
 │   └── search_ops.py  # find_symbol, find_usages, semantic_search, web_search,
 │                      #   combined forward+reverse index, disk cache
 ├── safety.py          # ReadSafetyGate + WriteSafetyGate
@@ -45,7 +45,7 @@ mini_agent/
 
 246 tests total.
 
-### Tools (15)
+### Tools (16)
 
 | # | Tool | Args | Gate | Notes |
 |---|------|------|:---:|-------|
@@ -64,6 +64,7 @@ mini_agent/
 | 13 | `task_status` | `task_id` | — | Checks background shell task state |
 | 14 | `write_scratchpad` | `content` | — | Persistent working notes, overwrites |
 | 15 | `find_usages` | `name` | read | Reverse symbol index, grep fallback |
+| 16 | `verify` | (none) | — | Lint + tests for files modified this session |
 
 ### Search + lookup strategy
 
