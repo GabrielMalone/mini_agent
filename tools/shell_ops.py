@@ -300,6 +300,92 @@ def _run_tests_summary(args: dict) -> str:
 
 
 # ---------------------------------------------------------------------------
+# verify — lint + run tests for recently modified files
+# ---------------------------------------------------------------------------
+
+@_register("verify")
+def _verify(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
+    """Run lint + relevant tests for files modified this session.
+
+    Uses _MODIFIED_FILES tracked by write_file and edit_file to determine
+    which test files to run.  Falls back to running all tests if nothing
+    has been modified yet.
+    """
+    import subprocess, os as _os
+    root = rg.workspace_root
+
+    results: list[str] = []
+
+    # Step 1: lint
+    try:
+        r = subprocess.run(
+            ["python", "-m", "pytest", "test_lint.py", "-q"],
+            cwd=root, capture_output=True, text=True, timeout=60,
+        )
+        if r.returncode == 0:
+            results.append("Lint: passed")
+        else:
+            last = r.stdout.strip().split("\n")[-1] if r.stdout.strip() else "failed"
+            results.append(f"Lint: {last}")
+    except Exception as e:
+        results.append(f"Lint: error ({e})")
+
+    # Step 2: tests for modified files
+    from tools import _MODIFIED_FILES
+    test_targets: list[str] = []
+    if _MODIFIED_FILES:
+        seen = set()
+        for fpath in _MODIFIED_FILES:
+            base = _os.path.basename(fpath)
+            if base.startswith("test_"):
+                test_targets.append(base)
+            else:
+                name = _os.path.splitext(base)[0]
+                test_candidate = f"test_{name}.py"
+                if test_candidate not in seen:
+                    if _os.path.exists(_os.path.join(root, test_candidate)):
+                        seen.add(test_candidate)
+                        test_targets.append(test_candidate)
+
+    if not test_targets:
+        test_targets.append(".")  # run all
+
+    for target in test_targets:
+        try:
+            r = subprocess.run(
+                ["python", "-m", "pytest", target, "-q"],
+                cwd=root, capture_output=True, text=True, timeout=120,
+            )
+            out = (r.stdout + r.stderr).strip()
+            # Extract summary line
+            for line in reversed(out.split("\n")):
+                if "passed" in line or "failed" in line or "error" in line:
+                    results.append(f"Tests ({target}): {line.strip()}")
+                    break
+            else:
+                results.append(f"Tests ({target}): exit {r.returncode}")
+        except subprocess.TimeoutExpired:
+            results.append(f"Tests ({target}): timed out")
+        except Exception as e:
+            results.append(f"Tests ({target}): error ({e})")
+
+    # Step 3: modified files summary
+    if _MODIFIED_FILES:
+        results.append(f"Modified files: {len(_MODIFIED_FILES)} files")
+
+    all_ok = all("failed" not in r.lower() for r in results if "Tests" in r)
+    return ToolResult(
+        success=all_ok,
+        content="\n".join(results),
+    )
+
+
+@_summarize("verify")
+def _verify_summary(args: dict) -> str:
+    return "verify()"
+
+
+# ---------------------------------------------------------------------------
 # git
 # ---------------------------------------------------------------------------
 

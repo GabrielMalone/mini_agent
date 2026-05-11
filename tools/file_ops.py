@@ -145,6 +145,8 @@ def _edit_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResu
         if len(diff_text) > 2000:
             diff_text = diff_text[:2000] + "\n… (diff truncated)"
 
+        from tools import _MODIFIED_FILES
+        _MODIFIED_FILES.add(args["path"])
         return ToolResult(
             success=True,
             content=(

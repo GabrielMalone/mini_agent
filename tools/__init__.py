@@ -386,6 +386,67 @@ TOOLS = [
         },
     },
 
+    {
+        "type": "function",
+        "function": {
+            "name": "write_scratchpad",
+            "description": (
+                "Write content to the agent's scratchpad — a persistent working note "
+                "that survives across turns. Use this to track your plan, progress, "
+                "decisions, things you've tried, and open questions. The scratchpad "
+                "is shown to you at the start of every turn. Overwrites previous content."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "content": {
+                        "type": "string",
+                        "description": "Content to write to the scratchpad. Use markdown.",
+                    }
+                },
+                "required": ["content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "find_usages",
+            "description": (
+                "Find all usages (references) of a Python symbol across the workspace. "
+                "Returns file path, line number, and surrounding context for each usage. "
+                "Much faster than grep for symbol references. Use this to find all callers "
+                "of a function or all places a class/variable is used before refactoring."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Symbol name to find usages of (e.g. 'execute_tool', 'ToolResult').",
+                    }
+                },
+                "required": ["name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "verify",
+            "description": (
+                "Run lint + relevant tests for files modified in the current session. "
+                "Uses tracked writes/edits to find matching test files. Falls back to "
+                "running all tests if nothing has been modified yet. Use after code "
+                "changes to verify nothing broke before moving on."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
 ]
 
 
@@ -427,6 +488,9 @@ _TOOL_CONTEXT: dict = {}
 # Per-turn cache for read-only tools. Cleared by run_agent_turn each turn.
 # Key: (tool_name, sorted_args_json). Cached read_file/file_info/etc.
 _TOOL_CACHE: dict[str, "ToolResult"] = {}
+
+# Files modified by write/edit — used by verify
+_MODIFIED_FILES: set[str] = set()
 _TASK_REGISTRY: dict[str, subprocess.Popen] = {}  # background shell task registry
 _CACHEABLE = frozenset({
     "read_file", "file_info", "list_directory",

@@ -517,13 +517,30 @@ class MiniAgentTUI(App):
 
         # Content — accumulate, flush complete lines or ~300-char chunks
         self._buf += text
+        # Buffer table rows to flush as monospace code block
+        if not hasattr(self, "_table_buf"):
+            self._table_buf: list[str] = []
         while True:
             nl = self._buf.find("\n")
             if nl != -1 and nl < 300:
                 line = self._buf[:nl].rstrip()
                 self._buf = self._buf[nl + 1:]
                 if line:
-                    log.write(_safe(line))
+                    stripped = line.strip()
+                    is_table = (stripped.startswith("|") and stripped.endswith("|")
+                                and "|" in stripped[1:-1])
+                    is_sep = (stripped.startswith("|") and all(c in "| -:" for c in stripped))
+                    if is_table or is_sep:
+                        self._table_buf.append(line)
+                    else:
+                        # Flush any buffered table first
+                        if self._table_buf:
+                            log.write("[code]")
+                            for tline in self._table_buf:
+                                log.write(tline)
+                            log.write("[/code]")
+                            self._table_buf = []
+                        log.write(_safe(line))
                 continue
 
             # No newline soon — flush at ~300 chars on a space boundary
