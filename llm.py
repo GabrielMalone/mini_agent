@@ -389,6 +389,7 @@ def run_agent_turn(
                     "Your scratchpad (current working notes — use write_scratchpad "
                     "to update):\n\n" + scratchpad
                 ),
+                "_transient": True,
             })
 
     total_usage: dict[str, int] = {}
@@ -412,12 +413,12 @@ def run_agent_turn(
                     "give the final answer. If you truly need more turns, "
                     "continue — but be specific about what remains."
                 )
-                messages.append({"role": "user", "content": reminder})
+                messages.append({"role": "user", "content": reminder, "_transient": True})
 
             # Circuit breaker check — inject warning if identical tool calls repeat
             warning = _check_circuit(recent_tool_keys)
             if warning:
-                messages.append({"role": "user", "content": warning})
+                messages.append({"role": "user", "content": warning, "_transient": True})
 
             # Collect tools executed incrementally during the stream.
             # Tool results MUST be appended AFTER the assistant message (which

@@ -300,3 +300,23 @@ find_symbol) and had repeated edit_file failures from string mismatches
 
 **Tests:** 9 new tests in test_resilience.py (schema, scratchpad, diff).
 **Status:** 243 tests pass, lint clean.
+
+## 2026-05-11 — Transient message stripping (context hygiene)
+
+**Problem:** Scratchpad snapshots, progress checks, and circuit breaker
+warnings were injected as `user` messages and persisted in saved history.
+After a long session, the conversation was littered with old scratchpads
+and "how's it going?" prompts indistinguishable from real user input.
+
+**Fix:** Added `_transient: True` to all three injection sites in
+`run_agent_turn`.  `_clean_messages` strips them (alongside system
+messages) before save.  The `_` prefix is already stripped by
+`call_deepseek` before API send, so the marker never leaks.
+
+| Injection | Before | After |
+|-----------|--------|-------|
+| Scratchpad | persisted every turn | stripped on save |
+| Progress check (every 5 turns) | persisted every time | stripped on save |
+| Circuit breaker warning | persisted every time | stripped on save |
+
+**Tests:** 3 new tests (TestTransientMessages). **Status:** 246 pass.

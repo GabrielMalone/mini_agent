@@ -467,6 +467,8 @@ def _clean_messages(messages: list[dict]) -> list[dict]:
     for m in messages:
         if m.get("role") == "system":
             continue
+        if m.get("_transient"):
+            continue  # scratchpad, progress, circuit breaker — never persist
         if m.get("role") == "tool":
             tcid = m.get("tool_call_id", "")
             if tcid and tcid not in valid_ids:

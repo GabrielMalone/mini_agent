@@ -420,5 +420,45 @@ class TestEditFileDiff(unittest.TestCase):
         self.assertIn("goodbye world", result.content)
 
 
+# ---------------------------------------------------------------------------
+# 8. Transient message stripping
+# ---------------------------------------------------------------------------
+
+class TestTransientMessages(unittest.TestCase):
+    """Verify that _transient messages are stripped from saved history."""
+
+    def test_transient_messages_are_cleaned(self):
+        from memory import _clean_messages
+        messages = [
+            {"role": "user", "content": "real input"},
+            {"role": "user", "content": "scratchpad snapshot", "_transient": True},
+            {"role": "user", "content": "progress check", "_transient": True},
+            {"role": "assistant", "content": "response"},
+        ]
+        cleaned = _clean_messages(messages)
+        self.assertEqual(len(cleaned), 2)
+        self.assertEqual(cleaned[0]["content"], "real input")
+        self.assertEqual(cleaned[1]["content"], "response")
+
+    def test_non_transient_still_preserved(self):
+        from memory import _clean_messages
+        messages = [
+            {"role": "user", "content": "real question"},
+            {"role": "assistant", "content": "real answer"},
+        ]
+        cleaned = _clean_messages(messages)
+        self.assertEqual(len(cleaned), 2)
+
+    def test_all_transient_empty_result(self):
+        from memory import _clean_messages
+        messages = [
+            {"role": "user", "content": "a", "_transient": True},
+            {"role": "user", "content": "b", "_transient": True},
+        ]
+        cleaned = _clean_messages(messages)
+        self.assertEqual(len(cleaned), 0)
+
+
+
 if __name__ == "__main__":
     unittest.main()
