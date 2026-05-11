@@ -306,6 +306,10 @@ class MiniAgentTUI(App):
         if self.worker is not None and self.worker.is_alive():
             return
 
+        # Defensive: clear any stale table buffer from a previous turn
+        if hasattr(self, "_table_buf"):
+            self._table_buf = []
+
         input_widget = self.query_one("#input", TextArea)
         text = input_widget.text.strip()
         if not text:
@@ -530,6 +534,14 @@ class MiniAgentTUI(App):
 
     def _finish_turn(self, usage: dict | None = None, turn_count: int = 0) -> None:
         """Commit buffers, save memory, and clean up after a turn."""
+        # Flush any remaining table buffer before regular buf
+        if hasattr(self, "_table_buf") and self._table_buf:
+            log = self.query_one("#conversation", RichLog)
+            log.write("[code]")
+            for tline in self._table_buf:
+                log.write(_safe(tline))
+            log.write("[/code]")
+            self._table_buf = []
         self._flush_buf()
         self._in_thinking = False
         self._thinking_buf = ""

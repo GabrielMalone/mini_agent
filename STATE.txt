@@ -189,3 +189,13 @@ from two nearly-identical copies in `mini_agent.py:_export_conversation()` and
 **DRY workspace resolution** (`config.py`): Moved `resolve_workspace()` from
 `mini_agent.py` (with duplicate inline logic in `tui.py:on_mount()`) to `config.py`.
 Both entry points now import and call the same function.
+
+## 2026-05-11 — TUI table buffer crash fix
+
+**Bug:** `MarkupError: closing tag '[/code]' at position 0 doesn't match any open tag`.
+Table rows were buffered in `_table_buf` but never flushed at turn end — if an
+agent response ended with a table, rows carried over to the next turn, and the
+`[code]`/`[/code]` wrapper could land out of order.
+
+**Fix:** Flush `_table_buf` in `_finish_turn` (before `_flush_buf`). Add
+defensive clear in `_submit`.
