@@ -281,7 +281,7 @@ class MemoryStore:
     into a synthetic context message.
     """
 
-    DEFAULT_MAX_MESSAGES = 500
+    DEFAULT_MAX_MESSAGES = 300
     DEFAULT_MAX_TOKENS   = 800_000
 
     def __init__(

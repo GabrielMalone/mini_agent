@@ -138,3 +138,28 @@ assistant message for valid API ordering.
   --approve           Ask confirmation before write/destructive tools
   --allow-overwrites  Allow overwriting files outside workspace
 ```
+
+
+## 2026-05-11 — "tool names must be unique" 400 error
+
+**Problem:** After fixing the message ordering bug, a second 400 error appeared:
+`tool names must be unique`
+
+**Root cause:** The TOOLS list in `tools/__init__.py` had 21 entries with
+duplicate names — `write_scratchpad` (3x), `find_usages` (3x), `verify` (2x).
+These were appended by previous self-update attempts without removing old
+definitions.
+
+**Fix:** Deduplicated TOOLS by function name (keeping first occurrence).
+21 tools → 16 tools.  Test count went from 212 to 246 (34 tests were
+silently breaking on the duplicates).
+
+## 2026-05-11 — Lowered default max messages from 500 → 300
+
+**Rationale:** 500 messages is technically fine for a 1M context window but
+wasteful. Every turn reprocesses the full history, driving up cost and latency.
+Model attention also degrades in the "middle" of very long contexts. 300 messages
+(~100+ full turns) is plenty for complex sessions; summarization fills the gap
+for pruned context.
+
+**Change:** `memory.py` `DEFAULT_MAX_MESSAGES`: 500 → 300
