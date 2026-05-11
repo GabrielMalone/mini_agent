@@ -5,17 +5,21 @@
 ```
 mini_agent/
 ├── mini_agent.py      # Terminal REPL (--help, --workspace, --stream, --quiet, --no-color)
-├── tui.py             # Textual TUI: dark theme, streaming, cancel, multi-line paste, /clear
+├── tui.py             # Textual TUI: dark theme, streaming, cancel, multi-line paste,
+│                      #   real-time shell output, /clear, /help, turn counter
 ├── llm.py             # LLM: retry, streaming, on_token, THINKING_START/END,
-│                      #   run_agent_turn: parallel tools, session reuse, progress checks
-├── prompt.py          # SYSTEM_PROMPT (confirm-before-planning, parallel-tool hint)
+│                      #   run_agent_turn: parallel tools, session reuse, progress checks,
+│                      #   tool cache clearing, on_output streaming
+├── prompt.py          # SYSTEM_PROMPT (confirm-before-planning, parallel-tool hint,
+│                      #   multistep-planning instruction)
 ├── terminal.py        # ANSI colour helpers
 ├── config.py          # AgentConfig: TOML + env + CLI, exa_api_key
-├── tools/             # 11 tools split across 4 modules
-│   ├── __init__.py    # TOOLS list, ToolResult, registry, dispatch, re-exports
+├── tools/             # 12 tools split across 4 modules
+│   ├── __init__.py    # TOOLS list, ToolResult, registry, dispatch, cache, re-exports
 │   ├── file_ops.py    # read_file, write_file, edit_file, list_directory, file_info
-│   ├── shell_ops.py   # run_shell, search_files, run_tests, git
-│   └── search_ops.py  # semantic_search, web_search
+│   ├── shell_ops.py   # run_shell (Popen streaming, output truncation), search_files,
+│   │                  #   run_tests, git
+│   └── search_ops.py  # find_symbol (workspace symbol index), semantic_search, web_search
 ├── safety.py          # ReadSafetyGate + WriteSafetyGate
 ├── memory.py          # SQLite: save/load/clear, token-aware prune, tool compression, summarization
 ├── .gitignore
@@ -23,7 +27,7 @@ mini_agent/
 ├── requirements.txt   # exa-py, sentence-transformers, requests, tomli, textual
 ├── test_safety.py     # 25 tests
 ├── test_memory.py     # 22 tests
-├── test_tools.py      # 53 tests (web_search API tests disabled to save tokens)
+├── test_tools.py      # 66 tests (cache, find_symbol, streaming shell, error hints, planning)
 ├── test_tui.py        # 12 tests
 ├── test_agent_loop.py # 16 tests (includes parallel tool exec)
 ├── test_config.py     # 18 tests
@@ -32,23 +36,24 @@ mini_agent/
 └── STATE.txt
 ```
 
-165 tests total.
+181 tests total.
 
-### Tools (11)
+### Tools (12)
 
 | # | Tool | Args | Gate | Notes |
 |---|------|------|:---:|-------|
-| 1 | `read_file` | `path` | read | |
+| 1 | `read_file` | `path` | read | Truncates at 300 lines |
 | 2 | `write_file` | `path`, `content` | write | |
 | 3 | `edit_file` | `path`, `old`, `new` | write | First occurrence |
 | 4 | `list_directory` | `path` | read | |
-| 5 | `run_shell` | `command`, `force?` | — | cwd locked, 60s timeout, destructive guard |
+| 5 | `run_shell` | `command`, `force?` | — | cwd locked, 60s timeout, destructive guard, real-time streaming, 500/100 line truncation |
 | 6 | `search_files` | `pattern`, `path?`, `regex?`, `ignore_case?` | read | 50-result cap |
 | 7 | `file_info` | `path` | read | Size, mode, mtime, type |
 | 8 | `run_tests` | `path?` | — | Structured pass/fail |
-| 9 | `semantic_search` | `query`, `path?` | read | all-MiniLM-L6-v2, local embeddings |
+| 9 | `semantic_search` | `query`, `path?` | read | all-MiniLM-L6-v2, local embeddings, mtime cache |
 | 10 | `web_search` | `query`, `num_results?`, `search_type?` | — | Exa API, highlights |
 | 11 | `git` | `subcommand`, `args?` | — | status/diff/log/init/add/commit/show/restore |
+| 12 | `find_symbol` | `name` | read | Scans .py def/class lines at startup, substring fallback |
 
 ### Shell guard (run_shell)
 
@@ -56,33 +61,51 @@ mini_agent/
 `chown`, `>/dev/`, `format`, `wiped`, `wipefs`, `parted`, `fdisk`, fork bomb,
 `>/dev/null && rm`). `force=True` bypasses.
 
-### Search strategy
+### Search + lookup strategy
 
 | What you need | Tool |
 |:---|:---|
+| Function/class definition location | `find_symbol` (fast, startup-indexed) |
 | Exact pattern (regex) | `search_files` with `regex: true` |
 | Case-insensitive substring | `search_files` with `ignore_case: true` |
 | Code by meaning / concept | `semantic_search` |
 | Documentation, APIs, current info | `web_search` |
+
+### Tool cache
+
+Read-only tools (read_file, file_info, list_directory, search_files, semantic_search,
+web_search) are cached within a turn by (name, sorted_args). `clear_tool_cache()` is
+called at turn start by `run_agent_turn`. Write tools and streaming calls skip the cache.
+
+### Error hints
+
+Every common failure path includes a `Hint:` line:
+- read_file not found → "Check the path spelling. Try list_directory."
+- write_file blocked → "Use a path inside the workspace."
+- edit_file mismatch → "Check whitespace, indentation. Try read_file first."
+- run_shell error → "Check command and flag spelling. Try with --help."
+- destructive guard → "Use force=True to bypass."
+- exit code 127 → "Command not found. Check the spelling."
 
 ### TUI (tui.py)
 
 - **Dark theme**: #111111 background, #1b1b1b surface
 - **Streaming**: Thinking flushed on sentence boundaries (. ? ! :) or every ~400 chars,
   with `┃` left-border prefix for visual grouping. Content flushed on newlines or
-  every ~300 chars at word boundaries. No more paragraphs held hostage.
+  every ~300 chars at word boundaries.
+- **Shell output**: streamed in real-time (dim) via `_ToolOutput` messages from the worker.
 - **Thinking separator**: `▔▔▔ thinking ▔▔▔` header marks the start of each reasoning block.
+- **Parallel tools**: `⫼` icon with connected visual for parallel calls, `⚙` for singles.
+- **Plan display**: agent states plan as text before tool calls begin.
 - **Markup safety**: all user/LLM content escaped via `_safe()` to prevent Rich markup errors.
 - **Multi-line input**: TextArea widget. Enter submits, Shift+Enter inserts newline.
-- **Cancel**: Ctrl+C sets cancel flag, worker thread exits cleanly.  Memory saved on cancel.
-- **Tool visibility**: `⚙` for single tools, `⫼` for parallel tools.  ✓/✗ detail on end.
-- **Queue architecture**: AgentWorker pushes messages to a thread-safe Queue;
-  set_interval(50ms) drain loop reads them on the main thread.
+- **Cancel**: Ctrl+C sets cancel flag, worker thread exits cleanly. Memory saved on cancel.
+- **Queue architecture**: AgentWorker → thread-safe Queue → set_interval(50ms) drain loop.
 - **Shared agent loop**: `run_agent_turn()` in llm.py used by both TUI and terminal REPL.
 - **Double-submit guard**: Enter is ignored while a worker is active.
-- **Token usage**: displayed in status line when available (e.g. `— 42 msgs | 1.2k tok | turn 3 | model`).
-- **Commands**: `/clear` resets conversation memory, `/help` lists commands.
-- **Input history**: Up/Down when input is empty cycles through submitted messages.
+- **Token usage**: displayed in status line (e.g. `— 42 msgs | 1.2k tok | turn 3 | model`).
+- **Commands**: `/clear` resets memory, `/help` lists commands.
+- **Input history**: Up/Down when empty cycles through submitted messages.
 - **Session reuse**: one requests.Session per app session, reused across all turns.
 
 ### Flags (both mini_agent.py and tui.py)
@@ -98,12 +121,14 @@ mini_agent/
 ### LLM agent loop (llm.py)
 
 - **Parallel tool execution**: When the LLM returns 2+ independent tool calls, they run
-  concurrently via ThreadPoolExecutor. Single tools stay inline (no thread overhead).
-- **Session reuse**: One requests.Session per app session eliminates per-turn TCP+TLS handshake.
-- **Progress checks**: Every 5 tool-using turns, a user-role reminder is injected so the
-  agent assesses progress and decides whether to continue or wrap up.
+  concurrently via ThreadPoolExecutor. Single tools stay inline.
+- **Session reuse**: One requests.Session per app session eliminates per-turn TCP+TLS.
+- **Progress checks**: Every 5 tool-using turns, a user-role reminder asks the agent to
+  assess progress and decide whether to continue or wrap up.
 - **max_turns**: Default 100 (effectively unlimited; user controls cancellation).
-- **Retry**: Exponential backoff (1s, 2s, 4s) on 429/5xx. Connection-drop resilience in streaming.
+- **Retry**: Exponential backoff (1s, 2s, 4s) on 429/5xx. Connection-drop resilience.
+- **Streaming shell**: `on_tool_output` callback passed through to `execute_tool` →
+  `_run_shell` → Popen reader threads → real-time TUI display.
 
 ### Memory (memory.py)
 
@@ -118,9 +143,11 @@ Three-tier memory management applied on every save:
    "Earlier in this conversation: …" message lists files read/written, commands
    run, and recent user prompts.
 
-### Tool notes
+### Prompt (prompt.py)
 
-- **read_file** truncates at 300 lines (saves LLM tokens on large files). The truncation
-  note points to edit_file for fine-grained access.
-- **semantic_search** lazy-loads all-MiniLM-L6-v2 (~80 MB). Unchanged files are
-  skipped on re-index (mtime-based cache).
+- **Confirm before planning**: agent must confirm the plan with the user before starting
+  a new feature.
+- **Parallel tools**: tells the agent to batch independent tools in one response.
+- **Multistep planning**: tells the agent to state the plan in 1-3 sentences before
+  executing tools. Example: "I'll read config.py, search for references to the old key,
+  then update all three files."
