@@ -253,3 +253,14 @@ and update it before continuing."
 a flag in `_TOOL_CONTEXT`. `run_agent_turn` checks it every 3 turns after turn 4;
 if the scratchpad hasn't been updated, injects a transient warning. Flag resets
 after each check so the nudge repeats if still stale.
+
+## 2026-05-11 — TUI [/code] crash fix v2: single write() for table flush
+
+**Root cause:** The table buffer flush wrote `[code]`, table rows, and `[/code]`
+as three separate `log.write()` calls. RichLog parses markup per-write, so if
+any write was interrupted or reordered, `[/code]` could arrive without a
+matching `[code]`, causing `MarkupError at position 0`.
+
+**Fix:** Combined all three into a single `log.write("[code]\\n" + rows + "\\n[/code]")`.
+Also added defensive `_table_buf` clearing in `_flush_buf`. Applied in both
+`_handle_token` and `_finish_turn`.

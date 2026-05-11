@@ -514,10 +514,7 @@ class MiniAgentTUI(App):
                     else:
                         # Flush any buffered table first
                         if self._table_buf:
-                            log.write("[code]")
-                            for tline in self._table_buf:
-                                log.write(_safe(tline))
-                            log.write("[/code]")
+                            log.write("[code]\n" + "\n".join(self._table_buf) + "\n[/code]")
                             self._table_buf = []
                         log.write(_safe(line))
                 continue
@@ -541,10 +538,7 @@ class MiniAgentTUI(App):
         # Flush any remaining table buffer before regular buf
         if hasattr(self, "_table_buf") and self._table_buf:
             log = self.query_one("#conversation", RichLog)
-            log.write("[code]")
-            for tline in self._table_buf:
-                log.write(_safe(tline))
-            log.write("[/code]")
+            log.write("[code]\n" + "\n".join(self._table_buf) + "\n[/code]")
             self._table_buf = []
         self._flush_buf()
         self._in_thinking = False
@@ -570,6 +564,10 @@ class MiniAgentTUI(App):
             log = self.query_one("#conversation", RichLog)
             log.write(_safe(self._buf.rstrip()))
         self._buf = ""
+        # Defensive: clear stale table buffer (shouldn't still have data,
+        # but if it does, a partial flush could cause Rich markup errors)
+        if hasattr(self, "_table_buf"):
+            self._table_buf = []
 
 
 if __name__ == "__main__":
