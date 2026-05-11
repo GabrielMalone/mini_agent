@@ -745,6 +745,16 @@ class TestErrorHints(unittest.TestCase):
         self.assertIn("Hint:", result.content)
         self.assertIn("list_directory", result.content.lower())
 
+    def test_shell_streaming_stderr(self):
+        """on_output receives stderr lines with [stderr] prefix."""
+        cmd = "echo to_stderr >&2"
+        tc = _make_tool_call("run_shell", command=cmd)
+        lines = []
+        result = execute_tool(tc, self.write_gate, self.read_gate, on_output=lines.append)
+        self.assertTrue(result.success)
+        self.assertTrue(any("to_stderr" in l and "stderr" in l for l in lines),
+                        f"Expected [stderr] prefix in output lines: {lines}")
+
     def test_write_blocked_includes_hint(self):
         outside = tempfile.mkdtemp()
         try:
@@ -810,3 +820,112 @@ class TestPlanningPrompt(unittest.TestCase):
         from prompt import SYSTEM_PROMPT
         self.assertIn("state your plan", SYSTEM_PROMPT.lower())
         self.assertIn("1-3 sentences", SYSTEM_PROMPT)
+
+
+# ---------------------------------------------------------------------------
+# Approval mode tests
+# ---------------------------------------------------------------------------
+
+class TestApprovalMode(unittest.TestCase):
+
+    def setUp(self):
+        self.workspace = tempfile.mkdtemp()
+        self.write_gate, self.read_gate = _gates(self.workspace)
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.workspace, ignore_errors=True)
+
+    def test_approve_callback_denies_write(self):
+        """When approve_callback returns False, write is blocked."""
+        path = os.path.join(self.workspace, "denied.txt")
+        tc = _make_tool_call("write_file", path=path, content="nope")
+        result = execute_tool(tc, self.write_gate, self.read_gate,
+                              approve_callback=lambda n, a: False)
+        self.assertFalse(result.success)
+        self.assertIn("not approved", result.content)
+        self.assertFalse(os.path.isfile(path))
+
+    def test_approve_callback_allows_write(self):
+        """When approve_callback returns True, write proceeds."""
+        path = os.path.join(self.workspace, "allowed.txt")
+        tc = _make_tool_call("write_file", path=path, content="yes")
+        result = execute_tool(tc, self.write_gate, self.read_gate,
+                              approve_callback=lambda n, a: True)
+        self.assertTrue(result.success)
+        self.assertTrue(os.path.isfile(path))
+
+    def test_approve_bypassed_for_read_tools(self):
+        """Read tools never trigger the approval callback."""
+        path = os.path.join(self.workspace, "readme.txt")
+        with open(path, "w") as f:
+            f.write("hello")
+        called = [False]
+        tc = _make_tool_call("read_file", path=path)
+        result = execute_tool(tc, self.write_gate, self.read_gate,
+                              approve_callback=lambda n, a: called.__setitem__(0, True) or True)
+        self.assertTrue(result.success)
+        self.assertFalse(called[0], "approve_callback should not be called for read tools")
+
+
+# ---------------------------------------------------------------------------
+# Background shell task tests
+# ---------------------------------------------------------------------------
+
+class TestBackgroundTasks(unittest.TestCase):
+
+    def setUp(self):
+        self.workspace = tempfile.mkdtemp()
+        self.write_gate, self.read_gate = _gates(self.workspace)
+
+    def tearDown(self):
+        import shutil
+        from tools import _TASK_REGISTRY
+        _TASK_REGISTRY.clear()
+        shutil.rmtree(self.workspace, ignore_errors=True)
+
+    def test_background_task_returns_id(self):
+        """background=True returns a task ID."""
+        tc = _make_tool_call("run_shell", command="sleep 1 && echo done", background=True)
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertTrue(result.success)
+        self.assertIn("background task", result.content)
+        # Task ID should be 8 hex chars
+        self.assertIn("task", result.content.lower())
+
+    def test_task_status_running(self):
+        """task_status reports 'still running' for active tasks."""
+        from tools import _TASK_REGISTRY
+        task_id = "test1234"
+        import subprocess
+        _TASK_REGISTRY[task_id] = subprocess.Popen(
+            ["sleep", "10"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+        )
+        tc = _make_tool_call("task_status", task_id=task_id)
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertTrue(result.success)
+        self.assertIn("still running", result.content)
+        _TASK_REGISTRY[task_id].kill()
+        _TASK_REGISTRY[task_id].wait()
+
+    def test_task_status_completed(self):
+        """task_status reports exit code for completed tasks."""
+        from tools import _TASK_REGISTRY
+        task_id = "done1234"
+        import subprocess
+        proc = subprocess.Popen(
+            ["echo", "hello"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+        )
+        proc.wait()
+        _TASK_REGISTRY[task_id] = proc
+        tc = _make_tool_call("task_status", task_id=task_id)
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertTrue(result.success)
+        self.assertIn("completed", result.content)
+
+    def test_task_status_not_found(self):
+        """task_status handles unknown task IDs gracefully."""
+        tc = _make_tool_call("task_status", task_id="nope1234")
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertTrue(result.success)
+        self.assertIn("not found", result.content.lower())

@@ -287,6 +287,7 @@ def run_agent_turn(
     on_tool_start: callable = None,
     on_tool_end: callable = None,
     on_tool_output: callable = None,
+    approve_callback: callable = None,
     cancel_event: threading.Event = None,
     max_turns: int = 100,
     session=None,
@@ -365,7 +366,7 @@ def run_agent_turn(
                     return None
                 if on_tool_start is not None:
                     on_tool_start(tool_summary(tc))
-                result = execute_tool(tc, write_gate, read_gate, on_output=on_tool_output)
+                result = execute_tool(tc, write_gate, read_gate, on_output=on_tool_output, approve_callback=approve_callback)
                 _append_tool_result(messages, tc, result, on_tool_end)
                 continue
 
@@ -375,7 +376,7 @@ def run_agent_turn(
                     on_tool_start(tool_summary(tc), True)
 
             def _run_tool(tc):
-                return tc, execute_tool(tc, write_gate, read_gate, on_output=on_tool_output)
+                return tc, execute_tool(tc, write_gate, read_gate, on_output=on_tool_output, approve_callback=approve_callback)
 
             with ThreadPoolExecutor(max_workers=len(tool_calls)) as pool:
                 futures = {pool.submit(_run_tool, tc): tc for tc in tool_calls}

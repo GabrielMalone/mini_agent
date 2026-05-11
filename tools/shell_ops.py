@@ -7,11 +7,11 @@ Tools: run_shell, search_files, run_tests, git
 
 import os
 import subprocess
-import sys
 import threading
+import uuid
 
 from safety import ReadSafetyGate, WriteSafetyGate
-from tools import _register, _summarize, ToolResult
+from tools import _register, _summarize, ToolResult, _TASK_REGISTRY
 
 
 # ---------------------------------------------------------------------------
@@ -37,6 +37,25 @@ _DESTRUCTIVE_PATTERNS = [
 ]
 
 
+@_register("task_status")
+def _task_status(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
+    task_id = args.get("task_id", "")
+    if not task_id:
+        return ToolResult(success=False, content="Missing task_id parameter.")
+    proc = _TASK_REGISTRY.get(task_id)
+    if proc is None:
+        return ToolResult(success=True, content=f"Task {task_id} not found (may have completed or never existed).")
+    returncode = proc.poll()
+    if returncode is None:
+        return ToolResult(success=True, content=f"Task {task_id}: still running.")
+    return ToolResult(success=True, content=f"Task {task_id}: completed with exit_code={returncode}.")
+
+
+@_summarize("task_status")
+def _task_status_summary(args: dict) -> str:
+    return f"task_status({args.get('task_id', '?')})"
+
+
 def _check_destructive(command: str) -> str | None:
     """Return a warning string if the command looks destructive, else None."""
     import re
@@ -50,7 +69,7 @@ def _check_destructive(command: str) -> str | None:
 
 
 @_register("run_shell")
-def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: callable = None) -> ToolResult:
+def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: callable = None, approve_callback: callable = None) -> ToolResult:
     command = args["command"]
     force = args.get("force", False)
     if not force:
@@ -70,19 +89,33 @@ def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: 
         stdout_lines: list[str] = []
         stderr_lines: list[str] = []
 
-        def _reader(stream, collector, forward):
+        def _reader(stream, collector, forward, prefix=""):
             for line in iter(stream.readline, ""):
                 line = line.rstrip("\n")
                 collector.append(line)
                 if forward and on_output:
                     try:
-                        on_output(line)
+                        on_output(prefix + line)
                     except Exception:
                         pass
             stream.close()
 
-        t_out = threading.Thread(target=_reader, args=(proc.stdout, stdout_lines, True), daemon=True)
-        t_err = threading.Thread(target=_reader, args=(proc.stderr, stderr_lines, False), daemon=True)
+        # Background mode: register and return immediately
+        background = args.get("background", False)
+        if background:
+            task_id = str(uuid.uuid4())[:8]
+            _TASK_REGISTRY[task_id] = proc
+            return ToolResult(
+                success=True,
+                content=f"Started background task {task_id}. Use task_status to check.",
+            )
+
+        t_out = threading.Thread(
+            target=_reader, args=(proc.stdout, stdout_lines, True, ""), daemon=True,
+        )
+        t_err = threading.Thread(
+            target=_reader, args=(proc.stderr, stderr_lines, True, "[stderr] "), daemon=True,
+        )
         t_out.start()
         t_err.start()
 
@@ -122,8 +155,6 @@ def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: 
             success=proc.returncode == 0,
             content=content,
         )
-    except subprocess.TimeoutExpired:
-        return ToolResult(success=False, content="Command timed out after 60s")
     except Exception as e:
         hint = "\nHint: Check the command and flag spelling. Try with --help first, or use search_files to find the right syntax."
         return ToolResult(success=False, content=f"Error running command: {e}{hint}")

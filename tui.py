@@ -132,7 +132,7 @@ class _Error:
 class AgentWorker(threading.Thread):
     """Runs the agent loop in a background thread, pushing messages to a queue."""
 
-    def __init__(self, messages, config, write_gate, read_gate, out: Queue, session):
+    def __init__(self, messages, config, write_gate, read_gate, out: Queue, session, approve_callback=None):
         super().__init__(daemon=True)
         self.messages = messages
         self.config = config
@@ -141,6 +141,7 @@ class AgentWorker(threading.Thread):
         self.out = out
         self.cancel = threading.Event()
         self.session = session
+        self.approve_callback = approve_callback
 
     def run(self):
         config = self.config
@@ -156,6 +157,7 @@ class AgentWorker(threading.Thread):
                 on_tool_output=lambda line: self.out.put(_ToolOutput(line)),
                 cancel_event=self.cancel,
                 session=self.session,
+                approve_callback=self.approve_callback,
             )
         except Exception as e:
             self.out.put(_Error(str(e)))
@@ -288,6 +290,45 @@ class MiniAgentTUI(App):
                 self._history_pos = len(self._history)
                 focused.text = ""
 
+    def _approve(self, tool_name: str, args: dict) -> bool:
+        """Auto-approve in TUI. User sees tool calls and can cancel with Ctrl+C."""
+        log = self.query_one("#conversation", RichLog)
+        brief = str(args)
+        if len(brief) > 80:
+            brief = brief[:80] + "..."
+        log.write(f"[{YELLOW} italic]  ⏳ approved {tool_name}({_safe(brief)})[/]")
+        return True
+
+    def _export_to_file(self, path: str) -> None:
+        """Write current conversation to a markdown file."""
+        blocks: list[str] = []
+        blocks.append("# mini_agent conversation\n")
+        for m in self.messages:
+            role = m.get("role", "?")
+            if role == "system":
+                blocks.append(f"### System\n\n{m.get('content', '')}\n")
+            elif role == "user":
+                blocks.append(f"### User\n\n{m.get('content', '')}\n")
+            elif role == "assistant":
+                content = m.get("content", "")
+                if m.get("reasoning_content"):
+                    blocks.append("> **Thinking**\n>")
+                    for line in m["reasoning_content"].split("\n"):
+                        blocks.append(f"> {line}")
+                    blocks.append("")
+                if content:
+                    blocks.append(f"### Assistant\n\n{content}\n")
+                if m.get("tool_calls"):
+                    for tc in m["tool_calls"]:
+                        fn = tc.get("function", {})
+                        name = fn.get("name", "?")
+                        args = fn.get("arguments", "{}")
+                        blocks.append(f"```\n{name}({args})\n```\n")
+            elif role == "tool":
+                blocks.append(f"> Tool result:\n>\n> {m.get('content', '')[:500]}\n")
+        with open(path, "w") as f:
+            f.write("\n".join(blocks))
+
     def _submit(self) -> None:
         """Send user message to the agent."""
         # Guard against double-submit while agent is working
@@ -322,6 +363,7 @@ class MiniAgentTUI(App):
             self.write_gate, self.read_gate,
             self.queue,
             self.session,
+            approve_callback=self._approve if self.config.approve_write_ops else None,
         )
         self.worker.start()
 
@@ -343,7 +385,18 @@ class MiniAgentTUI(App):
             log.write("")
             log.write(f"[{DIM}]Commands:[/]")
             log.write(f"[{DIM}]  /clear   Reset conversation memory[/]")
+            log.write(f"[{DIM}]  /export  Write conversation to a markdown file[/]")
             log.write(f"[{DIM}]  /help    Show this help[/]")
+            return
+
+        if cmd == "/export":
+            import datetime
+            ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            fname = f"conversation_{ts}.md"
+            path = os.path.join(self.config.workspace, fname)
+            self._export_to_file(path)
+            log.write(f"[{DIM}]Exported to {fname}[/]")
+            self.query_one("#input", TextArea).focus()
             return
 
         log.write(f"[{YELLOW}]Unknown command: {text}[/]")

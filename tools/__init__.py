@@ -150,7 +150,7 @@ TOOLS = [
                         "type": "string",
                         "description": "Shell command to execute (e.g. 'python -m pytest test_safety.py -v')",
                     },
-                    "force": {
+                    "background": {"type": "boolean", "description": "Run in background, return immediately with task ID. Use task_status to check."}, "force": {
                         "type": "boolean",
                         "description": "Bypass the destructive-command guard. Default: false. Required for rm, mkfs, etc.",
                     },
@@ -320,6 +320,26 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "task_status",
+            "description": (
+                "Check the status of a background shell task by its ID. "
+                "background=True in run_shell returns a task_id."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "string",
+                        "description": "Task ID returned by run_shell with background=True",
+                    }
+                },
+                "required": ["task_id"],
+            },
+        },
+    },
 ]
 
 
@@ -352,6 +372,7 @@ _TOOL_CONTEXT: dict = {}
 # Per-turn cache for read-only tools. Cleared by run_agent_turn each turn.
 # Key: (tool_name, sorted_args_json). Cached read_file/file_info/etc.
 _TOOL_CACHE: dict[str, "ToolResult"] = {}
+_TASK_REGISTRY: dict[str, subprocess.Popen] = {}  # background shell task registry
 _CACHEABLE = frozenset({
     "read_file", "file_info", "list_directory",
     "search_files", "semantic_search", "web_search",
@@ -389,6 +410,7 @@ def execute_tool(
     write_gate: WriteSafetyGate,
     read_gate: ReadSafetyGate,
     on_output: callable = None,
+    approve_callback: callable = None,
 ) -> ToolResult:
     """Execute a single tool call.  All read/write paths go through safety gates.
 
@@ -411,6 +433,14 @@ def execute_tool(
     dispatch = _TOOL_DISPATCH.get(name)
     if dispatch is None:
         return ToolResult(success=False, content=f"Unknown tool: {name}")
+
+    # Approval gate for write/destructive tools
+    if approve_callback is not None and name in ("write_file", "edit_file", "run_shell"):
+        if not approve_callback(name, args):
+            return ToolResult(
+                success=False,
+                content=f"{name} not approved by user.",
+            )
 
     # Pass on_output to the tool if it accepts it
     import inspect

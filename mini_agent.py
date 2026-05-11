@@ -44,11 +44,63 @@ from tools import set_context, build_symbol_index
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _approve(tool_name: str, args: dict) -> bool:
+    """Ask the user to approve a write/destructive tool call."""
+    from terminal import c, _YELLOW, _RED
+    brief = json.dumps(args)
+    if len(brief) > 100:
+        brief = brief[:100] + "..."
+    prompt = f"  {c('Allow', _YELLOW)} {tool_name}({brief})? [y/N] "
+    try:
+        answer = input(prompt).strip().lower()
+        return answer in ("y", "yes")
+    except (EOFError, KeyboardInterrupt):
+        return False
+
+
 def _log(verbose: bool, *args, **kwargs) -> None:
     """Print diagnostic output, unless verbose is disabled.  Always flushes."""
     if verbose:
         kwargs.setdefault("flush", True)
         print(*args, **kwargs)
+
+
+def _export_conversation(messages: list[dict], workspace: str) -> str:
+    """Write conversation to a timestamped markdown file."""
+    import datetime
+    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    fname = f"conversation_{ts}.md"
+    path = os.path.join(workspace, fname)
+
+    blocks: list[str] = []
+    blocks.append(f"# mini_agent conversation — {ts}\n")
+    for m in messages:
+        role = m.get("role", "?")
+        if role == "system":
+            blocks.append(f"### System\n\n{m.get('content', '')}\n")
+        elif role == "user":
+            blocks.append(f"### User\n\n{m.get('content', '')}\n")
+        elif role == "assistant":
+            content = m.get("content", "")
+            if m.get("reasoning_content"):
+                blocks.append("> **Thinking**\n>")
+                for line in m["reasoning_content"].split("\n"):
+                    blocks.append(f"> {line}")
+                blocks.append("")
+            if content:
+                blocks.append(f"### Assistant\n\n{content}\n")
+            if m.get("tool_calls"):
+                for tc in m["tool_calls"]:
+                    fn = tc.get("function", {})
+                    name = fn.get("name", "?")
+                    args = fn.get("arguments", "{}")
+                    blocks.append(f"```\n{name}({args})\n```\n")
+        elif role == "tool":
+            blocks.append(f"> Tool result:\n>\n> {m.get('content', '')[:500]}\n")
+
+    with open(path, "w") as f:
+        f.write("\n".join(blocks))
+    return path
 
 
 # ---------------------------------------------------------------------------
@@ -118,6 +170,11 @@ def main() -> None:
                 _log(config.verbose, "Memory cleared.\n")
                 continue
 
+            if user_input.lower() == "/export":
+                path = _export_conversation(messages, workspace)
+                print(f"Exported to {path}")
+                continue
+
             if not user_input:
                 continue
 
@@ -154,6 +211,7 @@ def main() -> None:
                 on_tool_start=_tool_start,
                 on_tool_end=_tool_end,
                 session=session,
+                approve_callback=_approve if config.approve_write_ops else None,
             )
             elapsed = time.monotonic() - t0
 
