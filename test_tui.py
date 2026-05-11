@@ -44,7 +44,7 @@ class TestTUIImports(unittest.TestCase):
 
     def test_css_dark_gray_palette(self):
         css = MiniAgentTUI.CSS
-        self.assertIn("#1a1a1a", css)
+        self.assertIn("#111111", css)
         self.assertNotIn("16162a", css)
 
 

@@ -9,13 +9,14 @@ appended, text responses are handled correctly, and API retry works.
 import json
 import os
 import tempfile
+import threading
 import unittest
 from unittest.mock import patch, MagicMock
 
 import requests as req_mod
 
 from config import AgentConfig
-from llm import call_deepseek
+from llm import call_deepseek, run_agent_turn
 from safety import ReadSafetyGate, WriteSafetyGate
 from tools import execute_tool, ToolResult
 
@@ -352,6 +353,154 @@ class TestAPIRetry(unittest.TestCase):
             call_deepseek(messages, self.config)
         # 1 initial + 3 retries = 4 attempts
         self.assertEqual(mock_post.call_count, 4)
+
+
+# ---------------------------------------------------------------------------
+# Tests: run_agent_turn (shared loop)
+# ---------------------------------------------------------------------------
+
+class TestRunAgentTurn(unittest.TestCase):
+    """Verify the shared run_agent_turn() used by both terminal and TUI."""
+
+    def setUp(self):
+        self.workspace = tempfile.mkdtemp()
+        self.write_gate, self.read_gate = _gates(self.workspace)
+        self.config = AgentConfig.load(self.workspace)
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.workspace, ignore_errors=True)
+
+    @patch("llm.requests.post")
+    def test_text_only_response(self, mock_post):
+        """No tool calls — returns text message directly."""
+        mock_post.return_value.ok = True
+        mock_post.return_value.json.return_value = _make_api_response(
+            content="Hello!"
+        )
+
+        messages: list[dict] = [{"role": "user", "content": "hi"}]
+        msg = run_agent_turn(messages, self.config, self.write_gate, self.read_gate)
+
+        self.assertIsNotNone(msg)
+        self.assertEqual(msg["content"], "Hello!")
+        self.assertNotIn("tool_calls", msg)
+        self.assertEqual(len(messages), 2)  # user + assistant
+
+    @patch("llm.requests.post")
+    def test_single_tool_call(self, mock_post):
+        """One tool call, tool executes, then text response."""
+        call1 = MagicMock()
+        call1.ok = True
+        call1.json.return_value = _make_api_response(
+            tool_calls=[_tool_call("write_file", "c1", {
+                "path": os.path.join(self.workspace, "f.txt"),
+                "content": "data",
+            })]
+        )
+        call2 = MagicMock()
+        call2.ok = True
+        call2.json.return_value = _make_api_response(content="Done.")
+
+        mock_post.side_effect = [call1, call2]
+
+        messages: list[dict] = [{"role": "user", "content": "write"}]
+        msg = run_agent_turn(messages, self.config, self.write_gate, self.read_gate)
+
+        self.assertEqual(msg["content"], "Done.")
+        self.assertTrue(os.path.isfile(os.path.join(self.workspace, "f.txt")))
+        self.assertEqual(len(messages), 4)  # user, asst(tools), tool, asst
+
+    @patch("llm.requests.post")
+    def test_callbacks_fire(self, mock_post):
+        """on_tool_start and on_tool_end are called."""
+        mock_post.side_effect = [
+            _mock_response(tool_calls=[
+                _tool_call("file_info", "c1", {"path": self.workspace}),
+            ]),
+            _mock_response(content="ok"),
+        ]
+
+        starts = []
+        ends = []
+
+        messages: list[dict] = [{"role": "user", "content": "info"}]
+        msg = run_agent_turn(
+            messages, self.config, self.write_gate, self.read_gate,
+            on_tool_start=lambda s: starts.append(s),
+            on_tool_end=lambda ok, d: ends.append((ok, d)),
+        )
+
+        self.assertEqual(len(starts), 1)
+        self.assertIn("file_info", starts[0])
+        self.assertEqual(len(ends), 1)
+        self.assertTrue(ends[0][0])  # ok=True
+
+    @patch("llm.requests.post")
+    def test_multiple_rounds(self, mock_post):
+        """Two rounds of tool calls before final text."""
+        mock_post.side_effect = [
+            _mock_response(tool_calls=[
+                _tool_call("file_info", "c1", {"path": self.workspace}),
+            ]),
+            _mock_response(tool_calls=[
+                _tool_call("write_file", "c2", {
+                    "path": os.path.join(self.workspace, "out.txt"),
+                    "content": "multi-round",
+                }),
+            ]),
+            _mock_response(content="All done."),
+        ]
+
+        messages: list[dict] = [{"role": "user", "content": "do stuff"}]
+        msg = run_agent_turn(messages, self.config, self.write_gate, self.read_gate)
+
+        self.assertEqual(msg["content"], "All done.")
+        self.assertTrue(os.path.isfile(os.path.join(self.workspace, "out.txt")))
+        self.assertEqual(len(messages), 6)  # user, asst, tool, asst, tool, asst
+
+    def test_cancel_mid_turn_returns_none(self):
+        """Cancel event set before call returns None."""
+        cancel = threading.Event()
+        cancel.set()
+
+        messages: list[dict] = [{"role": "user", "content": "hi"}]
+        msg = run_agent_turn(
+            messages, self.config, self.write_gate, self.read_gate,
+            cancel_event=cancel,
+        )
+        self.assertIsNone(msg)
+
+    @patch("llm.requests.post")
+    def test_max_turns_cap(self, mock_post):
+        """Returns last assistant message when max_turns is exceeded."""
+        # Each call returns a tool call — never a plain text response
+        responses = []
+        for i in range(5):
+            responses.append(_mock_response(tool_calls=[
+                _tool_call("file_info", f"c{i}", {"path": self.workspace}),
+            ]))
+        mock_post.side_effect = responses
+
+        messages: list[dict] = [{"role": "user", "content": "loop"}]
+        msg = run_agent_turn(
+            messages, self.config, self.write_gate, self.read_gate,
+            max_turns=3,
+        )
+
+        self.assertIsNotNone(msg)
+        # Should have tool_calls (it's the last assistant message before cap)
+        self.assertIn("tool_calls", msg)
+        # 3 API calls, not 5
+        self.assertEqual(mock_post.call_count, 3)
+
+
+def _mock_response(content: str = "", tool_calls=None) -> MagicMock:
+    """Build a mocked requests.Response for use in side_effect lists."""
+    m = MagicMock()
+    m.ok = True
+    m.json.return_value = _make_api_response(content=content, tool_calls=tool_calls)
+    return m
 
 
 if __name__ == "__main__":

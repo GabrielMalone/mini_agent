@@ -1,0 +1,199 @@
+#!/usr/bin/env python3
+"""
+file_ops.py — file/directory tools for mini_agent.
+
+Tools: read_file, write_file, edit_file, list_directory, file_info
+"""
+
+import os
+import stat as stat_module
+import time
+
+from safety import ReadSafetyGate, WriteSafetyGate
+from tools import _register, _summarize, ToolResult, _TOOL_CONTEXT
+
+
+# ---------------------------------------------------------------------------
+# read_file
+# ---------------------------------------------------------------------------
+
+@_register("read_file")
+def _read_file(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
+    path = args["path"]
+    safety_result = rg.check(path)
+    if not safety_result.allowed:
+        return ToolResult(
+            success=False,
+            content=f"Read blocked by safety layer: {safety_result.reason}",
+        )
+    try:
+        with open(safety_result.resolved_path, "r") as f:
+            content = f.read()
+        return ToolResult(success=True, content=content)
+    except Exception as e:
+        return ToolResult(success=False, content=f"Error reading '{safety_result.resolved_path}': {e}")
+
+
+@_summarize("read_file")
+def _read_file_summary(args: dict) -> str:
+    return f"read_file({args.get('path', '?')})"
+
+
+# ---------------------------------------------------------------------------
+# write_file
+# ---------------------------------------------------------------------------
+
+@_register("write_file")
+def _write_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
+    path = args["path"]
+    content = args["content"]
+    safety_result = wg.check(path)
+    if not safety_result.allowed:
+        return ToolResult(
+            success=False,
+            content=f"Write blocked by safety layer: {safety_result.reason}",
+        )
+    try:
+        parent = os.path.dirname(safety_result.resolved_path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        with open(safety_result.resolved_path, "w") as f:
+            f.write(content)
+        return ToolResult(
+            success=True,
+            content=f"OK: wrote {len(content)} bytes to {safety_result.resolved_path}",
+        )
+    except Exception as e:
+        return ToolResult(
+            success=False,
+            content=f"Error writing '{safety_result.resolved_path}': {e}",
+        )
+
+
+@_summarize("write_file")
+def _write_file_summary(args: dict) -> str:
+    path = args.get("path", "?")
+    content = args.get("content", "")
+    preview = content[:60].replace("\n", "\\n")
+    if len(content) > 60:
+        preview += "…"
+    return f"write_file({path}, {len(content)}B → \"{preview}\")"
+
+
+# ---------------------------------------------------------------------------
+# edit_file
+# ---------------------------------------------------------------------------
+
+@_register("edit_file")
+def _edit_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
+    path = args["path"]
+    old = args["old_string"]
+    new = args["new_string"]
+    safety_result = wg.check(path)
+    if not safety_result.allowed:
+        return ToolResult(
+            success=False,
+            content=f"Edit blocked by safety layer: {safety_result.reason}",
+        )
+    try:
+        with open(safety_result.resolved_path, "r") as f:
+            original = f.read()
+        if old not in original:
+            return ToolResult(
+                success=False,
+                content=f"Edit failed: old_string not found in '{safety_result.resolved_path}'",
+            )
+        updated = original.replace(old, new, 1)
+        with open(safety_result.resolved_path, "w") as f:
+            f.write(updated)
+        return ToolResult(
+            success=True,
+            content=f"OK: replaced 1 occurrence in {safety_result.resolved_path}",
+        )
+    except Exception as e:
+        return ToolResult(
+            success=False,
+            content=f"Error editing '{safety_result.resolved_path}': {e}",
+        )
+
+
+@_summarize("edit_file")
+def _edit_file_summary(args: dict) -> str:
+    path = args.get("path", "?")
+    old = args.get("old_string", "")
+    preview = old[:40].replace("\n", "\\n")
+    if len(old) > 40:
+        preview += "…"
+    return f"edit_file({path}, \"{preview}\")"
+
+
+# ---------------------------------------------------------------------------
+# list_directory
+# ---------------------------------------------------------------------------
+
+@_register("list_directory")
+def _list_directory(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
+    path = args["path"]
+    safety_result = rg.check(path)
+    if not safety_result.allowed:
+        return ToolResult(
+            success=False,
+            content=f"List blocked by safety layer: {safety_result.reason}",
+        )
+    try:
+        entries = os.listdir(safety_result.resolved_path)
+        rows: list[str] = []
+        for name in sorted(entries):
+            full = os.path.join(safety_result.resolved_path, name)
+            prefix = "d" if os.path.isdir(full) else "f"
+            rows.append(f"  [{prefix}] {name}")
+        if not rows:
+            content = f"{safety_result.resolved_path}  (empty)"
+        else:
+            content = f"{safety_result.resolved_path}\n" + "\n".join(rows)
+        return ToolResult(success=True, content=content)
+    except Exception as e:
+        return ToolResult(success=False, content=f"Error listing '{safety_result.resolved_path}': {e}")
+
+
+@_summarize("list_directory")
+def _list_directory_summary(args: dict) -> str:
+    return f"list_directory({args.get('path', '?')})"
+
+
+# ---------------------------------------------------------------------------
+# file_info
+# ---------------------------------------------------------------------------
+
+@_register("file_info")
+def _file_info(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
+    path = args["path"]
+    safety_result = rg.check(path)
+    if not safety_result.allowed:
+        return ToolResult(
+            success=False,
+            content=f"File info blocked by safety layer: {safety_result.reason}",
+        )
+    resolved = safety_result.resolved_path
+    try:
+        st = os.stat(resolved)
+        parts = [
+            f"path: {resolved}",
+            f"size: {st.st_size} bytes",
+            f"mode: {stat_module.filemode(st.st_mode)}",
+            f"modified: {time.ctime(st.st_mtime)}",
+        ]
+        if stat_module.S_ISDIR(st.st_mode):
+            parts.append("type: directory")
+        else:
+            parts.append("type: file")
+        return ToolResult(success=True, content="\n".join(parts))
+    except FileNotFoundError:
+        return ToolResult(success=True, content=f"path: {resolved}\nexists: no")
+    except Exception as e:
+        return ToolResult(success=False, content=f"Error stating '{resolved}': {e}")
+
+
+@_summarize("file_info")
+def _file_info_summary(args: dict) -> str:
+    return f"file_info({args.get('path', '?')})"

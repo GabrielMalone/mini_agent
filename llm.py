@@ -11,6 +11,7 @@ import json
 import sys
 import time
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
 
@@ -33,6 +34,7 @@ _RETRYABLE_STATUSES: set[int] = {429, 500, 502, 503, 504}
 
 
 def _request_with_retry(
+    session,  # requests.Session or the requests module itself
     *args,
     stream: bool = False,
     **kwargs,
@@ -41,11 +43,15 @@ def _request_with_retry(
 
     Retries up to *_MAX_RETRIES* times with exponential backoff (1s, 2s, 4s)
     on 429 / 5xx status codes.  Non-retryable errors raise immediately.
+
+    *session* is a requests.Session for connection reuse, or the requests
+    module itself (for testability — tests patch requests.post).
     """
+    post = session.post if hasattr(session, "post") else requests.post
     last_exc: Exception | None = None
     for attempt in range(_MAX_RETRIES + 1):
         try:
-            r = requests.post(*args, stream=stream, **kwargs)
+            r = post(*args, stream=stream, **kwargs)
             if r.ok or r.status_code not in _RETRYABLE_STATUSES:
                 return r
             # Transient error — retry
@@ -81,7 +87,12 @@ def _request_with_retry(
 # API call
 # ---------------------------------------------------------------------------
 
-def call_deepseek(messages: list[dict], config: AgentConfig, on_token: callable = None) -> dict:
+def call_deepseek(
+    messages: list[dict],
+    config: AgentConfig,
+    on_token: callable = None,
+    session: requests.Session | None = None,
+) -> dict:
     """Send messages to DeepSeek, return the assistant message dict.
 
     DeepSeek thinking mode requires ``reasoning_content`` to be passed back
@@ -93,7 +104,12 @@ def call_deepseek(messages: list[dict], config: AgentConfig, on_token: callable 
     arrives and tool_calls are accumulated from the stream (single-pass).
 
     Automatically retries on transient failures (429, 5xx) up to 3 times
-    with exponential backoff."""
+    with exponential backoff.  If *session* is provided it is used for
+    connection reuse across calls within a turn.
+    """
+    if session is None:
+        session = requests  # use module-level .post (testable via mock)
+
     clean_messages = []
     for m in messages:
         m2 = dict(m)  # shallow copy so we don't mutate the original
@@ -105,6 +121,7 @@ def call_deepseek(messages: list[dict], config: AgentConfig, on_token: callable 
         clean_messages.append(m2)
 
     r = _request_with_retry(
+        session,
         config.api_url,
         headers={
             "Authorization": f"Bearer {config.api_key}",
@@ -148,11 +165,13 @@ def _parse_stream(response: requests.Response, on_token: callable = None) -> dic
     returned rather than crashing — a warning is printed to stderr.
 
     Returns a reconstructed message dict (role, content, optional
-    reasoning_content, optional tool_calls)."""
+    reasoning_content, optional tool_calls).
+    """
     full_content = ""
     full_reasoning = ""
     tool_calls_by_index: dict[int, dict] = {}  # index → accumulated tc dict
     reasoning_header_printed = False
+    usage: dict | None = None
 
     if not on_token:
         print(flush=True)  # separate streaming output from the prompt line
@@ -167,6 +186,10 @@ def _parse_stream(response: requests.Response, on_token: callable = None) -> dic
             try:
                 chunk = json.loads(data_str)
                 delta = chunk["choices"][0].get("delta", {})
+
+                # Usage may appear in any chunk (usually the last)
+                if "usage" in chunk and chunk["usage"]:
+                    usage = chunk["usage"]
 
                 # Text content — print and accumulate
                 if "content" in delta and delta["content"]:
@@ -238,6 +261,8 @@ def _parse_stream(response: requests.Response, on_token: callable = None) -> dic
     msg: dict = {"role": "assistant", "content": full_content}
     if full_reasoning:
         msg["reasoning_content"] = full_reasoning
+    if usage:
+        msg["_usage"] = usage
 
     if tool_calls_by_index:
         msg["tool_calls"] = [
@@ -262,6 +287,8 @@ def run_agent_turn(
     on_tool_start: callable = None,
     on_tool_end: callable = None,
     cancel_event: threading.Event = None,
+    max_turns: int = 100,
+    session=None,
 ) -> dict | None:
     """Run one full agent turn — possibly multiple API calls if tools are used.
 
@@ -270,34 +297,118 @@ def run_agent_turn(
 
     *messages* is mutated in place: assistant and tool messages are appended.
     Returns the final assistant message dict, or ``None`` if cancelled.
+    *max_turns* is a hard safety cap (default 100).
+
+    Multiple independent tool calls are executed in parallel via a thread pool.
+    If *session* is a requests.Session, it is reused across API calls for
+    connection reuse. If None, the requests module is used (test-friendly).
+
+    Every 5 tool-using turns, a system reminder is injected to keep the agent
+    on track and let it decide whether to continue or wrap up.
     """
-    while True:
-        if cancel_event is not None and cancel_event.is_set():
-            return None
+    PROGRESS_INTERVAL = 5
 
-        msg = call_deepseek(messages, config, on_token=on_token)
-
-        if cancel_event is not None and cancel_event.is_set():
-            return None
-
-        if not msg.get("tool_calls"):
-            messages.append(msg)
-            return msg
-
-        messages.append(msg)
-        for tc in msg["tool_calls"]:
+    total_usage: dict[str, int] = {}
+    turn_count = 0
+    if session is None:
+        session = requests  # test-friendly: mockable via patch("llm.requests.post")
+    try:
+        for _ in range(max_turns):
+            turn_count += 1
             if cancel_event is not None and cancel_event.is_set():
                 return None
+
+            # Periodic progress check — inject a system reminder
+            if turn_count > 1 and turn_count % PROGRESS_INTERVAL == 0:
+                reminder = (
+                    f"You have been working for {turn_count} turns. "
+                    "Briefly assess your progress: are you making headway, "
+                    "stuck in a loop, or done? If you can wrap up now, "
+                    "give the final answer. If you truly need more turns, "
+                    "continue — but be specific about what remains."
+                )
+                messages.append({"role": "system", "content": reminder})
+
+            msg = call_deepseek(messages, config, on_token=on_token, session=session)
+
+            if cancel_event is not None and cancel_event.is_set():
+                return None
+
+            # Accumulate token usage across all API calls in this turn
+            if "_usage" in msg:
+                total_usage = {
+                    "prompt_tokens": total_usage.get("prompt_tokens", 0)
+                        + msg["_usage"].get("prompt_tokens", 0),
+                    "completion_tokens": total_usage.get("completion_tokens", 0)
+                        + msg["_usage"].get("completion_tokens", 0),
+                    "total_tokens": total_usage.get("total_tokens", 0)
+                        + msg["_usage"].get("total_tokens", 0),
+                }
+
+            if not msg.get("tool_calls"):
+                if total_usage:
+                    msg["_total_usage"] = total_usage
+                if turn_count > 1:
+                    msg["_turn_count"] = turn_count
+                messages.append(msg)
+                return msg
+
+            messages.append(msg)
+            tool_calls = msg["tool_calls"]
+
+            # Single tool — run inline (no thread overhead)
+            if len(tool_calls) == 1:
+                tc = tool_calls[0]
+                if cancel_event is not None and cancel_event.is_set():
+                    return None
+                if on_tool_start is not None:
+                    on_tool_start(tool_summary(tc))
+                result = execute_tool(tc, write_gate, read_gate)
+                _append_tool_result(messages, tc, result, on_tool_end)
+                continue
+
+            # Multiple tools — run in parallel thread pool
             if on_tool_start is not None:
-                on_tool_start(tool_summary(tc))
-            result = execute_tool(tc, write_gate, read_gate)
-            detail = result.content[:300]
-            if len(result.content) > 300:
-                detail += "…"
-            if on_tool_end is not None:
-                on_tool_end(result.success, detail)
-            messages.append({
-                "role": "tool",
-                "tool_call_id": tc["id"],
-                "content": result.to_json(),
-            })
+                for tc in tool_calls:
+                    on_tool_start(tool_summary(tc), True)
+
+            def _run_tool(tc):
+                return tc, execute_tool(tc, write_gate, read_gate)
+
+            with ThreadPoolExecutor(max_workers=len(tool_calls)) as pool:
+                futures = {pool.submit(_run_tool, tc): tc for tc in tool_calls}
+                for future in as_completed(futures):
+                    if cancel_event is not None and cancel_event.is_set():
+                        pool.shutdown(wait=False, cancel_futures=True)
+                        return None
+                    tc, result = future.result()
+                    _append_tool_result(messages, tc, result, on_tool_end)
+
+        # Exceeded max_turns — return last assistant message (still has tool_calls)
+        if total_usage:
+            msg["_total_usage"] = total_usage
+        if turn_count > 1:
+            msg["_turn_count"] = turn_count
+        return msg
+    finally:
+        if hasattr(session, "close"):
+            session.close()
+
+
+def _append_tool_result(
+    messages: list[dict],
+    tc: dict,
+    result,
+    on_tool_end: callable = None,
+) -> None:
+    """Append a tool result message and fire the on_tool_end callback."""
+    detail = result.content[:300]
+    if len(result.content) > 300:
+        detail += "…"
+    if on_tool_end is not None:
+        on_tool_end(result.success, detail)
+    messages.append({
+        "role": "tool",
+        "tool_call_id": tc["id"],
+        "content": result.to_json(),
+    })

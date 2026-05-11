@@ -21,12 +21,13 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 CONFIG_FILENAME = ".mini_agent.toml"
-MEMORY_FILENAME = ".mini_agent_memory.json"
+MEMORY_FILENAME = ".mini_agent_memory.db"
 
 DEFAULT_MODEL        = "deepseek-v4-pro"
 DEFAULT_API_URL      = "https://api.deepseek.com/v1/chat/completions"
 DEFAULT_API_KEY      = "sk-df0ebdf0572a4485bd4e89996c9aa710"
-DEFAULT_MAX_MESSAGES = 200
+DEFAULT_MAX_MESSAGES = 500
+DEFAULT_MAX_TOKENS   = 800_000
 DEFAULT_EXA_API_KEY  = "4346b9ff-217d-4d42-8cee-f0e74117d188"
 
 
@@ -54,6 +55,7 @@ class AgentConfig:
     verbose: bool = True
     memory_filename: str = MEMORY_FILENAME
     max_messages: int = DEFAULT_MAX_MESSAGES
+    max_tokens: int = DEFAULT_MAX_TOKENS
     exa_api_key: str = DEFAULT_EXA_API_KEY
 
     # ------------------------------------------------------------------
@@ -113,6 +115,7 @@ _TOML_SCHEMA: dict[str, type] = {
     "stream": bool,
     "verbose": bool,
     "max_messages": int,
+    "max_tokens": int,
     "exa_api_key": str,
 }
 

@@ -36,6 +36,7 @@ from safety import ReadSafetyGate, WriteSafetyGate
 from memory import MemoryStore
 from terminal import c, _DIM, _CYAN, _YELLOW, _GREEN, _RED
 from tools import set_context
+import requests
 
 
 # ---------------------------------------------------------------------------
@@ -74,7 +75,7 @@ def main() -> None:
     write_gate = WriteSafetyGate(config.workspace, allow_overwrites=config.allow_overwrites)
     read_gate = ReadSafetyGate(config.workspace)
     memory_path = os.path.join(config.workspace, config.memory_filename)
-    memory = MemoryStore(memory_path, max_messages=config.max_messages)
+    memory = MemoryStore(memory_path, max_messages=config.max_messages, max_tokens=config.max_tokens)
     set_context(exa_api_key=config.exa_api_key)
 
     # Restore previous session (system prompt is always fresh)
@@ -122,7 +123,7 @@ def main() -> None:
              f"  {c('⏳', _CYAN)} calling API…", file=sys.stderr)
         t0 = time.monotonic()
 
-        def _tool_start(summary: str) -> None:
+        def _tool_start(summary: str, parallel: bool = False) -> None:
             nonlocal t0
             elapsed = time.monotonic() - t0
             _log(config.verbose,
@@ -142,10 +143,12 @@ def main() -> None:
                      f"     {c('✗', _RED)}  FAILED: {c(detail, _RED)}",
                      file=sys.stderr)
 
+        session = requests.Session()
         msg = run_agent_turn(
             messages, config, write_gate, read_gate,
             on_tool_start=_tool_start,
             on_tool_end=_tool_end,
+            session=session,
         )
         elapsed = time.monotonic() - t0
 

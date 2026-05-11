@@ -9,7 +9,7 @@ import sqlite3
 import tempfile
 import unittest
 
-from memory import MemoryStore, _db_path, _prune_messages
+from memory import MemoryStore, _db_path, _prune_by_tokens
 
 
 class TestMemoryStore(unittest.TestCase):
@@ -191,55 +191,62 @@ class TestPruning(unittest.TestCase):
 
     def test_under_limit_passes_through(self):
         msgs = self._make_turn(1) + self._make_turn(2)
-        result = _prune_messages(msgs, max_count=10)
-        self.assertEqual(result, msgs)
+        kept, pruned = _prune_by_tokens(msgs, max_tokens=999999, max_messages=10)
+        self.assertEqual(kept, msgs)
+        self.assertEqual(pruned, [])
 
     def test_at_limit_passes_through(self):
         msgs = self._make_turn(1) + self._make_turn(2)  # 4 messages
-        result = _prune_messages(msgs, max_count=4)
-        self.assertEqual(result, msgs)
+        kept, pruned = _prune_by_tokens(msgs, max_tokens=999999, max_messages=4)
+        self.assertEqual(kept, msgs)
+        self.assertEqual(pruned, [])
 
     def test_over_limit_trims_oldest_turns(self):
         msgs = (self._make_turn(1) + self._make_turn(2) +
                 self._make_turn(3) + self._make_turn(4))  # 8 messages
-        result = _prune_messages(msgs, max_count=4)
+        kept, pruned = _prune_by_tokens(msgs, max_tokens=999999, max_messages=4)
         # Should keep turns 3 and 4 (last 4 messages)
-        self.assertEqual(len(result), 4)
-        self.assertEqual(result[0]["content"], "q3")
+        self.assertEqual(len(kept), 4)
+        self.assertEqual(kept[0]["content"], "q3")
 
     def test_prune_preserves_user_boundary(self):
         """Cut always lands on a user message, not mid-turn."""
         msgs = (self._make_turn(1) + self._make_turn(2) +
                 self._make_turn(3))  # 6 messages
-        result = _prune_messages(msgs, max_count=3)
+        kept, pruned = _prune_by_tokens(msgs, max_tokens=999999, max_messages=3)
         # 3 messages would cut mid-turn-2. Should adjust to start at turn 2.
-        self.assertEqual(result[0]["role"], "user")
-        self.assertIn(result[0]["content"], {"q2", "q3"})
+        self.assertEqual(kept[0]["role"], "user")
+        self.assertIn(kept[0]["content"], {"q2", "q3"})
 
     def test_tool_turn_preserved_by_user_boundary(self):
         """Tool-call sequences stay intact because cut aligns to user."""
         msgs = (self._make_turn(1) +
                 self._make_tool_turn(2) +
                 self._make_turn(3))  # 2 + 3 + 2 = 7 messages
-        result = _prune_messages(msgs, max_count=5)
+        kept, pruned = _prune_by_tokens(msgs, max_tokens=999999, max_messages=5)
         # Should keep tool turn 2 + turn 3 intact
-        self.assertGreaterEqual(len(result), 5)
+        self.assertGreaterEqual(len(kept), 5)
         # The tool message should be present alongside its assistant
-        roles = [m["role"] for m in result]
+        roles = [m["role"] for m in kept]
         if "tool" in roles:
             tool_idx = roles.index("tool")
             self.assertEqual(roles[tool_idx - 1], "assistant")
 
     def test_save_prunes_automatically(self):
-        """End-to-end: saving with a low max_messages prunes on write."""
+        """End-to-end: saving with a low max_messages prunes on write.
+        A summary of pruned context is injected, so count may be max+1."""
         tmp = tempfile.mkdtemp()
         try:
             memfile = os.path.join(tmp, "mem.json")
-            store = MemoryStore(memfile, max_messages=2)
+            store = MemoryStore(memfile, max_messages=2, max_tokens=999999)
             msgs = self._make_turn(1) + self._make_turn(2) + self._make_turn(3)
             store.save(msgs)
             loaded = store.load()
-            self.assertLessEqual(len(loaded), 2)
+            # 2 kept + optional 1 summary injection = ≤3
+            self.assertLessEqual(len(loaded), 3)
+            # The kept messages should include the most recent turn
+            contents = [m["content"] for m in loaded]
+            self.assertIn("q3", contents)
         finally:
             import shutil
             shutil.rmtree(tmp, ignore_errors=True)

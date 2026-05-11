@@ -5,12 +5,16 @@
 ```
 mini_agent/
 ├── mini_agent.py      # Terminal REPL (--help, --workspace, --stream, --quiet, --no-color)
-├── tui.py             # Textual TUI: dark theme, streaming, cancel, multi-line paste
+├── tui.py             # Textual TUI: dark theme, streaming, cancel, multi-line paste, /clear
 ├── llm.py             # LLM: retry, streaming, on_token, THINKING_START/END, run_agent_turn
 ├── prompt.py          # SYSTEM_PROMPT (confirm-before-planning rule)
 ├── terminal.py        # ANSI colour helpers
 ├── config.py          # AgentConfig: TOML + env + CLI, exa_api_key
-├── tools.py           # 11 tools, registry + context, sentence-transformers, shell guard
+├── tools/             # 11 tools split across 4 modules
+│   ├── __init__.py    # TOOLS list, ToolResult, registry, dispatch, re-exports
+│   ├── file_ops.py    # read_file, write_file, edit_file, list_directory, file_info
+│   ├── shell_ops.py   # run_shell, search_files, run_tests, git
+│   └── search_ops.py  # semantic_search, web_search
 ├── safety.py          # ReadSafetyGate + WriteSafetyGate
 ├── memory.py          # SQLite: save/load/clear/prune/migrate
 ├── .gitignore
@@ -20,13 +24,13 @@ mini_agent/
 ├── test_memory.py     # 22 tests
 ├── test_tools.py      # 53 tests (web_search API tests disabled to save tokens)
 ├── test_tui.py        # 12 tests
-├── test_agent_loop.py # 9 tests
+├── test_agent_loop.py # 15 tests
 ├── test_config.py     # 18 tests
 ├── test_git.py        # 16 tests
 └── STATE.txt
 ```
 
-156 tests total.
+163 tests total.
 
 ### Tools (11)
 
@@ -61,9 +65,10 @@ mini_agent/
 
 ### TUI (tui.py)
 
-- **Dark theme**: #1a1a1a background, #262626 surface
-- **Streaming**: partial lines shown in a Static widget below the conversation log;
-  complete lines flushed to RichLog. Thinking/reasoning content shown dimmed and italic.
+- **Dark theme**: #111111 background, #1b1b1b surface
+- **Streaming**: thinking buffered by newlines and written inline to RichLog (dim italic).
+  Content buffered by newlines and flushed to RichLog. No separate stream widget.
+- **Markup safety**: all user/LLM content escaped via `_safe()` to prevent Rich markup errors.
 - **Multi-line input**: TextArea widget. Enter submits, Shift+Enter inserts newline.
 - **Cancel**: Ctrl+C sets cancel flag, worker thread exits cleanly.
 - **Tool visibility**: ⚙ tool_name(args) on start, ✓/✗ detail on end.
@@ -71,6 +76,9 @@ mini_agent/
   set_interval(50ms) drain loop reads them on the main thread.
 - **Shared agent loop**: `run_agent_turn()` in llm.py used by both TUI and terminal REPL.
 - **Double-submit guard**: Enter is ignored while a worker is active.
+- **Token usage**: displayed in status line when available (e.g. `— 42 msgs | 1.2k tok | model`).
+- **Commands**: `/clear` resets conversation memory. Unknown commands show a warning.
+- **Input history**: Up/Down when input is empty cycles through submitted messages.
 
 ### Flags (both mini_agent.py and tui.py)
 
