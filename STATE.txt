@@ -246,3 +246,28 @@ JSONDecodeError if all fail.
 
 **Tests:** `test_resilience.py` — 26 new tests covering all four features.
 **Status:** 238 tests pass (212 + 26), lint clean.
+
+## 2026-05-11 — Prompt optimization & operational notes
+
+**Problem:** Agent was slow at symbol lookup (using grep/sed instead of
+find_symbol) and had repeated edit_file failures from string mismatches
+(not verifying exact text before constructing replacements).
+
+**Prompt additions (prompt.py):**
+- **Tool-specific guidance** section: find_symbol as fastest symbol lookup,
+  edit_file exact-match verification rule, read_file truncation awareness,
+  run_shell output limits, run_tests path param for fast feedback, hint
+  awareness on failed tool results, tool cache behavior.
+- **Memory & context awareness** section: compression/pruning/summarization
+  behavior, safety layer workspace isolation, git local-only limitation.
+
+**Operational notes for future sessions:**
+- Always use find_symbol for locating definitions — indexed at startup,
+  returns file+line instantly. Much faster than search_files/grep.
+- Before edit_file, always verify the exact string: use read_file at the
+  target offsets, or run_shell with sed to capture exact whitespace and
+  quotes. The tool requires byte-for-byte match.
+- After a targeted code change, use run_tests with a specific test file
+  path for fast feedback before running the full 234-test suite.
+- STATE.txt is the ground truth for architecture — read it first on
+  any non-trivial task.
