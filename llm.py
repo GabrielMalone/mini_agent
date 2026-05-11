@@ -356,6 +356,7 @@ def run_agent_turn(
     cancel_event: threading.Event = None,
     max_turns: int = 100,
     session=None,
+    memory_store=None,
 ) -> dict | None:
     """Run one full agent turn — possibly multiple API calls if tools are used.
 
@@ -366,6 +367,9 @@ def run_agent_turn(
     Returns the final assistant message dict, or ``None`` if cancelled.
     *max_turns* is a hard safety cap (default 100).
 
+    If *memory_store* is provided, the scratchpad is read from it and
+    injected as context at the start of the turn.
+
     Multiple independent tool calls are executed in parallel via a thread pool.
     If *session* is a requests.Session, it is reused across API calls for
     connection reuse. If None, the requests module is used (test-friendly).
@@ -374,6 +378,18 @@ def run_agent_turn(
     on track and let it decide whether to continue or wrap up.
     """
     PROGRESS_INTERVAL = 5
+
+    # --- inject scratchpad context ---
+    if memory_store is not None:
+        scratchpad = memory_store.get_scratchpad()
+        if scratchpad.strip():
+            messages.append({
+                "role": "user",
+                "content": (
+                    "Your scratchpad (current working notes — use write_scratchpad "
+                    "to update):\n\n" + scratchpad
+                ),
+            })
 
     total_usage: dict[str, int] = {}
     turn_count = 0

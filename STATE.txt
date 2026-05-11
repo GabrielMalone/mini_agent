@@ -271,3 +271,32 @@ find_symbol) and had repeated edit_file failures from string mismatches
   path for fast feedback before running the full 234-test suite.
 - STATE.txt is the ground truth for architecture — read it first on
   any non-trivial task.
+
+## 2026-05-11 — Four new agent capabilities
+
+### 1. Scratchpad / working memory
+- `write_scratchpad(content)` tool in `tools/file_ops.py`
+- Stored in SQLite (`scratchpad` table) alongside messages in MemoryStore
+- Injected as user message at the start of each turn via `run_agent_turn`
+- Persists across sessions; cleared on `clear` command
+- `memory_store` parameter added to `run_agent_turn` (optional, defaults to None)
+
+### 2. Tool schema validation (`tools/__init__.py:execute_tool`)
+- After JSON parse but before tool dispatch, validates parameter names
+- Catches unknown params and missing required params
+- Returns ToolResult with hint listing valid parameters
+- Skips non-dict args (graceful no-op)
+
+### 3. Diff output in edit_file (`tools/file_ops.py`)
+- Successful edits now include a unified diff in the result content
+- Capped at 2000 chars to avoid blowing up context
+- Helps the agent verify its edit before running tests
+
+### 4. Find usages (`tools/search_ops.py`)
+- `find_usages(name)` tool — finds all references to a symbol across workspace
+- Builds a reverse index lazily from the forward symbol index
+- Falls back to grep if index isn't built
+- Deduplicates by file:line
+
+**Tests:** 9 new tests in test_resilience.py (schema, scratchpad, diff).
+**Status:** 243 tests pass, lint clean.

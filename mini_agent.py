@@ -130,7 +130,7 @@ def main() -> None:
     read_gate = ReadSafetyGate(config.workspace)
     memory_path = os.path.join(config.workspace, config.memory_filename)
     memory = MemoryStore(memory_path, max_messages=config.max_messages, max_tokens=config.max_tokens)
-    set_context(exa_api_key=config.exa_api_key)
+    set_context(exa_api_key=config.exa_api_key, scratchpad_path=memory._db_path)
     _log(config.verbose, "Indexing workspace symbols...")
     build_symbol_index(workspace)
     _log(config.verbose, f"Workspace indexed.")
@@ -212,6 +212,7 @@ def main() -> None:
                 on_tool_start=_tool_start,
                 on_tool_end=_tool_end,
                 session=session,
+                memory_store=memory,
                 approve_callback=_approve if config.approve_write_ops else None,
             )
             elapsed = time.monotonic() - t0

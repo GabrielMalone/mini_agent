@@ -298,6 +298,26 @@ class MemoryStore:
         # Migrate from old paths if needed
         _migrate_old_paths(filepath, self._db_path)
 
+        # Ensure parent directory exists
+        parent = os.path.dirname(self._db_path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+
+        try:
+            conn = sqlite3.connect(self._db_path)
+            conn.execute(_CREATE_TABLE)
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS scratchpad ("
+                "id INTEGER PRIMARY KEY CHECK (id = 1),"
+                "content TEXT NOT NULL DEFAULT ''"
+                ")"
+            )
+            # Ensure a row always exists
+            conn.execute("INSERT OR IGNORE INTO scratchpad (id, content) VALUES (1, '')")
+            conn.commit()
+        finally:
+            conn.close()
+
         self._ensure_table()
 
     @property
@@ -364,6 +384,28 @@ class MemoryStore:
                 os.remove(self._db_path)
             except FileNotFoundError:
                 pass
+
+    def get_scratchpad(self) -> str:
+        """Return the current scratchpad content (empty string if none)."""
+        try:
+            with sqlite3.connect(self._db_path) as conn:
+                row = conn.execute(
+                    "SELECT content FROM scratchpad WHERE id = 1"
+                ).fetchone()
+                return row[0] if row else ""
+        except sqlite3.Error:
+            return ""
+
+    def set_scratchpad(self, content: str) -> None:
+        """Update the scratchpad content."""
+        try:
+            with sqlite3.connect(self._db_path) as conn:
+                conn.execute(
+                    "INSERT OR REPLACE INTO scratchpad (id, content) VALUES (1, ?)",
+                    (content,),
+                )
+        except sqlite3.Error:
+            pass  # fail gracefully
 
     # ------------------------------------------------------------------
     # Internal

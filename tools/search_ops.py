@@ -280,3 +280,163 @@ def _web_search_summary(args: dict) -> str:
     if len(query) > 60:
         preview += "…"
     return f"web_search({preview})"
+
+
+# ---------------------------------------------------------------------------
+# find_usages — cross-reference lookup
+# ---------------------------------------------------------------------------
+
+# Reverse index: for each symbol name, all lines where it's referenced
+# (as a bare word in Python source).  Built lazily.
+_REF_INDEX: dict[str, list[dict]] | None = None
+
+
+def build_ref_index(root: str) -> dict[str, list[dict]]:
+    """Scan .py files for symbol references. Reuses the forward index keys."""
+    global _REF_INDEX
+    import re
+
+    # Get the forward index to know which symbols to look for
+    from tools.search_ops import _get_symbol_index
+    fwd = _get_symbol_index(root)
+    if not fwd:
+        _REF_INDEX = {}
+        return {}
+
+    # Build a set of all known symbol names
+    known_names = set(fwd.keys())
+    # Also include common builtins we don't need to track
+    skip_names = {
+        "self", "cls", "True", "False", "None", "int", "str", "list", "dict",
+        "set", "tuple", "bool", "float", "bytes", "type", "object", "super",
+        "range", "len", "print", "isinstance", "hasattr", "getattr", "setattr",
+        "enumerate", "zip", "map", "filter", "iter", "next", "any", "all",
+        "sorted", "reversed", "min", "max", "sum", "abs", "round", "ord", "chr",
+        "open", "Exception", "ValueError", "TypeError", "KeyError", "OSError",
+        "RuntimeError", "ImportError", "AttributeError", "StopIteration",
+        "__init__", "__name__", "__main__", "__file__", "__doc__",
+        "unittest", "TestCase", "json", "os", "sys", "re", "time",
+    }
+    ref_idx: dict[str, list[dict]] = {}
+
+    word_pat = re.compile(r"\b(\w+)\b")
+
+    for dirpath, dirnames, filenames in os.walk(root):
+        from tools.shell_ops import _SKIP_DIRS
+        dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS and not d.startswith(".")]
+        for fname in filenames:
+            if not fname.endswith(".py"):
+                continue
+            fpath = os.path.join(dirpath, fname)
+            try:
+                with open(fpath, "r") as f:
+                    lines = f.readlines()
+            except (OSError, PermissionError):
+                continue
+
+            for lineno, line in enumerate(lines, 1):
+                # Skip def/class lines (those are definitions, not usages)
+                stripped = line.strip()
+                if stripped.startswith(("def ", "class ", "import ", "from ")):
+                    # Still check for inline usages like: from x import Foo
+                    # Simple approach: skip pure def/class declarations
+                    pass
+
+                for match in word_pat.finditer(line):
+                    word = match.group(1)
+                    if word in skip_names:
+                        continue
+                    if word in known_names:
+                        ref_idx.setdefault(word, []).append({
+                            "path": fpath,
+                            "line": lineno,
+                            "context": stripped[:120],
+                        })
+
+    # Deduplicate per path+line (a word might appear twice on same line)
+    for name in ref_idx:
+        seen = set()
+        unique = []
+        for ref in ref_idx[name]:
+            key = (ref["path"], ref["line"])
+            if key not in seen:
+                seen.add(key)
+                unique.append(ref)
+        ref_idx[name] = unique
+
+    _REF_INDEX = ref_idx
+    return ref_idx
+
+
+def _get_ref_index(root: str) -> dict[str, list[dict]]:
+    """Return the reference index, building it lazily."""
+    global _REF_INDEX
+    if _REF_INDEX is None:
+        return build_ref_index(root)
+    return _REF_INDEX
+
+
+@_register("find_usages")
+def _find_usages(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
+    """Find all usages (references) of a Python symbol in the workspace."""
+    import re
+    name = args.get("name", "")
+    if not name:
+        return ToolResult(success=False, content="Missing required parameter: 'name'.")
+
+    root = rg.workspace_root
+    ref_idx = _get_ref_index(root)
+
+    if not ref_idx:
+        return ToolResult(
+            success=True,
+            content=f"Reference index not yet built. Try find_symbol first to populate the forward index.",
+        )
+
+    # Exact match first, then substring
+    if name in ref_idx:
+        matches = ref_idx[name]
+    else:
+        # Substring search
+        matches = []
+        pattern = re.compile(re.escape(name), re.IGNORECASE)
+        for key, refs in ref_idx.items():
+            if pattern.search(key):
+                matches.extend(refs)
+
+    if not matches:
+        # Fall back to grep-based search
+        import subprocess
+        from tools.shell_ops import _SKIP_DIRS
+        try:
+            exclude = " ".join(f"--exclude-dir={d}" for d in _SKIP_DIRS)
+            cmd = f"grep -rn --include='*.py' {exclude} -w '{name}' {root}"
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10)
+            if result.stdout.strip():
+                lines_out = result.stdout.strip().split("\n")[:30]
+                return ToolResult(
+                    success=True,
+                    content=f"Found usages of '{name}' (grep fallback):\n" + "\n".join(f"  {l}" for l in lines_out),
+                )
+        except Exception:
+            pass
+        return ToolResult(
+            success=True,
+            content=f"No usages found for '{name}' in workspace.",
+        )
+
+    # Limit output
+    shown = matches[:30]
+    lines: list[str] = [f"Found {len(matches)} usage(s) of '{name}':"]
+    for ref in shown:
+        lines.append(f"  {ref['path']}:{ref['line']}  {ref['context']}")
+
+    if len(matches) > 30:
+        lines.append(f"  … and {len(matches) - 30} more")
+
+    return ToolResult(success=True, content="\n".join(lines))
+
+
+@_summarize("find_usages")
+def _find_usages_summary(args: dict) -> str:
+    return f"find_usages({args.get('name', '?')})"

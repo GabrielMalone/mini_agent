@@ -2,6 +2,7 @@
 """Tests for resilience features: orphan detection, JSON repair, hints, circuit breaker."""
 
 import json
+import os
 import unittest
 
 from memory import _clean_messages
@@ -279,6 +280,144 @@ class TestCircuitBreaker(unittest.TestCase):
         tc = {"function": {"name": "bad", "arguments": "{{{broken"}}
         key = _tool_call_key(tc)
         self.assertEqual(key, "bad:{{{broken")
+
+
+# ---------------------------------------------------------------------------
+# 5. Schema validation
+# ---------------------------------------------------------------------------
+
+class TestSchemaValidation(unittest.TestCase):
+    """Verify that execute_tool catches wrong parameter names."""
+
+    def setUp(self):
+        self.wg = WriteSafetyGate("/tmp")
+        self.rg = ReadSafetyGate("/tmp")
+
+    def _make_tc(self, name: str, args: str) -> dict:
+        return {
+            "id": "call_test",
+            "type": "function",
+            "function": {"name": name, "arguments": args},
+        }
+
+    def test_unknown_param_rejected(self):
+        """Using 'file_path' instead of 'path' on read_file → rejected with hint."""
+        tc = self._make_tc("read_file", '{"file_path": "/tmp/x"}')
+        result = execute_tool(tc, self.wg, self.rg)
+        self.assertFalse(result.success)
+        self.assertIn("Unknown parameter", result.content)
+        self.assertIn("file_path", result.content)
+        self.assertTrue(result.hint)
+        self.assertIn("Valid parameters:", result.hint)
+
+    def test_missing_required_param_rejected(self):
+        """Missing required 'path' param → rejected with hint."""
+        tc = self._make_tc("read_file", '{}')
+        result = execute_tool(tc, self.wg, self.rg)
+        self.assertFalse(result.success)
+        self.assertIn("Missing required", result.content)
+        self.assertIn("path", result.content)
+
+    def test_correct_params_pass_validation(self):
+        """Correct parameters pass schema validation."""
+        tc = self._make_tc("read_file", '{"path": "/tmp"}')
+        result = execute_tool(tc, self.wg, self.rg)
+        # Schema validation passes; runtime may fail (file not found) but
+        # should not be a schema error
+        self.assertNotIn("Unknown parameter", result.content)
+        self.assertNotIn("Missing required", result.content)
+
+
+# ---------------------------------------------------------------------------
+# 6. Scratchpad
+# ---------------------------------------------------------------------------
+
+class TestScratchpad(unittest.TestCase):
+    """Verify scratchpad persistence and clear behavior."""
+
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.mkdtemp()
+        self.db_path = os.path.join(self.tmp, "mem.json")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_empty_by_default(self):
+        from memory import MemoryStore
+        store = MemoryStore(self.db_path)
+        self.assertEqual(store.get_scratchpad(), "")
+
+    def test_set_and_get(self):
+        from memory import MemoryStore
+        store = MemoryStore(self.db_path)
+        store.set_scratchpad("Plan:\n1. Fix bug\n2. Test")
+        self.assertEqual(store.get_scratchpad(), "Plan:\n1. Fix bug\n2. Test")
+
+    def test_overwrite(self):
+        from memory import MemoryStore
+        store = MemoryStore(self.db_path)
+        store.set_scratchpad("v1")
+        store.set_scratchpad("v2")
+        self.assertEqual(store.get_scratchpad(), "v2")
+
+    def test_clear_removes_scratchpad(self):
+        from memory import MemoryStore
+        store = MemoryStore(self.db_path)
+        store.set_scratchpad("important notes")
+        store.save([{"role": "user", "content": "hi"}])
+        store.clear()
+        self.assertEqual(store.get_scratchpad(), "")
+
+    def test_persists_across_instances(self):
+        from memory import MemoryStore
+        store1 = MemoryStore(self.db_path)
+        store1.set_scratchpad("persistent content")
+
+        store2 = MemoryStore(self.db_path)
+        self.assertEqual(store2.get_scratchpad(), "persistent content")
+
+
+# ---------------------------------------------------------------------------
+# 7. Diff output in edit_file
+# ---------------------------------------------------------------------------
+
+class TestEditFileDiff(unittest.TestCase):
+    """Verify that edit_file returns a unified diff."""
+
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.mkdtemp()
+        self.test_file = os.path.join(self.tmp, "test.py")
+        self.wg = WriteSafetyGate(self.tmp, allow_overwrites=True)
+        self.rg = ReadSafetyGate(self.tmp)
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_successful_edit_includes_diff(self):
+        with open(self.test_file, "w") as f:
+            f.write("hello world\nline two\n")
+        from tools import execute_tool
+        tc = {
+            "id": "call_1",
+            "type": "function",
+            "function": {
+                "name": "edit_file",
+                "arguments": json.dumps({
+                    "path": self.test_file,
+                    "old_string": "hello world",
+                    "new_string": "goodbye world",
+                }),
+            },
+        }
+        result = execute_tool(tc, self.wg, self.rg)
+        self.assertTrue(result.success)
+        self.assertIn("diff", result.content)
+        self.assertIn("hello world", result.content)
+        self.assertIn("goodbye world", result.content)
 
 
 if __name__ == "__main__":

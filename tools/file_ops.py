@@ -132,9 +132,25 @@ def _edit_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResu
         updated = original.replace(old, new, 1)
         with open(safety_result.resolved_path, "w") as f:
             f.write(updated)
+
+        # Build a short unified diff for verification
+        import difflib
+        diff_lines = list(difflib.unified_diff(
+            original.splitlines(keepends=True),
+            updated.splitlines(keepends=True),
+            fromfile=f"a/{path}",
+            tofile=f"b/{path}",
+        ))
+        diff_text = "".join(diff_lines)
+        if len(diff_text) > 2000:
+            diff_text = diff_text[:2000] + "\n… (diff truncated)"
+
         return ToolResult(
             success=True,
-            content=f"OK: replaced 1 occurrence in {safety_result.resolved_path}",
+            content=(
+                f"OK: replaced 1 occurrence in {safety_result.resolved_path}\n"
+                f"```diff\n{diff_text}```"
+            ),
         )
     except Exception as e:
         return ToolResult(
@@ -223,3 +239,63 @@ def _file_info(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResu
 @_summarize("file_info")
 def _file_info_summary(args: dict) -> str:
     return f"file_info({args.get('path', '?')})"
+
+
+# ---------------------------------------------------------------------------
+# write_scratchpad
+# ---------------------------------------------------------------------------
+
+@_register("write_scratchpad")
+def _write_scratchpad(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
+    """Write content to the agent's persistent working scratchpad."""
+    import os as _os
+    content_text = args["content"]
+
+    # Find the MemoryStore instance via _TOOL_CONTEXT
+    # The scratchpad is stored in the SQLite DB alongside messages
+    scratchpad_path = _TOOL_CONTEXT.get("scratchpad_path", "")
+    if scratchpad_path:
+        try:
+            import sqlite3
+            conn = sqlite3.connect(scratchpad_path)
+            conn.execute(
+                "INSERT OR REPLACE INTO scratchpad (id, content) VALUES (1, ?)",
+                (content_text,),
+            )
+            conn.commit()
+            conn.close()
+            return ToolResult(
+                success=True,
+                content=f"Scratchpad updated ({len(content_text)} chars).",
+            )
+        except Exception as e:
+            return ToolResult(
+                success=False,
+                content=f"Failed to update scratchpad: {e}",
+            )
+
+    # Fallback: store in a file
+    fallback = _os.path.join(
+        _TOOL_CONTEXT.get("workspace", "."), ".mini_agent_scratchpad.md"
+    )
+    try:
+        with open(fallback, "w") as f:
+            f.write(content_text)
+        return ToolResult(
+            success=True,
+            content=f"Scratchpad updated ({len(content_text)} chars).",
+        )
+    except Exception as e:
+        return ToolResult(
+            success=False,
+            content=f"Failed to update scratchpad: {e}",
+        )
+
+
+@_summarize("write_scratchpad")
+def _write_scratchpad_summary(args: dict) -> str:
+    content = args.get("content", "")
+    preview = content[:60].replace("\n", " ")
+    if len(content) > 60:
+        preview += "…"
+    return f"write_scratchpad(…{len(content)} chars → \"{preview}\")"

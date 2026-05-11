@@ -340,6 +340,52 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "write_scratchpad",
+            "description": (
+                "Write content to the agent's scratchpad — a persistent working note "
+                "that survives across turns. Use this to track your plan, progress, "
+                "decisions, things you've tried, and open questions. The scratchpad "
+                "is shown to you at the start of every turn. Overwrites previous content."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "content": {
+                        "type": "string",
+                        "description": "Content to write to the scratchpad. Use markdown.",
+                    }
+                },
+                "required": ["content"],
+            },
+        },
+    },
+
+    {
+        "type": "function",
+        "function": {
+            "name": "find_usages",
+            "description": (
+                "Find all usages (references) of a Python symbol across the workspace. "
+                "Returns file path, line number, and surrounding context for each usage. "
+                "Much faster than grep for symbol references. Use this to find all callers "
+                "of a function or all places a class/variable is used before refactoring."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Symbol name to find usages of (e.g. 'execute_tool', 'ToolResult').",
+                    }
+                },
+                "required": ["name"],
+            },
+        },
+    },
+
 ]
 
 
@@ -536,6 +582,35 @@ def execute_tool(
         cache_key = json.dumps([name, args], sort_keys=True)
         if cache_key in _TOOL_CACHE:
             return _TOOL_CACHE[cache_key]
+
+    # --- schema validation: check parameter names against tool definition ---
+    if isinstance(args, dict):
+        tool_schema = None
+        for td in TOOLS:
+            if td["function"]["name"] == name:
+                tool_schema = td["function"].get("parameters", {})
+                break
+        if tool_schema:
+            valid_params = set(tool_schema.get("properties", {}).keys())
+            required_params = set(tool_schema.get("required", []))
+            provided = set(args.keys())
+            unknown = provided - valid_params
+            missing = required_params - provided
+            if unknown or missing:
+                hint_parts = []
+                if unknown:
+                    hint_parts.append(
+                        f"Unknown parameter(s): {', '.join(sorted(unknown))}")
+                if missing:
+                    hint_parts.append(
+                        f"Missing required: {', '.join(sorted(missing))}")
+                hint_parts.append(
+                    f"Valid parameters: {', '.join(sorted(valid_params))}")
+                return ToolResult(
+                    success=False,
+                    content=f"Invalid arguments: {'; '.join(hint_parts[:2])}",
+                    hint="\n".join(hint_parts),
+                )
 
     dispatch = _TOOL_DISPATCH.get(name)
     if dispatch is None:
