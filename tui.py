@@ -169,8 +169,7 @@ Footer.pulse {{
     padding: 0 1;
     height: 35%;
     min-height: 5;
-    scrollbar-background: {theme.bg};
-    scrollbar-color: {theme.border};
+    scrollbar-size: 0 0;
 }}
 
 #pane-divider {{
@@ -178,6 +177,7 @@ Footer.pulse {{
     color: {theme.border};
     height: 1;
     padding: 0 2;
+    scrollbar-size: 0 0;
 }}
 
 #chat-pane {{
@@ -186,8 +186,7 @@ Footer.pulse {{
     border: none;
     padding: 0 1;
     height: 1fr;
-    scrollbar-background: {theme.bg};
-    scrollbar-color: {theme.border};
+    scrollbar-size: 0 0;
 }}
 
 #input-area {{
@@ -379,8 +378,6 @@ class MiniAgentTUI(App):
                 log = self.query_one(f"#{pane_id}", RichLog)
                 log.styles.background = t.bg
                 log.styles.color = t.text
-                log.styles.scrollbar_background = t.bg
-                log.styles.scrollbar_color = t.border
             except Exception:
                 pass
         try:
