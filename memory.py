@@ -314,6 +314,14 @@ class MemoryStore:
             )
             # Ensure a row always exists
             conn.execute("INSERT OR IGNORE INTO scratchpad (id, content) VALUES (1, '')")
+            # Test output table — persisted so agent can read failures without re-running
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS test_output ("
+                "id INTEGER PRIMARY KEY CHECK (id = 1),"
+                "output TEXT NOT NULL DEFAULT ''"
+                ")"
+            )
+            conn.execute("INSERT OR IGNORE INTO test_output (id, output) VALUES (1, '')")
             conn.commit()
         finally:
             conn.close()
@@ -403,6 +411,28 @@ class MemoryStore:
                 conn.execute(
                     "INSERT OR REPLACE INTO scratchpad (id, content) VALUES (1, ?)",
                     (content,),
+                )
+        except sqlite3.Error:
+            pass
+
+    def get_test_output(self) -> str:
+        """Return the last saved test output (empty string if none)."""
+        try:
+            with sqlite3.connect(self._db_path) as conn:
+                row = conn.execute(
+                    "SELECT output FROM test_output WHERE id = 1"
+                ).fetchone()
+                return row[0] if row else ""
+        except sqlite3.Error:
+            return ""
+
+    def save_test_output(self, output: str) -> None:
+        """Save the latest test run output."""
+        try:
+            with sqlite3.connect(self._db_path) as conn:
+                conn.execute(
+                    "INSERT OR REPLACE INTO test_output (id, output) VALUES (1, ?)",
+                    (output,),
                 )
         except sqlite3.Error:
             pass  # fail gracefully

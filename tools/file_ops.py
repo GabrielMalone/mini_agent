@@ -81,6 +81,8 @@ def _write_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolRes
             os.makedirs(parent, exist_ok=True)
         with open(safety_result.resolved_path, "w") as f:
             f.write(content)
+        from tools import _MODIFIED_FILES
+        _MODIFIED_FILES.add(args["path"])
         return ToolResult(
             success=True,
             content=f"OK: wrote {len(content)} bytes to {safety_result.resolved_path}",

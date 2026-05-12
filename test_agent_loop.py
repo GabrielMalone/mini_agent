@@ -409,7 +409,7 @@ class TestRunAgentTurn(unittest.TestCase):
 
         self.assertEqual(msg["content"], "Done.")
         self.assertTrue(os.path.isfile(os.path.join(self.workspace, "f.txt")))
-        self.assertEqual(len(messages), 4)  # user, asst(tools), tool, asst
+        self.assertEqual(len(messages), 5)  # user, asst(tools), tool, checkpoint, asst
 
     @patch("llm.requests.post")
     def test_callbacks_fire(self, mock_post):
@@ -457,7 +457,7 @@ class TestRunAgentTurn(unittest.TestCase):
 
         self.assertEqual(msg["content"], "All done.")
         self.assertTrue(os.path.isfile(os.path.join(self.workspace, "out.txt")))
-        self.assertEqual(len(messages), 6)  # user, asst, tool, asst, tool, asst
+        self.assertEqual(len(messages), 7)  # user, asst, tool, checkpoint, asst, tool, asst
 
     def test_cancel_mid_turn_returns_none(self):
         """Cancel event set before call returns None."""

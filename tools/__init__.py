@@ -218,13 +218,21 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "run_tests",
-            "description": "Run tests in the workspace. Returns structured pass/fail counts and failure details. Use after every code change to verify nothing broke. If 'path' is given, runs only those tests; otherwise runs all.",
+            "description": "Run tests in the workspace. Returns structured pass/fail counts and failure details. If 'path' is given, runs only those tests; otherwise runs all. Use background=True to run tests asynchronously and poll with task_status.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "path": {
                         "type": "string",
                         "description": "Optional: specific test file or directory to run (e.g. 'test_tools.py' or 'test_memory.py'). If omitted, runs all tests."
+                    },
+                    "background": {
+                        "type": "boolean",
+                        "description": "If true, run tests in background and return a task_id immediately. Use task_status to poll for completion."
+                    },
+                    "timeout": {
+                        "type": "integer",
+                        "description": "Max seconds before timing out (default 120). Only applies in foreground mode."
                     }
                 },
                 "required": []

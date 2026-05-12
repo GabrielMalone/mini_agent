@@ -25,10 +25,10 @@ MEMORY_FILENAME = ".mini_agent_memory.db"
 
 DEFAULT_MODEL        = "deepseek-v4-pro"
 DEFAULT_API_URL      = "https://api.deepseek.com/v1/chat/completions"
-DEFAULT_API_KEY      = "sk-df0ebdf0572a4485bd4e89996c9aa710"
+DEFAULT_API_KEY      = ""  # set via DEEPSEEK_API_KEY env var or .mini_agent.toml
 DEFAULT_MAX_MESSAGES = 500
 DEFAULT_MAX_TOKENS   = 800_000
-DEFAULT_EXA_API_KEY  = "4346b9ff-217d-4d42-8cee-f0e74117d188"
+DEFAULT_EXA_API_KEY  = ""  # set via EXA_API_KEY env var or .mini_agent.toml
 
 
 # ---------------------------------------------------------------------------

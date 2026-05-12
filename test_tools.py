@@ -298,6 +298,15 @@ class TestEditFile(unittest.TestCase):
             import shutil
             shutil.rmtree(outside, ignore_errors=True)
 
+    def test_write_file_tracks_modified_files(self):
+        from tools import _MODIFIED_FILES, clear_tool_cache
+        clear_tool_cache()
+        _MODIFIED_FILES.clear()
+        path = os.path.join(self.workspace, "new_file.txt")
+        tc = _make_tool_call("write_file", path=path, content="hello")
+        execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertIn(path, _MODIFIED_FILES)
+
 
 # ---------------------------------------------------------------------------
 # file_info tests
@@ -485,6 +494,46 @@ class TestRunTests(unittest.TestCase):
         tc = _make_tool_call("run_tests", path="nonexistent_file.py")
         result = execute_tool(tc, self.write_gate, self.read_gate)
         self.assertIsInstance(result, ToolResult)
+
+    def test_background_mode_returns_task_id(self):
+        from tools import _TASK_REGISTRY
+        tc = _make_tool_call("run_tests", path="tests/test_dummy.py", background=True)
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertTrue(result.success)
+        self.assertIn("background test run", result.content)
+        # Extract task_id: "Started background test run {id}. Use..."
+        task_id = result.content.split()[4].rstrip(".")
+        self.assertIn(task_id, _TASK_REGISTRY)
+        # Clean up: wait for process to finish
+        proc = _TASK_REGISTRY.pop(task_id, None)
+        if proc:
+            proc.wait(timeout=30)
+
+    def test_test_output_persisted_to_db(self):
+        """After running tests, the output should be in the memory DB."""
+        from tools import _TOOL_CONTEXT
+        # Create a temp DB and wire it into _TOOL_CONTEXT
+        tmp_db = os.path.join(self.workspace, "test_memory.db")
+        _TOOL_CONTEXT["scratchpad_path"] = tmp_db
+        # Initialize the table
+        import sqlite3
+        conn = sqlite3.connect(tmp_db)
+        conn.execute("CREATE TABLE IF NOT EXISTS test_output (id INTEGER PRIMARY KEY CHECK (id = 1), output TEXT NOT NULL DEFAULT '')")
+        conn.execute("INSERT OR IGNORE INTO test_output (id, output) VALUES (1, '')")
+        conn.commit()
+        conn.close()
+
+        tc = _make_tool_call("run_tests", path="test_config.py")
+        execute_tool(tc, self.write_gate, self.read_gate)
+
+        # Verify the DB has test output
+        conn = sqlite3.connect(tmp_db)
+        row = conn.execute("SELECT output FROM test_output WHERE id = 1").fetchone()
+        conn.close()
+        self.assertIsNotNone(row)
+        self.assertTrue(len(row[0]) > 0, "DB should have test output")
+        # Clean up
+        del _TOOL_CONTEXT["scratchpad_path"]
 
 
 # ---------------------------------------------------------------------------

@@ -10,7 +10,6 @@ for SSE parsing with tool-call accumulation and connection-drop resilience.
 import json
 import os
 import sys
-import time
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -38,6 +37,7 @@ def _request_with_retry(
     session,  # requests.Session or the requests module itself
     *args,
     stream: bool = False,
+    cancel_event: threading.Event | None = None,
     **kwargs,
 ) -> requests.Response:
     """Send an HTTP request with retry on transient errors.
@@ -63,7 +63,8 @@ def _request_with_retry(
                     f"(attempt {attempt + 1}/{_MAX_RETRIES})",
                     file=sys.stderr, flush=True,
                 )
-                time.sleep(delay)
+                if cancel_event is not None and cancel_event.wait(delay):
+                    return r  # cancelled during wait
             else:
                 return r  # exhausted retries, let caller handle
         except requests.RequestException as exc:
@@ -75,7 +76,8 @@ def _request_with_retry(
                     f"(attempt {attempt + 1}/{_MAX_RETRIES})",
                     file=sys.stderr, flush=True,
                 )
-                time.sleep(delay)
+                if cancel_event is not None and cancel_event.wait(delay):
+                    raise  # cancelled during wait
             else:
                 raise  # exhausted retries, re-raise
 
@@ -94,6 +96,7 @@ def call_deepseek(
     on_token: callable = None,
     session: requests.Session | None = None,
     on_tool_ready: callable = None,
+    cancel_event: threading.Event | None = None,
 ) -> dict:
     """Send messages to DeepSeek, return the assistant message dict.
 
@@ -137,6 +140,7 @@ def call_deepseek(
             "stream": config.stream,
         },
         stream=config.stream,
+        cancel_event=cancel_event,
     )
 
     if not r.ok:
@@ -514,7 +518,8 @@ def run_agent_turn(
                     on_tool_end(result.success, detail)
 
             msg = call_deepseek(messages, config, on_token=on_token,
-                               session=session, on_tool_ready=_on_tool_ready)
+                               session=session, on_tool_ready=_on_tool_ready,
+                               cancel_event=cancel_event)
 
             if cancel_event is not None and cancel_event.is_set():
                 return None

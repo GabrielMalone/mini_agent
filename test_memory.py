@@ -155,6 +155,23 @@ class TestMemoryStore(unittest.TestCase):
         loaded = self.store.load()
         self.assertTrue(len(loaded) >= 1)
 
+    # ── test_output table ─────────────────────────────────────────────
+
+    def test_test_output_get_empty_by_default(self):
+        result = self.store.get_test_output()
+        self.assertEqual(result, "")
+
+    def test_test_output_save_and_get_roundtrip(self):
+        content = "FAILED test_x.py::test_y - assert 1 == 2\n1 failed, 247 passed"
+        self.store.save_test_output(content)
+        result = self.store.get_test_output()
+        self.assertEqual(result, content)
+
+    def test_test_output_overwrite(self):
+        self.store.save_test_output("first run")
+        self.store.save_test_output("second run")
+        self.assertEqual(self.store.get_test_output(), "second run")
+
 
 # ---------------------------------------------------------------------------
 # Pruning tests

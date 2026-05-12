@@ -14,6 +14,25 @@ from safety import ReadSafetyGate, WriteSafetyGate
 from tools import _register, _summarize, ToolResult, _TASK_REGISTRY
 
 
+def _persist_test_output(output: str) -> None:
+    """Save test run output to the memory DB for later inspection."""
+    from tools import _TOOL_CONTEXT
+    db_path = _TOOL_CONTEXT.get("scratchpad_path")
+    if not db_path:
+        return
+    try:
+        import sqlite3
+        conn = sqlite3.connect(db_path)
+        conn.execute(
+            "INSERT OR REPLACE INTO test_output (id, output) VALUES (1, ?)",
+            (output,),
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+
 # ---------------------------------------------------------------------------
 # run_shell
 # ---------------------------------------------------------------------------
@@ -255,38 +274,76 @@ def _search_files_summary(args: dict) -> str:
 @_register("run_tests")
 def _run_tests(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
     target = args.get("path", "").strip()
+    background = args.get("background", False)
+    timeout = args.get("timeout", 120)
     cmd = ["python", "-m", "pytest", "-q"]
     if target:
         cmd.append(target)
 
     try:
-        result = subprocess.run(
+        proc = subprocess.Popen(
             cmd,
             cwd=rg.workspace_root,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=120,
         )
-    except subprocess.TimeoutExpired:
-        return ToolResult(success=False, content="Tests timed out after 120s")
     except Exception as e:
-        return ToolResult(success=False, content=f"Error running tests: {e}")
+        return ToolResult(success=False, content=f"Error starting pytest: {e}")
 
-    output = (result.stdout + result.stderr).strip()
-    summary_line = ""
+    # Background mode: register and return immediately
+    if background:
+        task_id = str(uuid.uuid4())[:8]
+        _TASK_REGISTRY[task_id] = proc
+        return ToolResult(
+            success=True,
+            content=f"Started background test run {task_id}. Use task_status to check.",
+        )
+
+    # Foreground: collect output via threads, same pattern as run_shell
+    stdout_lines: list[str] = []
+    stderr_lines: list[str] = []
+
+    def _reader(stream, collector):
+        for line in iter(stream.readline, ""):
+            collector.append(line.rstrip("\n"))
+        stream.close()
+
+    t_out = threading.Thread(target=_reader, args=(proc.stdout, stdout_lines), daemon=True)
+    t_err = threading.Thread(target=_reader, args=(proc.stderr, stderr_lines), daemon=True)
+    t_out.start()
+    t_err.start()
+
+    try:
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        t_out.join(timeout=2)
+        t_err.join(timeout=2)
+        return ToolResult(success=False, content=f"Tests timed out after {timeout}s")
+
+    t_out.join(timeout=2)
+    t_err.join(timeout=2)
+
+    output = ("\n".join(stdout_lines) + "\n".join(stderr_lines)).strip()
+    # Persist to DB so agent can read failures without re-running
+    _persist_test_output(output)
+
     lines = output.split("\n")
+    failure_lines = [l.strip() for l in lines if l.strip().startswith("FAILED")]
+    summary_line = ""
     for line in reversed(lines):
         if "passed" in line or "failed" in line or "error" in line:
             summary_line = line.strip()
             break
 
     if not summary_line:
-        summary_line = f"exit_code={result.returncode}"
+        summary_line = f"exit_code={proc.returncode}"
 
-    success = result.returncode == 0
+    success = proc.returncode == 0
 
-    if not success and len(output) > 500:
-        output = "…\n" + output[-500:]
+    if failure_lines and not success:
+        summary_line += "\n" + "\n".join(f"  {fl}" for fl in failure_lines)
 
     return ToolResult(success=success, content=summary_line)
 
@@ -341,13 +398,11 @@ def _verify(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
                 test_targets.append(base)
             else:
                 name = _os.path.splitext(base)[0]
-                # Check multiple candidate test paths
                 candidates = [
                     f"test_{name}.py",
                     f"tests/test_{name}.py",
                     f"test/test_{name}.py",
                 ]
-                # Also check parent-dir test (e.g. tools/file_ops.py → test_tools.py)
                 parent = _os.path.basename(_os.path.dirname(fpath))
                 if parent and parent != root:
                     candidates.append(f"test_{parent}.py")
@@ -357,29 +412,73 @@ def _verify(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
                         if _os.path.exists(_os.path.join(root, candidate)):
                             seen.add(candidate)
                             test_targets.append(candidate)
-                            break  # first match wins
+                            break
 
     if not test_targets:
-        test_targets.append(".")  # run all
+        test_targets.append(".")
 
+    # Run lint + all test targets in parallel
+    jobs: list = []
+    # Lint job
+    lint_cmd = ["python", "-m", "flake8", "--count", "--select=E,F,W", "."]
+    try:
+        lint_proc = subprocess.Popen(
+            lint_cmd, cwd=root, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        jobs.append(("lint", lint_proc))
+    except Exception as e:
+        results.append(f"Lint: error ({e})")
+
+    # Test jobs
     for target in test_targets:
         try:
-            r = subprocess.run(
+            proc = subprocess.Popen(
                 ["python", "-m", "pytest", target, "-q"],
-                cwd=root, capture_output=True, text=True, timeout=120,
+                cwd=root, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
             )
-            out = (r.stdout + r.stderr).strip()
-            # Extract summary line
-            for line in reversed(out.split("\n")):
-                if "passed" in line or "failed" in line or "error" in line:
-                    results.append(f"Tests ({target}): {line.strip()}")
-                    break
-            else:
-                results.append(f"Tests ({target}): exit {r.returncode}")
-        except subprocess.TimeoutExpired:
-            results.append(f"Tests ({target}): timed out")
+            jobs.append(("test", (target, proc)))
         except Exception as e:
             results.append(f"Tests ({target}): error ({e})")
+
+    # Wait for all jobs (ordered: lint first, then tests)
+    for kind, payload in jobs:
+        if kind == "lint":
+            proc = payload
+            try:
+                out, _ = proc.communicate(timeout=60)
+                out = out.strip()
+                if proc.returncode == 0:
+                    results.append("Lint: passed")
+                else:
+                    last = out.split("\n")[-1] if out else "failed"
+                    results.append(f"Lint: {last}")
+            except subprocess.TimeoutExpired:
+                proc.kill(); proc.communicate()
+                results.append("Lint: timed out")
+        else:
+            target, proc = payload
+            try:
+                out, err = proc.communicate(timeout=120)
+                out = (out + err).strip()
+                # Persist to DB
+                _persist_test_output(out)
+                lines = out.split("\n")
+                failure_lines = [l.strip() for l in lines if l.strip().startswith("FAILED")]
+                summary = ""
+                for line in reversed(lines):
+                    if "passed" in line or "failed" in line or "error" in line:
+                        summary = line.strip()
+                        break
+                if summary:
+                    result_entry = f"Tests ({target}): {summary}"
+                    if failure_lines and "failed" in summary.lower():
+                        result_entry += "\n" + "\n".join(f"  {fl}" for fl in failure_lines)
+                    results.append(result_entry)
+                else:
+                    results.append(f"Tests ({target}): exit {proc.returncode}")
+            except subprocess.TimeoutExpired:
+                proc.kill(); proc.communicate()
+                results.append(f"Tests ({target}): timed out")
 
     # Step 3: modified files summary
     if _MODIFIED_FILES:
