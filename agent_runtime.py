@@ -29,6 +29,22 @@ class SubAgentResult:
     scratchpad: str = ""      # final scratchpad state for parent context
     error: str | None = None
 
+    def to_dict(self) -> dict:
+        """Return a JSON-serializable dict."""
+        return {
+            "success": self.success,
+            "content": self.content,
+            "turns_used": self.turns_used,
+            "tool_calls_made": self.tool_calls_made,
+            "scratchpad": self.scratchpad,
+            "error": self.error,
+        }
+
+    def to_dict(self) -> dict:
+        return {"success": self.success, "content": self.content,
+                "turns_used": self.turns_used, "tool_calls_made": self.tool_calls_made,
+                "scratchpad": getattr(self, "scratchpad", ""), "error": self.error}
+
     def to_json(self) -> str:
         import json
         return json.dumps({
@@ -57,21 +73,23 @@ class AgentRuntime:
         self.tasks: dict[str, threading.Thread] = {}
         self.results: dict[str, SubAgentResult] = {}
         self.cancel_events: dict[str, threading.Event] = {}
+        self.max_turns: dict[str, int] = {}  # mutable per-task turn budgets
 
     # ---- spawn ----
 
     def register(self, task_id: str, thread: threading.Thread,
-                 cancel_event: threading.Event) -> None:
+                 cancel_event: threading.Event, max_turns: int = 20) -> None:
         with self._lock:
             self.tasks[task_id] = thread
             self.cancel_events[task_id] = cancel_event
+            self.max_turns[task_id] = max_turns
 
     def store_result(self, task_id: str, result: SubAgentResult) -> None:
         with self._lock:
             self.results[task_id] = result
-            # Clean up task and cancel event to avoid memory leak
             self.tasks.pop(task_id, None)
             self.cancel_events.pop(task_id, None)
+            self.max_turns.pop(task_id, None)
 
     # ---- query ----
 
@@ -87,6 +105,19 @@ class AgentRuntime:
     def get_result(self, task_id: str) -> SubAgentResult | None:
         with self._lock:
             return self.results.get(task_id)
+
+    def extend_turns(self, task_id: str, additional: int) -> bool:
+        """Bump the max_turns budget for a running sub-agent. Returns True if found."""
+        with self._lock:
+            if task_id in self.max_turns:
+                self.max_turns[task_id] += additional
+                return True
+            return False
+
+    def get_max_turns(self, task_id: str) -> int | None:
+        """Read current max_turns for a running sub-agent."""
+        with self._lock:
+            return self.max_turns.get(task_id)
 
     def cancel(self, task_id: str) -> bool:
         """Request cancellation of a running sub-agent. Returns True if found."""

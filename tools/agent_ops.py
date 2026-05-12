@@ -45,6 +45,7 @@ def _spawn_agent(args: dict, wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolRes
         )
 
     max_turns = args.get("max_turns", _DEFAULT_MAX_TURNS)
+    visible = args.get("visible", False)
     try:
         max_turns = int(max_turns)
     except (TypeError, ValueError):
@@ -89,6 +90,10 @@ def _spawn_agent(args: dict, wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolRes
 
     def _runner() -> None:
         """Wrapper that stores the result on completion."""
+        import sys as _sys
+        if visible:
+            config.stream = True
+            print(f"\n  [sub {task_id}] START: {task[:80]}", file=_sys.stderr, flush=True)
         result = run_sub_agent(
             task=task,
             config=config,

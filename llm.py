@@ -58,7 +58,7 @@ def call_deepseek(
         session = requests  # use module-level .post (testable via mock)
 
     clean_messages = []
-    for m in messages:
+    for i, m in enumerate(messages):
         m2 = {k: v for k, v in m.items()
               if not k.startswith("_")}  # strip internal tracking fields
         if "tool_calls" in m2:
@@ -66,6 +66,10 @@ def call_deepseek(
                 {k: v for k, v in tc.items() if k != "index"}
                 for tc in m2["tool_calls"]
             ]
+        # Prompt caching: mark the first system message for server-side caching.
+        # DeepSeek reuses the cached prefix on subsequent calls within a session.
+        if i == 0 and m2.get("role") == "system":
+            m2["cache_control"] = {"type": "ephemeral"}
         clean_messages.append(m2)
 
     r = _request_with_retry(

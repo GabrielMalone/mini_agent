@@ -35,6 +35,8 @@ def run_sub_agent(
     max_turns: int = 15,
     cancel_event: threading.Event | None = None,
     parent_depth: int = 0,
+    shared_context: str = "",
+    stream: bool = False,
 ) -> SubAgentResult:
     """Run a sub-agent loop in the current thread (called from a background thread).
 
@@ -62,8 +64,16 @@ def run_sub_agent(
     messages: list[dict] = [
         {"role": "system", "content": _SUB_AGENT_SYSTEM_PROMPT},
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": task},
     ]
+    if shared_context:
+        messages.append({
+            "role": "system",
+            "content": (
+                "Shared context from parent agent (API contracts, coordination info, etc.):\n"
+                + shared_context
+            ),
+        })
+    messages.append({"role": "user", "content": task})
 
     turn_count = 0
     tool_calls_made = 0
@@ -76,8 +86,20 @@ def run_sub_agent(
     import json
     import requests
 
-    for _ in range(max_turns):
+    # main loop — uses while + dynamic max_turns re-read so parent can extend budget
+    while turn_count < max_turns:
         turn_count += 1
+        # Re-read max_turns from runtime (parent may have extended it)
+        from tools import _TOOL_CONTEXT
+        runtime_ctx = _TOOL_CONTEXT.__dict__.get("_agent_runtime")
+        # Find our own task_id by looking up which task we are
+        if runtime_ctx is not None:
+            for tid, t in list(runtime_ctx.tasks.items()):
+                if t.ident == threading.current_thread().ident:
+                    updated = runtime_ctx.get_max_turns(tid)
+                    if updated is not None and updated > max_turns:
+                        max_turns = updated
+                    break
         if cancel_event is not None and cancel_event.is_set():
             return SubAgentResult(
                 success=False,
@@ -102,11 +124,16 @@ def run_sub_agent(
                 "_transient": True,
             })
 
-        # Call the LLM
+        # Call the LLM — stream to stderr if config.stream is set
+        on_token = None
+        if config.stream:
+            import sys as _sys
+            on_token = lambda t: (_sys.stderr.write(t), _sys.stderr.flush())
         msg = call_deepseek(
             messages, config,
             session=requests,
             cancel_event=cancel_event,
+            on_token=on_token,
         )
 
         if cancel_event is not None and cancel_event.is_set():
@@ -147,7 +174,7 @@ def run_sub_agent(
             name = fn.get("name", "")
 
             # --- Recursion guard: block sub-agent spawn/status/collect ---
-            if name in ("spawn_agent", "agent_status", "collect_agent"):
+            if name in ("spawn_agent", "agent_status", "collect_agent", "collect_any", "agent_extend"):
                 from tools import ToolResult as TR
                 result = TR(
                     success=False,
@@ -219,7 +246,7 @@ _SUB_AGENT_SYSTEM_PROMPT = (
     "- Use tools as needed to complete your work.\n"
     "- When done, produce a concise final answer summarizing what you did, "
     "what files you changed, and any results.\n"
-    "- Do not call spawn_agent, agent_status, or collect_agent — those are "
+    "- Do not call spawn_agent, agent_status, collect_agent, collect_any, or agent_extend — those are "
     "only for the parent orchestrator. You are a leaf worker.\n"
     "- Do not ask clarifying questions — just do the work and report back.\n"
     "- If you encounter an error you cannot fix, report it clearly in your "

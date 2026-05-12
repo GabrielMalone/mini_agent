@@ -213,12 +213,108 @@ class TestCollectAgentTool:
 class TestRecursionGuard:
     def test_blocked_tools_in_sub_agent(self):
         """Verify that the blocked tool names are correct."""
-        blocked = {"spawn_agent", "agent_status", "collect_agent"}
+        blocked = {"spawn_agent", "agent_status", "collect_agent", "collect_any"}
         from sub_agent import run_sub_agent
         import inspect
         source = inspect.getsource(run_sub_agent)
         for tool in blocked:
             assert tool in source, f"Recursion guard should block '{tool}'"
+
+
+# ---------------------------------------------------------------------------
+# spawn_all / batch spawn tests
+# ---------------------------------------------------------------------------
+
+class TestSpawnAll:
+    def test_batch_spawn_tasks(self, configured_context, gates):
+        """spawn_agent with tasks=list should spawn multiple sub-agents."""
+        wg, rg = gates
+        dispatch = _TOOL_DISPATCH.get("spawn_agent")
+        result = dispatch({
+            "tasks": ["say hello", "say goodbye", "count to 3"],
+            "max_turns": 1,
+        }, wg, rg)
+        assert result.success is True
+        assert "Spawned 3 sub-agent" in result.content
+
+    def test_empty_tasks_fails(self, configured_context, gates):
+        wg, rg = gates
+        dispatch = _TOOL_DISPATCH.get("spawn_agent")
+        result = dispatch({"tasks": []}, wg, rg)
+        assert result.success is False
+        assert "non-empty list" in result.content
+
+    def test_mixed_invalid_tasks(self, configured_context, gates):
+        """Empty strings in tasks list are skipped gracefully."""
+        wg, rg = gates
+        dispatch = _TOOL_DISPATCH.get("spawn_agent")
+        result = dispatch({
+            "tasks": ["valid task", "", "  "],
+            "max_turns": 1,
+        }, wg, rg)
+        assert result.success is True
+        assert "1 sub-agent" in result.content  # only the valid one spawned
+
+    def test_all_invalid_tasks_fails(self, configured_context, gates):
+        wg, rg = gates
+        dispatch = _TOOL_DISPATCH.get("spawn_agent")
+        result = dispatch({"tasks": ["", ""]}, wg, rg)
+        assert result.success is False
+        assert "No sub-agents could be spawned" in result.content
+
+
+# ---------------------------------------------------------------------------
+# collect_any tests
+# ---------------------------------------------------------------------------
+
+class TestCollectAny:
+    def test_collect_any_missing_runtime(self, gates):
+        """Without runtime, collect_any should fail gracefully."""
+        wg, rg = gates
+        dispatch = _TOOL_DISPATCH.get("collect_any")
+        assert dispatch is not None
+        old = _TOOL_CONTEXT.__dict__.get("_agent_runtime")
+        _TOOL_CONTEXT.__dict__["_agent_runtime"] = None
+        try:
+            result = dispatch({}, wg, rg)
+            assert result.success is False
+            assert "not initialized" in result.content
+        finally:
+            _TOOL_CONTEXT.__dict__["_agent_runtime"] = old
+
+    def test_collect_any_no_sub_agents(self, configured_context, gates):
+        """No sub-agents running or completed — should return error."""
+        wg, rg = gates
+        dispatch = _TOOL_DISPATCH.get("collect_any")
+        result = dispatch({}, wg, rg)
+        assert result.success is False
+        assert "No sub-agents" in result.content
+
+    def test_collect_any_already_completed(self, configured_context, gates):
+        """If a sub-agent already completed, collect_any returns it immediately."""
+        wg, rg = gates
+        runtime = _TOOL_CONTEXT.__dict__.get("_agent_runtime")
+        result_obj = SubAgentResult(success=True, content="done", turns_used=2)
+        runtime.store_result("task_x", result_obj)
+
+        dispatch = _TOOL_DISPATCH.get("collect_any")
+        result = dispatch({}, wg, rg)
+        assert result.success is True
+        assert "task_x" in result.content
+        assert "done" in result.content
+
+    def test_collect_any_with_task_ids(self, configured_context, gates):
+        """collect_any with specific task_ids returns the first completed."""
+        wg, rg = gates
+        runtime = _TOOL_CONTEXT.__dict__.get("_agent_runtime")
+        result_obj = SubAgentResult(success=True, content="beta result", turns_used=1)
+        runtime.store_result("beta", result_obj)
+
+        dispatch = _TOOL_DISPATCH.get("collect_any")
+        result = dispatch({"task_ids": ["alpha", "beta", "gamma"]}, wg, rg)
+        assert result.success is True
+        assert "beta" in result.content
+        assert "beta result" in result.content
 
 
 # ---------------------------------------------------------------------------
@@ -241,3 +337,136 @@ class TestResultSerialization:
         assert d["success"] is True
         assert d["turns_used"] == 4
         assert d["tool_calls_made"] == 2
+
+
+# ---------------------------------------------------------------------------
+# shared_context tests
+# ---------------------------------------------------------------------------
+
+class TestSharedContext:
+    def test_shared_context_passed_to_sub_agent(self, configured_context, gates):
+        """Verify shared_context shows up in sub-agent messages."""
+        import sub_agent as sa
+
+        # Capture the messages built by run_sub_agent
+        original = sa.run_sub_agent
+
+        def capture(*args, **kwargs):
+            # We just want to verify shared_context is in kwargs
+            assert "shared_context" in kwargs
+            return SubAgentResult(success=True, content="ok")
+
+        try:
+            sa.run_sub_agent = capture
+            wg, rg = gates
+            dispatch = _TOOL_DISPATCH.get("spawn_agent")
+            result = dispatch({
+                "task": "test task",
+                "max_turns": 1,
+                "shared_context": "API: /stats -> {count: int}",
+            }, wg, rg)
+            assert result.success is True
+        finally:
+            sa.run_sub_agent = original
+
+
+# ---------------------------------------------------------------------------
+# agent_message tests
+# ---------------------------------------------------------------------------
+
+class TestAgentMessage:
+    def setup_method(self):
+        from tools.agent_ops import _AGENT_MSGS, _AGENT_MSGS_LOCK
+        with _AGENT_MSGS_LOCK:
+            _AGENT_MSGS.clear()
+
+    def test_broadcast_and_read(self, configured_context, gates):
+        """Send a message, then read it back."""
+        wg, rg = gates
+        send = _TOOL_DISPATCH.get("agent_message")
+        read = _TOOL_DISPATCH.get("agent_read")
+
+        r1 = send({"text": "Backend API ready at /api/stats", "from": "backend"}, wg, rg)
+        assert r1.success is True
+        assert "1 total messages" in r1.content
+
+        r2 = read({}, wg, rg)
+        assert r2.success is True
+        assert "Backend API ready" in r2.content
+        assert "from=backend" in r2.content
+
+    def test_read_since(self, configured_context, gates):
+        """agent_read with since should skip old messages."""
+        wg, rg = gates
+        send = _TOOL_DISPATCH.get("agent_message")
+        read = _TOOL_DISPATCH.get("agent_read")
+
+        send({"text": "msg 0"}, wg, rg)
+        send({"text": "msg 1"}, wg, rg)
+        send({"text": "msg 2"}, wg, rg)
+
+        r = read({"since": 1}, wg, rg)
+        assert r.success is True
+        assert "msg 1" in r.content
+        assert "msg 2" in r.content
+        assert "msg 0" not in r.content
+
+    def test_read_no_new_messages(self, configured_context, gates):
+        wg, rg = gates
+        send = _TOOL_DISPATCH.get("agent_message")
+        read = _TOOL_DISPATCH.get("agent_read")
+
+        send({"text": "only msg"}, wg, rg)
+        r = read({"since": 5}, wg, rg)  # beyond what exists
+        assert r.success is True
+        assert "No new messages" in r.content
+
+    def test_send_missing_text(self, configured_context, gates):
+        wg, rg = gates
+        send = _TOOL_DISPATCH.get("agent_message")
+        r = send({}, wg, rg)
+        assert r.success is False
+        assert "Missing" in r.content
+
+
+# ---------------------------------------------------------------------------
+# agent_extend tests
+# ---------------------------------------------------------------------------
+
+class TestAgentExtend:
+    def test_extend_running_agent(self, configured_context, gates):
+        """Extending a running agent's turns should succeed."""
+        wg, rg = gates
+        runtime = _TOOL_CONTEXT.__dict__.get("_agent_runtime")
+        # Simulate a running agent
+        ev = threading.Event()
+        t = threading.Thread(target=lambda: ev.wait(), daemon=True)
+        runtime.register("task_z", t, ev, max_turns=10)
+        t.start()
+
+        dispatch = _TOOL_DISPATCH.get("agent_extend")
+        result = dispatch({"task_id": "task_z", "additional": 10}, wg, rg)
+        assert result.success is True
+        assert "+10" in result.content
+        assert runtime.get_max_turns("task_z") == 20
+
+        runtime.cancel("task_z")
+        t.join(timeout=1)
+
+    def test_extend_completed_agent(self, configured_context, gates):
+        """Extending an already-completed agent should report it."""
+        wg, rg = gates
+        runtime = _TOOL_CONTEXT.__dict__.get("_agent_runtime")
+        runtime.store_result("done", SubAgentResult(success=True, content="ok"))
+
+        dispatch = _TOOL_DISPATCH.get("agent_extend")
+        result = dispatch({"task_id": "done", "additional": 5}, wg, rg)
+        assert result.success is True
+        assert "already completed" in result.content
+
+    def test_extend_not_found(self, configured_context, gates):
+        wg, rg = gates
+        dispatch = _TOOL_DISPATCH.get("agent_extend")
+        result = dispatch({"task_id": "nope", "additional": 5}, wg, rg)
+        assert result.success is False
+        assert "not found" in result.content

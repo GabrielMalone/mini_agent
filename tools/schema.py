@@ -467,20 +467,33 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "spawn_agent",
-            "description": "Spawn a sub-agent to work on a task in a background thread. Returns a task_id immediately — the parent does NOT block. Use agent_status to poll or collect_agent to block later when you need the result. Sub-agents share your workspace and tools but have their own context. Max 5 concurrent sub-agents, 25 turns each.",
+            "description": "Spawn one or more sub-agents to work on tasks in background threads. Returns a task_id immediately — the parent does NOT block. Use agent_status to poll or collect_agent to block later when you need the result. For multiple tasks, pass 'tasks' (list) instead of 'task' to spawn them all in one call. Sub-agents share your workspace and tools but have their own context. Max 5 concurrent sub-agents, 35 turns each.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "task": {
                         "type": "string",
-                        "description": "Task description for the sub-agent. Be specific about what to do and what output you expect. The sub-agent works independently and returns a final answer."
+                        "description": "Task description for the sub-agent. Be specific about what to do and what output you expect. Use this OR 'tasks' (not both)."
+                    },
+                    "tasks": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Multiple task descriptions to spawn in parallel. Use this OR 'task' (not both). Max 5 at a time."
+                    },
+                    "shared_context": {
+                        "type": "string",
+                        "description": "Optional: information shared with all spawned sub-agents (API contracts, schemas, coordination notes). Injected as a system message."
                     },
                     "max_turns": {
                         "type": "integer",
-                        "description": "Optional: max turns for the sub-agent (default 15, max 25)."
+                        "description": "Optional: max turns per sub-agent (default 20, max 35)."
+                    },
+                    "visible": {
+                        "type": "boolean",
+                        "description": "If true, stream the sub-agent's thinking and tool output to stderr so the user can watch progress inline."
                     }
                 },
-                "required": ["task"]
+                "required": []
             }
         }
     },
@@ -512,6 +525,83 @@ TOOLS = [
                     "task_id": {
                         "type": "string",
                         "description": "Task ID returned by spawn_agent."
+                    }
+                },
+                "required": ["task_id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "collect_any",
+            "description": "Collect the first sub-agent that finishes (from a list of task_ids). If any have already completed, returns immediately. Otherwise polls until one completes or timeout (120s). Use after spawn_agent with multiple tasks to grab the fastest result.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of task IDs to check. If omitted, checks all known sub-agents."
+                    }
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "agent_message",
+            "description": "Broadcast a message visible to the parent and all sibling sub-agents. Use to share API schemas, status updates, or results that other agents need.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {
+                        "type": "string",
+                        "description": "Message text to broadcast."
+                    },
+                    "from": {
+                        "type": "string",
+                        "description": "Optional label identifying the sender (e.g. 'backend-agent')."
+                    }
+                },
+                "required": ["text"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "agent_read",
+            "description": "Read broadcast messages from other sub-agents and the parent. Returns messages in chronological order.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "since": {
+                        "type": "integer",
+                        "description": "Optional: only return messages with index >= this value (for polling)."
+                    }
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "agent_extend",
+            "description": "Extend the turn budget of a running sub-agent. Use when a sub-agent is still making progress but needs more turns to finish. Check agent_status first to confirm it's still running.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "string",
+                        "description": "Task ID returned by spawn_agent."
+                    },
+                    "additional": {
+                        "type": "integer",
+                        "description": "Additional turns to grant (default 10)."
                     }
                 },
                 "required": ["task_id"]
