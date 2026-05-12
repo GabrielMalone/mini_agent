@@ -28,6 +28,7 @@ DEFAULT_API_URL      = "https://api.deepseek.com/v1/chat/completions"
 DEFAULT_API_KEY      = ""  # set via DEEPSEEK_API_KEY env var or .mini_agent.toml
 DEFAULT_MAX_MESSAGES = 500
 DEFAULT_MAX_TOKENS   = 800_000
+DEFAULT_SUB_AGENT_MAX_TURNS = 25
 DEFAULT_EXA_API_KEY  = ""  # set via EXA_API_KEY env var or .mini_agent.toml
 
 
@@ -56,19 +57,24 @@ class AgentConfig:
     memory_filename: str = MEMORY_FILENAME
     max_messages: int = DEFAULT_MAX_MESSAGES
     max_tokens: int = DEFAULT_MAX_TOKENS
+    sub_agent_max_turns: int = DEFAULT_SUB_AGENT_MAX_TURNS
     exa_api_key: str = DEFAULT_EXA_API_KEY
     approve_write_ops: bool = False
+    unrestricted: bool = False
 
     # ------------------------------------------------------------------
     # Factory
     # ------------------------------------------------------------------
 
     @classmethod
-    def load(cls, workspace: str) -> "AgentConfig":
+    def load(cls, workspace: str, cli_args: object | None = None) -> "AgentConfig":
         """Build an AgentConfig from all sources.
 
         *workspace* is the already-resolved workspace root (from
         ``--workspace`` flag, ``AGENT_WORKSPACE`` env var, or cwd).
+
+        *cli_args* is an optional argparse namespace from ``parse_args()``.
+        When provided, its values take precedence over ``sys.argv`` checks.
         """
         config = cls()
 
@@ -93,14 +99,28 @@ class AgentConfig:
             config.exa_api_key = os.environ["EXA_API_KEY"]
 
         # ---- 3.  CLI flags --------------------------------------------------
-        if "--stream" in sys.argv:
-            config.stream = True
-        if "--quiet" in sys.argv:
-            config.verbose = False
-        if "--allow-overwrites" in sys.argv:
-            config.allow_overwrites = True
-        if "--approve" in sys.argv:
-            config.approve_write_ops = True
+        if cli_args is not None:
+            if cli_args.stream is not None:
+                config.stream = cli_args.stream
+            if cli_args.quiet is not None:
+                config.verbose = not cli_args.quiet
+            if cli_args.allow_overwrites is not None:
+                config.allow_overwrites = cli_args.allow_overwrites
+            if cli_args.approve is not None:
+                config.approve_write_ops = cli_args.approve
+            if cli_args.unrestricted is not None:
+                config.unrestricted = cli_args.unrestricted
+        else:
+            if "--stream" in sys.argv:
+                config.stream = True
+            if "--quiet" in sys.argv:
+                config.verbose = False
+            if "--allow-overwrites" in sys.argv:
+                config.allow_overwrites = True
+            if "--approve" in sys.argv:
+                config.approve_write_ops = True
+            if "--unrestricted" in sys.argv:
+                config.unrestricted = True
         # --workspace is resolved before we get here; store it
         config.workspace = workspace
 
@@ -121,8 +141,10 @@ _TOML_SCHEMA: dict[str, type] = {
     "verbose": bool,
     "max_messages": int,
     "max_tokens": int,
+    "sub_agent_max_turns": int,
     "exa_api_key": str,
     "approve_write_ops": bool,
+    "unrestricted": bool,
 }
 
 
@@ -203,8 +225,11 @@ def build_startup_context(workspace: str) -> str:
     return "\n".join(parts) + "\n"
 
 
-def init_session(workspace: str) -> dict:
+def init_session(workspace: str, cli_args: object | None = None) -> dict:
     """Shared agent initialization used by both terminal and TUI.
+
+    *cli_args* is an optional argparse namespace. Pass it to forward
+    CLI flags to AgentConfig.load().
 
     Returns: config, write_gate, read_gate, memory, messages
     """
@@ -212,14 +237,21 @@ def init_session(workspace: str) -> dict:
     from memory import MemoryStore
     from prompt import SYSTEM_PROMPT
     from tools import set_context, build_symbol_index
+    from agent_runtime import AgentRuntime
 
-    config = AgentConfig.load(workspace)
-    write_gate = WriteSafetyGate(workspace, allow_overwrites=config.allow_overwrites)
-    read_gate = ReadSafetyGate(workspace)
+    config = AgentConfig.load(workspace, cli_args=cli_args)
+    write_gate = WriteSafetyGate(workspace, allow_overwrites=config.allow_overwrites,
+                                 unrestricted=config.unrestricted)
+    read_gate = ReadSafetyGate(workspace, unrestricted=config.unrestricted)
     memory_path = os.path.join(workspace, config.memory_filename)
     memory = MemoryStore(memory_path, max_messages=config.max_messages,
                         max_tokens=config.max_tokens)
     set_context(exa_api_key=config.exa_api_key, scratchpad_path=memory._db_path)
+    
+    # Initialize multi-agent runtime
+    runtime = AgentRuntime()
+    set_context(_agent_config=config, _agent_runtime=runtime)
+    
     build_symbol_index(workspace)
 
     saved = memory.load()
@@ -240,11 +272,59 @@ def init_session(workspace: str) -> dict:
     }
 
 
-def resolve_workspace() -> str:
+def parse_args(argv: list[str] | None = None) -> object:
+    """Parse CLI flags with argparse.
+
+    Returns a namespace with: workspace, stream, quiet, allow_overwrites,
+    approve, no_color.
+    All attributes default to None so callers can distinguish "not passed"
+    from "passed with False". Workspace defaults to the env var or cwd.
+    """
+    import argparse as _ap
+    parser = _ap.ArgumentParser(
+        prog="mini_agent",
+        description="A coding agent powered by DeepSeek V4 Pro.",
+    )
+    parser.add_argument(
+        "--workspace", default=None,
+        help="Workspace root directory (env: AGENT_WORKSPACE, default: cwd)",
+    )
+    parser.add_argument(
+        "--stream", action="store_true", default=None,
+        help="Stream responses token-by-token (default: off)",
+    )
+    parser.add_argument(
+        "--quiet", action="store_true", default=None,
+        help="Suppress tool execution logs (default: off)",
+    )
+    parser.add_argument(
+        "--allow-overwrites", action="store_true", default=None,
+        help="Allow overwriting existing files without confirmation (default: off)",
+    )
+    parser.add_argument(
+        "--approve", action="store_true", default=None,
+        help="Prompt for approval before each write/destructive operation (default: off)",
+    )
+    parser.add_argument(
+        "--no-color", action="store_true", default=None,
+        help="Disable ANSI colours in output (default: off)",
+    )
+    parser.add_argument(
+        "--unrestricted", action="store_true", default=None,
+        help="Remove workspace boundary checks (allows read/write anywhere)",
+    )
+    return parser.parse_known_args(argv)[0]
+
+
+def resolve_workspace(override: str | None = None) -> str:
     """Resolve workspace root from CLI arg, env var, or default to cwd.
 
+    *override* takes priority (from argparse).  Falls back to sys.argv,
+    then AGENT_WORKSPACE env var, then cwd.
     Used by both the terminal REPL (mini_agent.py) and TUI (tui.py).
     """
+    if override is not None:
+        return override
     import sys as _sys
     args = _sys.argv[1:]
     for i, arg in enumerate(args):

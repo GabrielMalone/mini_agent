@@ -17,7 +17,7 @@ from tools import _register, _summarize, ToolResult, _TASK_REGISTRY
 def _persist_test_output(output: str) -> None:
     """Save test run output to the memory DB for later inspection."""
     from tools import _TOOL_CONTEXT, CTX_SCRATCHPAD_PATH
-    db_path = _TOOL_CONTEXT.get(CTX_SCRATCHPAD_PATH)
+    db_path = _TOOL_CONTEXT.scratchpad_path
     if not db_path:
         return
     try:

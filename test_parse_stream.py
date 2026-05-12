@@ -5,7 +5,7 @@ import json
 import unittest
 from unittest.mock import MagicMock, patch
 
-from llm import _parse_stream, THINKING_START, THINKING_END
+from stream import _parse_stream, THINKING_START, THINKING_END
 
 
 def _sse_response(lines):
@@ -149,17 +149,17 @@ class TestParseStream(unittest.TestCase):
                 "choices": [{"delta": {
                     "tool_calls": [
                         {"index": 0, "id": "c0", "type": "function",
-                         "function": {"name": "read_", "arguments": ""}},
+                         "function": {"name": "read_file", "arguments": ""}},
                         {"index": 1, "id": "c1", "type": "function",
-                         "function": {"name": "write_", "arguments": ""}},
+                         "function": {"name": "write_file", "arguments": ""}},
                     ]
                 }}]
             }),
             'data: ' + json.dumps({
                 "choices": [{"delta": {
                     "tool_calls": [
-                        {"index": 0, "function": {"name": "file"}},
-                        {"index": 1, "function": {"name": "file"}},
+                        {"index": 0, "function": {"arguments": '{"path":'}},
+                        {"index": 1, "function": {"arguments": '{"path":'}},
                     ]
                 }}]
             }),

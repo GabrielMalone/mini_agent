@@ -1,0 +1,266 @@
+#!/usr/bin/env python3
+"""
+agent_ops.py — multi-agent tools for mini_agent.
+
+Tools: spawn_agent, agent_status, collect_agent
+
+spawn_agent launches a sub-agent in a background thread and returns
+a task_id immediately (never blocks the parent).  agent_status polls
+for completion.  collect_agent blocks until the sub-agent finishes
+and returns the full result.
+"""
+
+import threading
+import uuid
+
+from safety import ReadSafetyGate, WriteSafetyGate
+from tools import _register, _summarize, ToolResult
+from agent_runtime import AgentRuntime, SubAgentResult
+
+
+# ---------------------------------------------------------------------------
+# spawn_agent
+# ---------------------------------------------------------------------------
+
+_MAX_CONCURRENT = 5          # hard cap on concurrent sub-agents
+_DEFAULT_MAX_TURNS = 15      # default turn budget per sub-agent
+_ABSOLUTE_MAX_TURNS = 25     # never allow more than this
+
+
+@_register("spawn_agent")
+def _spawn_agent(args: dict, wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
+    """Spawn a sub-agent to work on a task in the background.
+
+    Returns a task_id immediately.  Use agent_status to poll or
+    collect_agent to block until completion.
+    """
+    from tools import _TOOL_CONTEXT
+    from agent_runtime import AgentRuntime
+
+    task = args.get("task", "")
+    if not task.strip():
+        return ToolResult(
+            success=False,
+            content="Missing required parameter: 'task' (the task description for the sub-agent).",
+        )
+
+    max_turns = args.get("max_turns", _DEFAULT_MAX_TURNS)
+    try:
+        max_turns = int(max_turns)
+    except (TypeError, ValueError):
+        return ToolResult(
+            success=False,
+            content=f"max_turns must be an integer, got: {max_turns}",
+        )
+    max_turns = max(1, min(max_turns, _ABSOLUTE_MAX_TURNS))
+
+    # Access the shared runtime (created in tools/__init__.py)
+    runtime: AgentRuntime = _TOOL_CONTEXT.__dict__.get("_agent_runtime")
+    if runtime is None:
+        return ToolResult(
+            success=False,
+            content="Agent runtime not initialized. Multi-agent support is unavailable.",
+        )
+
+    # Concurrency cap
+    if runtime.active_count >= _MAX_CONCURRENT:
+        return ToolResult(
+            success=False,
+            content=(
+                f"Too many sub-agents running ({runtime.active_count} active, "
+                f"max {_MAX_CONCURRENT}). Wait for some to complete with "
+                f"agent_status or collect_agent before spawning more."
+            ),
+        )
+
+    # Get config from context
+    config = _TOOL_CONTEXT.__dict__.get("_agent_config")
+    if config is None:
+        return ToolResult(
+            success=False,
+            content="Agent config not available in tool context.",
+        )
+
+    task_id = str(uuid.uuid4())[:8]
+    cancel_event = threading.Event()
+
+    # Lazy import to avoid circular deps at module level
+    from sub_agent import run_sub_agent
+
+    def _runner() -> None:
+        """Wrapper that stores the result on completion."""
+        result = run_sub_agent(
+            task=task,
+            config=config,
+            write_gate=wg,
+            read_gate=rg,
+            max_turns=max_turns,
+            cancel_event=cancel_event,
+        )
+        runtime.store_result(task_id, result)
+
+    thread = threading.Thread(target=_runner, daemon=True, name=f"subagent-{task_id}")
+    runtime.register(task_id, thread, cancel_event)
+    thread.start()
+
+    return ToolResult(
+        success=True,
+        content=(
+            f"Spawned sub-agent '{task_id}' with {max_turns} turn budget.\n"
+            f"Task: {task[:200]}{'...' if len(task) > 200 else ''}\n"
+            f"Use agent_status('{task_id}') to poll or "
+            f"collect_agent('{task_id}') to block until done."
+        ),
+    )
+
+
+@_summarize("spawn_agent")
+def _spawn_agent_summary(args: dict) -> str:
+    task = args.get("task", "?")
+    preview = task[:60]
+    if len(task) > 60:
+        preview += "\u2026"
+    return f"spawn_agent(\"{preview}\")"
+
+
+# ---------------------------------------------------------------------------
+# agent_status
+# ---------------------------------------------------------------------------
+
+@_register("agent_status")
+def _agent_status(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
+    """Check the status of a sub-agent without blocking.
+
+    Returns 'running', 'completed' with a result summary, or 'not_found'.
+    """
+    from tools import _TOOL_CONTEXT
+    from agent_runtime import AgentRuntime
+
+    task_id = args.get("task_id", "")
+    if not task_id:
+        return ToolResult(success=False, content="Missing required parameter: 'task_id'.")
+
+    runtime: AgentRuntime | None = _TOOL_CONTEXT.__dict__.get("_agent_runtime")
+    if runtime is None:
+        return ToolResult(
+            success=False,
+            content="Agent runtime not initialized.",
+        )
+
+    status = runtime.get_status(task_id)
+    if status == "not_found":
+        return ToolResult(
+            success=True,
+            content=f"Sub-agent '{task_id}' not found (may have completed or never existed).",
+        )
+
+    if status == "running":
+        active = runtime.active_count
+        return ToolResult(
+            success=True,
+            content=f"Sub-agent '{task_id}' is still running. ({active} total active)",
+        )
+
+    # Completed
+    result = runtime.get_result(task_id)
+    if result is None:
+        return ToolResult(success=True, content=f"Sub-agent '{task_id}' completed but result not found.")
+
+    summary = (
+        f"Sub-agent '{task_id}': completed.\n"
+        f"  Success: {result.success}\n"
+        f"  Turns used: {result.turns_used}\n"
+        f"  Tool calls: {result.tool_calls_made}\n"
+        f"  Summary: {result.content[:500]}{'...' if len(result.content) > 500 else ''}"
+    )
+    if result.error:
+        summary += f"\n  Error: {result.error}"
+
+    return ToolResult(success=True, content=summary)
+
+
+@_summarize("agent_status")
+def _agent_status_summary(args: dict) -> str:
+    return f"agent_status({args.get('task_id', '?')})"
+
+
+# ---------------------------------------------------------------------------
+# collect_agent
+# ---------------------------------------------------------------------------
+
+_COLLECT_TIMEOUT = 120  # seconds to wait for sub-agent completion
+
+
+@_register("collect_agent")
+def _collect_agent(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
+    """Block until a sub-agent completes, then return its full result."""
+    from tools import _TOOL_CONTEXT
+    from agent_runtime import AgentRuntime
+
+    task_id = args.get("task_id", "")
+    if not task_id:
+        return ToolResult(success=False, content="Missing required parameter: 'task_id'.")
+
+    runtime: AgentRuntime | None = _TOOL_CONTEXT.__dict__.get("_agent_runtime")
+    if runtime is None:
+        return ToolResult(
+            success=False,
+            content="Agent runtime not initialized.",
+        )
+
+    status = runtime.get_status(task_id)
+    if status == "not_found":
+        return ToolResult(
+            success=False,
+            content=f"Sub-agent '{task_id}' not found.",
+        )
+
+    if status == "running":
+        # Block until done
+        thread = None
+        with runtime._lock:
+            thread = runtime.tasks.get(task_id)
+
+        if thread is not None:
+            thread.join(timeout=_COLLECT_TIMEOUT)
+            if thread.is_alive():
+                # Timed out — cancel and return what we have
+                runtime.cancel(task_id)
+                thread.join(timeout=5)
+                return ToolResult(
+                    success=False,
+                    content=(
+                        f"Sub-agent '{task_id}' timed out after {_COLLECT_TIMEOUT}s. "
+                        "It has been cancelled."
+                    ),
+                )
+
+    # Get result
+    result = runtime.get_result(task_id)
+    if result is None:
+        return ToolResult(
+            success=False,
+            content=f"Sub-agent '{task_id}' completed but no result was stored.",
+        )
+
+    content = (
+        f"Sub-agent '{task_id}' result:\n"
+        f"  Success: {result.success}\n"
+        f"  Turns used: {result.turns_used}\n"
+        f"  Tool calls: {result.tool_calls_made}\n"
+        f"  Content:\n{result.content}\n"
+    )
+    if result.scratchpad:
+        content += f"  Scratchpad (final):\n{result.scratchpad[:500]}\n"
+    if result.error:
+        content += f"  Error: {result.error}\n"
+
+    return ToolResult(
+        success=result.success,
+        content=content,
+    )
+
+
+@_summarize("collect_agent")
+def _collect_agent_summary(args: dict) -> str:
+    return f"collect_agent({args.get('task_id', '?')})"

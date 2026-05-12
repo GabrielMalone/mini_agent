@@ -100,6 +100,25 @@ class TestReadSafetyGate(unittest.TestCase):
         result = gate.check(path)
         self.assertTrue(result.allowed)
 
+    # --- unrestricted mode ---
+
+    def test_unrestricted_reads_anywhere(self):
+        gate = ReadSafetyGate(self.workspace, unrestricted=True)
+        outside = os.path.join(tempfile.gettempdir(), "anywhere.txt")
+        result = gate.check(outside)
+        self.assertTrue(result.allowed)
+        self.assertIn("OK", result.reason)
+
+    def test_unrestricted_allows_path_traversal(self):
+        gate = ReadSafetyGate(self.workspace, unrestricted=True)
+        path = os.path.join(self.workspace, "..", "..", "etc", "passwd")
+        result = gate.check(path)
+        self.assertTrue(result.allowed)
+
+    def test_unrestricted_still_has_root(self):
+        gate = ReadSafetyGate(self.workspace, unrestricted=True)
+        self.assertEqual(gate.workspace_root, os.path.realpath(self.workspace))
+
 
 class TestWriteSafetyGate(unittest.TestCase):
 
@@ -238,6 +257,48 @@ class TestWriteSafetyGate(unittest.TestCase):
         path = os.path.join(self.workspace, "slash_test.txt")
         result = gate.check(path)
         self.assertTrue(result.allowed)
+
+    # --- unrestricted mode ---
+
+    def test_unrestricted_allows_write_anywhere(self):
+        gate = WriteSafetyGate(self.workspace, unrestricted=True,
+                               allow_overwrites=True)
+        outside = os.path.join(tempfile.gettempdir(), "anywhere_write.txt")
+        result = gate.check(outside)
+        self.assertTrue(result.allowed)
+        self.assertIn("OK", result.reason)
+
+    def test_unrestricted_allows_path_traversal_write(self):
+        gate = WriteSafetyGate(self.workspace, unrestricted=True,
+                               allow_overwrites=True)
+        path = os.path.join(self.workspace, "..", "..", "etc", "hack")
+        result = gate.check(path)
+        self.assertTrue(result.allowed)
+
+    def test_unrestricted_still_blocks_overwrite_by_default(self):
+        # Unrestricted removes the boundary check, but the overwrite check is independent
+        outside = os.path.join(tempfile.gettempdir(), "existing_outside.txt")
+        with open(outside, "w") as f:
+            f.write("existing")
+        try:
+            gate = WriteSafetyGate(self.workspace, unrestricted=True)
+            result = gate.check(outside)
+            self.assertFalse(result.allowed)
+            self.assertIn("already exists", result.reason)
+        finally:
+            os.unlink(outside)
+
+    def test_unrestricted_with_overwrites_allows_overwrite_anywhere(self):
+        outside = os.path.join(tempfile.gettempdir(), "overwrite_outside.txt")
+        with open(outside, "w") as f:
+            f.write("existing")
+        try:
+            gate = WriteSafetyGate(self.workspace, unrestricted=True,
+                                   allow_overwrites=True)
+            result = gate.check(outside)
+            self.assertTrue(result.allowed)
+        finally:
+            os.unlink(outside)
 
 
 if __name__ == "__main__":

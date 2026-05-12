@@ -1,0 +1,181 @@
+# mini_agent — Architecture & State
+
+A coding agent powered by DeepSeek V4 Pro. Terminal REPL + Textual TUI.
+298 tests, 21 tools, SQLite memory.
+
+## Multi-Agent Support (v1 — 2025)
+
+Async foreman pattern: parent spawns sub-agents via `spawn_agent(task)` which
+return a `task_id` immediately. Sub-agents run in background threads with their
+own context, scratchpad, and tool cache. Parent polls with `agent_status` or
+blocks with `collect_agent`.
+
+New modules:
+- `agent_runtime.py` — SubAgentResult dataclass + AgentRuntime (thread-safe registry)
+- `sub_agent.py` — run_sub_agent() — isolated agent loop for background threads
+- `tools/agent_ops.py` — spawn_agent, agent_status, collect_agent tool implementations
+
+Config: `sub_agent_max_turns` (default 25) in AgentConfig and TOML schema.
+Limits: max 5 concurrent sub-agents, depth 1 (no recursive spawns), 25 turns each.
+
+## Directory Map
+
+```
+mini_agent/
+├── mini_agent.py        Terminal REPL entry point
+├── tui.py               Textual TUI (dark theme, streaming, cancel)
+├── llm.py               LLM comms, streaming SSE parse, agent turn loop
+├── prompt.py            System prompt (standalone module)
+├── config.py            AgentConfig: TOML + env vars + CLI flags
+├── memory.py            SQLite conversation store + pruning/compression
+├── safety.py            ReadSafetyGate + WriteSafetyGate
+├── terminal.py          ANSI colour helpers, format_table()
+├── tools/
+│   ├── __init__.py      ToolResult, dispatch registry, cache, JSON repair
+│   ├── schema.py        TOOLS list (API schema sent to LLM)
+│   ├── file_ops.py      read/write/edit/list/info/scratchpad/diff/restore/plan
+│   ├── shell_ops.py     run_shell, search_files, run_tests, git, task_status, verify
+│   └── search_ops.py    find_symbol, find_usages, semantic_search, web_search, recall_turn
+└── test_*.py            11 test files, 274 tests
+```
+
+## Tools (18)
+
+| Tool | Module | Gate | Notes |
+|------|--------|:----:|-------|
+| `find_symbol` | search_ops | read | Indexed at startup, substring matching |
+| `find_usages` | search_ops | read | Reverse symbol index + grep fallback |
+| `read_file` | file_ops | read | Truncates at ~300 lines |
+| `write_file` | file_ops | write | Triggers symbol reindex for .py files |
+| `edit_file` | file_ops | write | Returns unified diff on success |
+| `list_directory` | file_ops | read | — |
+| `file_info` | file_ops | read | Size, permissions, mtime, type |
+| `run_shell` | shell_ops | — | cwd locked, 60s timeout, streaming output |
+| `search_files` | shell_ops | read | Regex or literal, 50-result cap, file_path mode |
+| `run_tests` | shell_ops | — | Structured pass/fail, background mode |
+| `semantic_search` | search_ops | read | all-MiniLM-L6-v2, local embeddings |
+| `web_search` | search_ops | — | Exa API with DuckDuckGo fallback |
+| `git` | shell_ops | — | status/diff/log/init/add/commit/show/restore |
+| `diff` | file_ops | read | Shows unstaged git changes |
+| `task_status` | shell_ops | — | Poll background task state |
+| `write_scratchpad` | file_ops | — | Persistent markdown notes in SQLite |
+| `verify` | shell_ops | — | Lint + tests for files modified this session |
+| `restore_file` | file_ops | write | Undo last write/edit from session backup |
+| `plan` | file_ops | — | Declare numbered step list |
+| `plan_status` | file_ops | — | Mark steps complete or view progress |
+| `recall_turn` | search_ops | — | Recall summary of a past turn from history |
+
+## Key Systems
+
+### Configuration (config.py)
+Priority: CLI flags > env vars > `.mini_agent.toml` > hard-coded defaults.
+- `DEEPSEEK_API_KEY`, `AGENT_WORKSPACE`, `EXA_API_KEY` env vars
+- TOML fields: model, api_key, api_url, stream, quiet, max_messages, max_tokens, verbose, exa_api_key, allow_overwrites, approve_write_ops, no_color
+
+### Safety (safety.py)
+- `ReadSafetyGate`: resolves path, checks it's inside workspace root
+- `WriteSafetyGate`: same + overwrite check (blocked unless `allow_overwrites=True`)
+- Both return frozen dataclass results — never raw exceptions
+
+### Memory (memory.py)
+SQLite-backed, three-tier management on every save:
+1. **Tool result compression** — outputs >6 messages from tail trimmed to first 5 lines
+2. **Token-aware pruning** — drops oldest turns until under max_tokens, preserves turn boundaries and tool-call sequences
+3. **Summarization** — synthetic summary replacing pruned history
+Also: backward/forward orphan detection, transient message stripping, scratchpad table, test output persistence, JSON→DB migration.
+
+### LLM Agent Loop (llm.py)
+- `call_deepseek()` — streaming or non-streaming, exponential backoff retry (429/5xx)
+- `_parse_stream()` — SSE parsing, incremental tool-call accumulation, connection-drop resilience
+- `run_agent_turn()` — shared by terminal and TUI; handles:
+  - Pre-turn injections (scratchpad, plan, git diff, progress checks, circuit breaker)
+  - Parallel tool execution via ThreadPoolExecutor
+  - **Tool piping**: `_pipe` meta-field on tool calls; dependency graph via Kahn's algorithm; independent tools still parallel; cycle detection falls back to sequential
+  - Session reuse (one `requests.Session`)
+  - Tool cache clearing, circuit breaker, turn summaries
+  - Incremental tool execution (fires `on_tool_ready` during stream)
+  - max_turns default 100
+
+### Tool Execution (tools/__init__.py)
+- `ToolResult(success, content, hint)` — structured, never raw exceptions
+- `execute_tool()` — JSON repair → cache check → `_pipe` strip → schema validation → dispatch → approval gate → cache write
+- `_repair_json()` — fixes trailing commas, single quotes, unquoted keys (7 repair strategies)
+- `_build_error_hint()` — includes valid parameter names so LLM can self-correct
+- `_TOOL_CACHE` — per-turn cache for read-only tools; cleared each turn
+- `_MODIFIED_FILES` — tracked by write_file/edit_file; used by `verify`
+- `_TASK_REGISTRY` — background shell tasks
+- Context keys: `CTX_SCRATCHPAD_PATH`, `CTX_SCRATCHPAD_UPDATED`, `CTX_TURN_HISTORY`, `CTX_PLAN_STEPS`, `CTX_PLAN_DONE`
+
+### Search & Lookup Strategy
+| Need | Tool |
+|------|------|
+| Function/class definition | `find_symbol` (fast, indexed at startup) |
+| All callers/references | `find_usages` |
+| Exact pattern / regex | `search_files` |
+| Code by meaning | `semantic_search` |
+| Documentation, APIs | `web_search` |
+
+### Resilience Defenses
+| Defense | Where | What |
+|---------|-------|------|
+| Orphan detection | memory.py | Removes tool messages with no matching assistant, truncates incomplete sequences |
+| JSON repair | tools/__init__.py | 7 strategies for common LLM JSON errors |
+| Schema validation | tools/__init__.py | Rejects unknown/missing params before execution |
+| Self-correction hints | ToolResult.hint | Valid parameter names in error messages |
+| Circuit breaker | llm.py | Trips when same call repeats ≥3x in 6-call window |
+| Transient messages | memory.py | Injected context stripped from saved history |
+| Tool cache | tools/__init__.py | Read-only tools cached within a turn |
+
+### Context Injections (all transient — never persisted)
+| Injection | When | Role |
+|-----------|------|------|
+| System prompt | Session start | system |
+| Scratchpad | Every turn (from SQLite) | user |
+| Active plan | Every turn (if active) | user |
+| Recent git log | First turn | user |
+| Modified files hint | Turn 2+ | user |
+| Progress check nudge | Every 5 tool-using turns | user |
+| Circuit breaker warning | When same call repeats | user |
+| Scratchpad staleness nudge | Every 3 turns after turn 4 if not updated | user |
+
+### TUI (tui.py)
+- Textual framework, two-pane layout (static + chat) with pane divider
+  - **Static pane (top, 35%)**: Final assistant responses, tool calls & results, system commands
+  - **Chat pane (bottom, 1fr)**: User input, thinking stream, assistant content stream
+  - Every message block rendered inside Unicode box-drawing borders (`╭──`, `│`, `╰──`)
+  - Final responses promoted from chat pane to static pane on turn completion
+- 8 themes: Dawn, Sepia, Ember, Slate, Midnight, Cobalt, Neon, Forest
+- Live status bar: git branch/dirty, active tool, turn count, token count, model
+- Streaming token display, real-time shell output, dimmed thinking blocks (via theme color), table rendering
+- Thinking flush breaks on newlines / 400 chars; `. ` after a digit skipped (numbered lists stay intact)
+- Cancel (Ctrl+C), quit (Ctrl+Q), submit (Enter)
+- `/clear`, `/help`, `/export`, `/stats`, `/theme <name>` commands
+- Approval mode with footer pulse animation
+- Worker thread → message queue → drain every 20ms (smooth streaming)
+- Multi-line paste support, markup escaping
+
+### Terminal REPL (mini_agent.py)
+- `--workspace`, `--stream`, `--quiet`, `--no-color`, `--allow-overwrites`, `--approve`, `--help`
+- `quit`, `clear`, `/export` commands at prompt
+- Scratchpad display, tool execution logging with ANSI colour
+
+### Flags
+```
+--workspace PATH       Set workspace root (default: cwd)
+--stream               Stream responses token-by-token
+--quiet                Suppress tool execution logs
+--no-color             Disable ANSI colours
+--approve              Ask confirmation before write/destructive tools
+--allow-overwrites     Allow overwriting existing files
+--unrestricted         Remove workspace boundary checks (read/write anywhere)
+--help, -h             Show help
+```
+
+### Shell Guard
+15 destructive patterns blocked (rm -rf, fork bomb, dd, mkfs, etc.). `force=True` bypasses.
+
+### Test Suite
+274 tests across 11 files:
+- test_tools.py (66), test_resilience.py (36), test_safety.py (32), test_memory.py (22)
+- test_config.py (18), test_agent_loop.py (16), test_git.py (16), test_tui.py (15)
+- test_terminal.py (11), test_parse_stream.py (10), test_lint.py (1)

@@ -1,0 +1,295 @@
+# mini_agent — State Log
+
+## 2026-05-11 — TUI save-on-quit fix
+
+**Bug:** TUI had no `action_quit` override, so Ctrl+Q exited without saving
+conversation to the SQLite DB. The terminal REPL (`mini_agent.py`) saved on
+quit, but the TUI didn't. This was only noticeable after commit 4a16b3a fixed
+the `_drain_event` ordering bug that crashed the TUI on startup.
+
+**Fix:** Added `action_quit` method to `MiniAgentTUI` that calls
+`self.memory.save(self.messages)` before `self.exit()`. 15 TUI tests pass.
+
+# mini_agent — State Log
+
+## Current Architecture
+
+```
+mini_agent/
+├── mini_agent.py      # Terminal REPL (--help, --workspace, --stream, --quiet, --no-color,
+│                      #   --approve, --allow-overwrites, /export command)
+├── tui.py             # Textual TUI: dark theme, streaming, cancel, multi-line paste,
+│                      #   real-time shell output, /clear, /help, /export, turn counter,
+│                      #   approval-mode visual indicator, pipe-table monospace rendering
+├── llm.py             # LLM: retry, streaming, on_token, run_agent_turn,
+│                      #   parallel tools, session reuse, progress checks, tool cache,
+│                      #   incremental tool execution, circuit breaker, git-diff injection
+├── prompt.py          # SYSTEM_PROMPT: confirm-before-planning, parallel-tool hint,
+│                      #   tool-specific guidance, memory awareness, scratchpad guidance
+├── terminal.py        # ANSI colour helpers, format_table() for aligned pipe tables
+├── config.py          # AgentConfig: TOML + env + CLI, exa_api_key, approve_write_ops
+├── tools/             # Tools split across 4 modules
+│   ├── __init__.py    # TOOLS list, ToolResult (with .hint), registry, dispatch,
+│   │                  #   cache, task registry, JSON repair, schema validation
+│   ├── file_ops.py    # read_file, write_file, edit_file, list_directory, file_info,
+│   │                  #   write_scratchpad (diff output in edit_file)
+│   ├── shell_ops.py   # run_shell, search_files, run_tests, git, task_status, verify
+│   └── search_ops.py  # find_symbol, find_usages, semantic_search, web_search,
+│                      #   combined forward+reverse index, disk cache
+├── safety.py          # ReadSafetyGate + WriteSafetyGate
+├── memory.py          # SQLite: save/load/clear, _clean_messages, token-aware prune,
+│                      #   tool compression (5 lines), summarization, scratchpad table,
+│                      #   transient message stripping
+├── test_resilience.py # 36 tests (orphan detection, JSON repair, hints, circuit breaker,
+│                      #   schema validation, scratchpad, diff, transient messages)
+├── test_safety.py     # 25 tests
+├── test_memory.py     # 22 tests
+├── test_tools.py      # 66 tests
+├── test_tui.py        # 12 tests
+├── test_agent_loop.py # 16 tests
+├── test_config.py     # 18 tests
+├── test_git.py        # 16 tests
+├── test_terminal.py   # 11 tests
+├── test_parse_stream.py # 10 tests
+├── test_lint.py       # 1 test
+└── STATE.txt
+```
+
+246 tests total.
+
+### Tools (16)
+
+| # | Tool | Args | Gate | Notes |
+|---|------|------|:---:|-------|
+| 1 | `read_file` | `path` | read | Truncates at 300 lines |
+| 2 | `write_file` | `path`, `content` | write | |
+| 3 | `edit_file` | `path`, `old_string`, `new_string` | write | Returns unified diff |
+| 4 | `list_directory` | `path` | read | |
+| 5 | `run_shell` | `command`, `force?`, `background?` | — | cwd locked, 60s timeout, streaming |
+| 6 | `search_files` | `pattern`, `path?`, `regex?`, `ignore_case?` | read | 50-result cap |
+| 7 | `file_info` | `path` | read | Size, mode, mtime, type |
+| 8 | `run_tests` | `path?` | — | Structured pass/fail |
+| 9 | `semantic_search` | `query`, `path?` | read | all-MiniLM-L6-v2, local embeddings |
+| 10 | `web_search` | `query`, `num_results?`, `search_type?` | — | Exa API |
+| 11 | `git` | `subcommand`, `args?` | — | status/diff/log/init/add/commit/show/restore |
+| 12 | `find_symbol` | `name` | read | Scans .py def/class lines, substring fallback |
+| 13 | `task_status` | `task_id` | — | Checks background shell task state |
+| 14 | `write_scratchpad` | `content` | — | Persistent working notes, overwrites |
+| 15 | `find_usages` | `name` | read | Reverse symbol index, grep fallback |
+| 16 | `verify` | (none) | — | Lint + tests for files modified this session |
+
+### Search + lookup strategy
+
+| What you need | Tool |
+|:---|:---|
+| Function/class definition location | `find_symbol` (fast, startup-indexed) |
+| All callers/references of a symbol | `find_usages` (reverse index from same scan) |
+| Exact pattern (regex) | `search_files` with `regex: true` |
+| Case-insensitive substring | `search_files` with `ignore_case: true` |
+| Code by meaning / concept | `semantic_search` |
+| Documentation, APIs, current info | `web_search` |
+
+### Resilience defenses
+
+| Defense | Where | What it does |
+|---------|-------|-------------|
+| Backward orphan detection | `memory.py:_clean_messages` | Removes tool messages with no preceding assistant |
+| Forward orphan detection | `memory.py:_clean_messages` | Truncates incomplete tool-call sequences |
+| JSON repair | `tools/__init__.py:_repair_json` | Fixes trailing commas, single quotes, unquoted keys |
+| Schema validation | `tools/__init__.py:execute_tool` | Catches unknown/missing params before execution |
+| Self-correction hints | `tools/__init__.py:ToolResult.hint` | Structured error feedback with valid params |
+| Circuit breaker | `llm.py:_check_circuit` | Trips when same call repeats ≥3x in 6-call window |
+| Transient messages | `memory.py:_clean_messages` | Injected context stripped from saved history |
+| Tool cache | `tools/__init__.py:_TOOL_CACHE` | Read-only tools cached within a turn |
+
+### Context injections (all transient — never persist in saved history)
+
+| Injection | When | Role |
+|-----------|------|------|
+| System prompt | Session start | system |
+| Scratchpad | Every turn (from SQLite) | user |
+| Recent git changes | First turn only | user |
+| Progress check | Every 5 tool-using turns | user |
+| Circuit breaker warning | When same call repeats | user |
+
+### Key systems
+
+#### Memory (memory.py)
+Three-tier management on every save:
+1. **Token-aware pruning** — preserves turn boundaries and tool-call sequences
+2. **Tool result compression** — outputs >6 messages from tail trimmed to first 5 lines
+3. **Summarization** — synthetic summary of files touched, commands run, recent prompts
+
+#### Incremental tool execution
+`_parse_stream` detects when tool call args form valid JSON and fires `on_tool_ready`.
+Tools execute during the stream; remaining executed after. All tool_calls preserved in
+assistant message for valid API ordering.
+
+#### TUI (tui.py)
+- Dark theme, streaming, cancel, multi-line paste
+- Real-time shell output, thinking blocks
+- Markup escaping, message queue (drain every 50ms)
+- Approval mode indicator, worker error recovery
+- Input history, session reuse
+
+#### Shell guard
+15 destructive patterns blocked. `force=True` bypasses.
+
+#### LLM agent loop (llm.py)
+- Parallel tool execution via ThreadPoolExecutor
+- Session reuse (one requests.Session)
+- Exponential backoff retry (1s, 2s, 4s) on 429/5xx
+- max_turns default 100
+
+### Flags
+```
+  --workspace PATH    Set workspace root (default: cwd)
+  --stream            Stream responses token-by-token
+  --quiet             Suppress tool execution logs
+  --no-color          Disable ANSI colours
+  --approve           Ask confirmation before write/destructive tools
+  --allow-overwrites  Allow overwriting files outside workspace
+```
+
+
+## 2026-05-11 — "tool names must be unique" 400 error
+
+**Problem:** After fixing the message ordering bug, a second 400 error appeared:
+`tool names must be unique`
+
+**Root cause:** The TOOLS list in `tools/__init__.py` had 21 entries with
+duplicate names — `write_scratchpad` (3x), `find_usages` (3x), `verify` (2x).
+These were appended by previous self-update attempts without removing old
+definitions.
+
+**Fix:** Deduplicated TOOLS by function name (keeping first occurrence).
+21 tools → 16 tools.  Test count went from 212 to 246 (34 tests were
+silently breaking on the duplicates).
+
+## 2026-05-11 — Lowered default max messages from 500 → 300
+
+**Rationale:** 500 messages is technically fine for a 1M context window but
+wasteful. Every turn reprocesses the full history, driving up cost and latency.
+Model attention also degrades in the "middle" of very long contexts. 300 messages
+(~100+ full turns) is plenty for complex sessions; summarization fills the gap
+for pruned context.
+
+**Change:** `memory.py` `DEFAULT_MAX_MESSAGES`: 500 → 300
+
+## TODO
+
+- [ ] **Responsive table widths** — `terminal.py` / `tui.py`: detect terminal width
+      and truncate columns to fit, with overflow indicators (`…`). Currently pipe
+      tables are fixed-width and break if the terminal is narrower than the table.
+
+## 2026-05-11 — Performance + DRY refactoring round
+
+**Single-pass symbol index** (`tools/search_ops.py`): `build_symbol_index()` used
+two `os.walk()` + two `open()` per .py file (first for defs, second for refs).
+Merged into one walk: collect defs + raw word refs in a single pass, then filter
+raw refs to known names after the walk. Halves I/O for index building.
+
+**Semantic search mtime guard** (`tools/search_ops.py`): `_sem_index()` was
+`os.walk()`-ing on every `semantic_search` call even when no files changed. Added
+a quick stat-only pre-check that compares max .py mtime against stored value;
+returns immediately if nothing changed. Avoids redundant walks in repeated queries.
+
+**DRY export conversation** (`memory.py`): Extracted `export_conversation_markdown()`
+from two nearly-identical copies in `mini_agent.py:_export_conversation()` and
+`tui.py:_export_to_file()`. Both callers now delegate to the shared function.
+
+**DRY workspace resolution** (`config.py`): Moved `resolve_workspace()` from
+`mini_agent.py` (with duplicate inline logic in `tui.py:on_mount()`) to `config.py`.
+Both entry points now import and call the same function.
+
+## 2026-05-11 — TUI table buffer crash fix
+
+**Bug:** `MarkupError: closing tag '[/code]' at position 0 doesn't match any open tag`.
+Table rows were buffered in `_table_buf` but never flushed at turn end — if an
+agent response ended with a table, rows carried over to the next turn, and the
+`[code]`/`[/code]` wrapper could land out of order.
+
+**Fix:** Flush `_table_buf` in `_finish_turn` (before `_flush_buf`). Add
+defensive clear in `_submit`.
+
+## 2026-05-11 — Startup context injection
+
+**What:** At session start, inject a system message with a workspace file tree,
+STATE.txt excerpt, and recent git log. Saves 2-3 discovery turns.
+
+**How:** `config.py:build_startup_context()` generates the context string.
+Both `mini_agent.py:main()` and `tui.py:on_mount()` prepend it as the first
+system message (before the main prompt and any restored history).
+
+## 2026-05-11 — Agent improvement round: checkpoint, edit-hint, diff tool
+
+**Pre-turn checkpoint** (`llm.py`): After the first tool round, inject a transient
+message listing files modified so far and suggesting which test files to run.
+Prevents the agent from losing track of what it changed.
+
+**edit_file pre-verification hint** (`tools/file_ops.py`): When `edit_file` fails
+with "old_string not found", scan the file for lines containing the first 30
+chars of the search string and include up to 3 candidates in the error hint.
+Helps the agent self-correct typos/whitespace mismatches.
+
+**Standalone diff tool** (`tools/file_ops.py`, `tools/__init__.py`): New `diff`
+tool. Runs `git diff` for the workspace or a specific file. Returns raw diff
+output or "No unstaged changes." Useful for verifying edits before committing.
+
+## 2026-05-11 — Scratchpad prominence + smart test detection
+
+**Scratchpad prominence** (`prompt.py`): Moved scratchpad guidance from the
+"Memory & context awareness" section to its own prominent section right after
+Behavior. Added specific guidance: structure with headings, update after every
+tool round. Aims to increase scratchpad usage.
+
+**Smart test detection** (`tools/shell_ops.py`): Enhanced `_verify` to check
+multiple candidate test paths when matching modified source files to test files.
+Now checks `test_<name>.py`, `tests/test_<name>.py`, `test/test_<name>.py`,
+and parent-directory tests (e.g. `tools/file_ops.py` → `test_tools.py`).
+
+## 2026-05-11 — Updated --help with all flags and env vars
+
+**What:** The `--help` output was missing `--allow-overwrites`, `--approve`, and
+environment variable documentation. Updated both `mini_agent.py` and `tui.py` to
+list all available flags plus relevant env vars (`AGENT_WORKSPACE`,
+`DEEPSEEK_API_KEY`, `EXA_API_KEY`) and mention `.mini_agent.toml`.
+
+## 2026-05-11 — Scratchpad staleness nudge
+
+**Prompt** (`prompt.py`): Added explicit rule: "If you haven't used
+write_scratchpad in the last 4 turns, you are probably losing context — stop
+and update it before continuing."
+
+**Mechanical nudge** (`llm.py`, `tools/file_ops.py`): `_write_scratchpad` sets
+a flag in `_TOOL_CONTEXT`. `run_agent_turn` checks it every 3 turns after turn 4;
+if the scratchpad hasn't been updated, injects a transient warning. Flag resets
+after each check so the nudge repeats if still stale.
+
+## 2026-05-11 — Scratchpad path bug: TUI missing scratchpad_path
+
+**Bug:** `write_scratchpad` has two code paths: SQLite (when `scratchpad_path`
+is set in `_TOOL_CONTEXT`) and a `.mini_agent_scratchpad.md` fallback file.
+`mini_agent.py` passed `scratchpad_path` but `tui.py` didn't, so the TUI always
+fell through to the stale `.md` file, and the actual scratchpad data (stored in
+the SQLite DB) was invisible to the user.
+
+**Fix:** Added `scratchpad_path=self.memory._db_path` to `tui.py`'s
+`set_context()` call. Also updated the stale `.md` file with current content.
+
+**Test** (`test_resilience.py`): Added two tests:
+`test_tool_writes_to_sqlite_when_path_set` and
+`test_tool_falls_back_to_file_when_no_path`. Together they verify both
+`write_scratchpad` code paths — SQLite and fallback file — and catch the
+regression where the TUI was missing `scratchpad_path`.
+
+## 2026-05-11 — TUI [/code] crash fix v2: single write() for table flush
+
+**Root cause:** The table buffer flush wrote `[code]`, table rows, and `[/code]`
+as three separate `log.write()` calls. RichLog parses markup per-write, so if
+any write was interrupted or reordered, `[/code]` could arrive without a
+matching `[code]`, causing `MarkupError at position 0`.
+
+**Fix:** Combined all three into a single `log.write("[code]\\n" + rows + "\\n[/code]")`.
+Also added defensive `_table_buf` clearing in `_flush_buf`. Applied in both
+`_handle_token` and `_finish_turn`.

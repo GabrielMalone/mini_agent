@@ -515,7 +515,7 @@ class TestRunTests(unittest.TestCase):
         from tools import _TOOL_CONTEXT
         # Create a temp DB and wire it into _TOOL_CONTEXT
         tmp_db = os.path.join(self.workspace, "test_memory.db")
-        _TOOL_CONTEXT["scratchpad_path"] = tmp_db
+        _TOOL_CONTEXT.scratchpad_path = tmp_db
         # Initialize the table
         import sqlite3
         conn = sqlite3.connect(tmp_db)
@@ -534,7 +534,7 @@ class TestRunTests(unittest.TestCase):
         self.assertIsNotNone(row)
         self.assertTrue(len(row[0]) > 0, "DB should have test output")
         # Clean up
-        del _TOOL_CONTEXT["scratchpad_path"]
+        _TOOL_CONTEXT.scratchpad_path = None
 
 
 # ---------------------------------------------------------------------------
@@ -992,3 +992,276 @@ class TestBackgroundTasks(unittest.TestCase):
         result = execute_tool(tc, self.write_gate, self.read_gate)
         self.assertTrue(result.success)
         self.assertIn("not found", result.content.lower())
+
+
+# ---------------------------------------------------------------------------
+# search_files file_path param (improvement #1)
+# ---------------------------------------------------------------------------
+
+class TestSearchFilesFilePath(unittest.TestCase):
+
+    def setUp(self):
+        self.workspace = tempfile.mkdtemp()
+        self.write_gate, self.read_gate = _gates(self.workspace)
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.workspace, ignore_errors=True)
+
+    def test_file_path_restricts_search_to_one_file(self):
+        f1 = os.path.join(self.workspace, "a.txt")
+        f2 = os.path.join(self.workspace, "b.txt")
+        with open(f1, "w") as f:
+            f.write("hello world")
+        with open(f2, "w") as f:
+            f.write("hello world")
+        tc = _make_tool_call("search_files", pattern="hello", file_path=f1)
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertTrue(result.success)
+        self.assertIn("a.txt", result.content)
+        self.assertNotIn("b.txt", result.content)
+
+    def test_file_path_invalid_returns_error(self):
+        tc = _make_tool_call("search_files", pattern="x", file_path="/no/such/file.txt")
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        # Should fail or succeed with "No matches" — depends on safety gate
+        # The point is it doesn't crash
+        self.assertIsNotNone(result)
+
+    def test_file_path_no_matches(self):
+        f = os.path.join(self.workspace, "only.txt")
+        with open(f, "w") as fh:
+            fh.write("just text")
+        tc = _make_tool_call("search_files", pattern="zzznomatch", file_path=f)
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertTrue(result.success)
+        self.assertIn("No matches", result.content)
+
+
+# ---------------------------------------------------------------------------
+# edit_file short output (improvement #2)
+# ---------------------------------------------------------------------------
+
+class TestEditFileShortOutput(unittest.TestCase):
+
+    def setUp(self):
+        self.workspace = tempfile.mkdtemp()
+        self.write_gate, self.read_gate = _gates(self.workspace)
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.workspace, ignore_errors=True)
+
+    def test_success_output_is_short_no_diff(self):
+        f = os.path.join(self.workspace, "e.txt")
+        with open(f, "w") as fh:
+            fh.write("alpha\nbeta\ngamma\n")
+        tc = _make_tool_call("edit_file", path=f, old_string="beta", new_string="delta")
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertTrue(result.success)
+        self.assertIn("OK: replaced 1 occurrence", result.content)
+        self.assertIn("e.txt", result.content)
+        # Must NOT include a full unified diff
+        self.assertNotIn("--- a/", result.content)
+        self.assertNotIn("+++ b/", result.content)
+
+    def test_file_actually_changed(self):
+        f = os.path.join(self.workspace, "e2.txt")
+        with open(f, "w") as fh:
+            fh.write("one\ntwo\nthree\n")
+        tc = _make_tool_call("edit_file", path=f, old_string="two", new_string="TWO")
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertTrue(result.success)
+        with open(f) as fh:
+            content = fh.read()
+        self.assertIn("TWO", content)
+        self.assertNotIn("two", content)
+
+
+# ---------------------------------------------------------------------------
+# write_file reindex (improvement #3)
+# ---------------------------------------------------------------------------
+
+class TestWriteFileReindex(unittest.TestCase):
+
+    def setUp(self):
+        self.workspace = tempfile.mkdtemp()
+        self.write_gate, self.read_gate = _gates(self.workspace)
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.workspace, ignore_errors=True)
+
+    def test_write_py_file_triggers_reindex(self):
+        pyf = os.path.join(self.workspace, "new_mod.py")
+        tc = _make_tool_call("write_file", path=pyf,
+                             content="def hello_world():\n    return 42\n")
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertTrue(result.success)
+
+        # find_symbol should now see hello_world
+        tc2 = _make_tool_call("find_symbol", name="hello_world")
+        result2 = execute_tool(tc2, self.write_gate, self.read_gate)
+        self.assertTrue(result2.success)
+        self.assertIn("new_mod.py", result2.content)
+
+    def test_write_non_py_does_not_crash(self):
+        f = os.path.join(self.workspace, "data.txt")
+        tc = _make_tool_call("write_file", path=f, content="just text")
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertTrue(result.success)
+
+
+# ---------------------------------------------------------------------------
+# recall_turn (improvement #5)
+# ---------------------------------------------------------------------------
+
+class TestRecallTurn(unittest.TestCase):
+
+    def setUp(self):
+        self.workspace = tempfile.mkdtemp()
+        self.write_gate, self.read_gate = _gates(self.workspace)
+        from tools import _TOOL_CONTEXT
+        # Seed the turn history so recall_turn has data to return
+        _TOOL_CONTEXT._turn_history = {
+            1: "Assistant: wrote file\na.txt\n  Tool: write_file({...})\n  Result: ✓ OK",
+            2: "Assistant: all done",
+        }
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.workspace, ignore_errors=True)
+        from tools import _TOOL_CONTEXT
+        _TOOL_CONTEXT._turn_history = {}
+
+    def test_recall_existing_turn(self):
+        tc = _make_tool_call("recall_turn", turn=1)
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertTrue(result.success)
+        self.assertIn("Turn 1", result.content)
+        self.assertIn("write_file", result.content)
+
+    def test_recall_nonexistent_turn(self):
+        tc = _make_tool_call("recall_turn", turn=99)
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertTrue(result.success)
+        self.assertIn("No record", result.content)
+
+    def test_recall_turn_zero_errors(self):
+        tc = _make_tool_call("recall_turn", turn=0)
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertFalse(result.success)
+        self.assertIn("positive integer", result.content)
+
+
+# ---------------------------------------------------------------------------
+# plan / plan_status tools
+# ---------------------------------------------------------------------------
+
+class PlanTests(unittest.TestCase):
+    def setUp(self):
+        from tools import _TOOL_CONTEXT
+        _TOOL_CONTEXT._plan_steps = []
+        _TOOL_CONTEXT._plan_done = set()
+        self.workspace = tempfile.mkdtemp()
+        self.write_gate = WriteSafetyGate(self.workspace, allow_overwrites=True)
+        self.read_gate = ReadSafetyGate(self.workspace)
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.workspace, ignore_errors=True)
+        from tools import _TOOL_CONTEXT
+        _TOOL_CONTEXT._plan_steps = []
+        _TOOL_CONTEXT._plan_done = set()
+
+    def test_plan_sets_steps(self):
+        tc = _make_tool_call("plan", steps=["Read config", "Add option", "Test"])
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertTrue(result.success)
+        self.assertIn("3 steps", result.content)
+        self.assertIn("[1]", result.content)
+        self.assertIn("[2]", result.content)
+        self.assertIn("[3]", result.content)
+
+    def test_plan_empty_steps_fails(self):
+        tc = _make_tool_call("plan", steps=[])
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertFalse(result.success)
+
+    def test_plan_status_no_plan(self):
+        tc = _make_tool_call("plan_status")
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertTrue(result.success)
+        self.assertIn("No active plan", result.content)
+
+    def test_plan_status_mark_complete(self):
+        from tools import _TOOL_CONTEXT
+        _TOOL_CONTEXT._plan_steps = ["A", "B", "C"]
+        _TOOL_CONTEXT._plan_done = set()
+
+        tc = _make_tool_call("plan_status", step=2)
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertTrue(result.success)
+        self.assertIn("✓", result.content)
+        self.assertIn("1/3", result.content)
+
+    def test_plan_status_invalid_step(self):
+        from tools import _TOOL_CONTEXT
+        _TOOL_CONTEXT._plan_steps = ["A"]
+        _TOOL_CONTEXT._plan_done = set()
+
+        tc = _make_tool_call("plan_status", step=5)
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertFalse(result.success)
+
+    def test_plan_status_all_done(self):
+        from tools import _TOOL_CONTEXT
+        _TOOL_CONTEXT._plan_steps = ["A", "B"]
+        _TOOL_CONTEXT._plan_done = {0, 1}
+
+        tc = _make_tool_call("plan_status")
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertTrue(result.success)
+        self.assertIn("All steps complete", result.content)
+
+
+# ---------------------------------------------------------------------------
+# Tool piping (_pipe meta-field)
+# ---------------------------------------------------------------------------
+
+class ToolPipingTests(unittest.TestCase):
+    def setUp(self):
+        self.workspace = tempfile.mkdtemp()
+        self.write_gate = WriteSafetyGate(self.workspace, allow_overwrites=True)
+        self.read_gate = ReadSafetyGate(self.workspace)
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.workspace, ignore_errors=True)
+
+    def test_pipe_stripped_from_args(self):
+        """_pipe is popped before validation, so it never reaches tool impl."""
+        from tools import _TOOL_DISPATCH
+        original = _TOOL_DISPATCH.get("read_file")
+        called_with = {}
+
+        def _fake_read(args, wg, rg):
+            called_with.update(args)
+            return ToolResult(True, "ok")
+
+        _TOOL_DISPATCH["read_file"] = _fake_read
+        try:
+            tc = _make_tool_call("read_file", path="/tmp/x", _pipe={"from": 0})
+            result = execute_tool(tc, self.write_gate, self.read_gate)
+            self.assertTrue(result.success)
+            self.assertNotIn("_pipe", called_with)
+        finally:
+            if original:
+                _TOOL_DISPATCH["read_file"] = original
+
+    def test_pipe_unknown_params_without_pipe(self):
+        """Normal unknown-param rejection still works."""
+        tc = _make_tool_call("read_file", path="/tmp/x", bogus=123)
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertFalse(result.success)
+        self.assertIn("Unknown parameter", result.content)

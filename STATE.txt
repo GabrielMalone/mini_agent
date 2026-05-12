@@ -1,45 +1,70 @@
 # mini_agent — Architecture & State
 
 A coding agent powered by DeepSeek V4 Pro. Terminal REPL + Textual TUI.
-274 tests, 18 tools, SQLite memory.
+316 tests, 24 tools, SQLite memory.
+
+## Multi-Agent Support (v1)
+
+Async foreman pattern: parent spawns sub-agents via `spawn_agent(task)` which
+return a `task_id` immediately. Sub-agents run in background threads with their
+own context, scratchpad, and tool cache. Parent polls with `agent_status` or
+blocks with `collect_agent`.
+
+New modules:
+- `agent_runtime.py` — SubAgentResult dataclass + AgentRuntime (thread-safe registry, cleanup on store)
+- `sub_agent.py` — run_sub_agent() — isolated agent loop for background threads
+- `tools/agent_ops.py` — spawn_agent, agent_status, collect_agent tool implementations
+- `retry.py` — _request_with_retry() — HTTP exponential backoff, cancel-aware (extracted from llm.py)
+- `stream.py` — _parse_stream() — SSE parsing, tool-call accumulation, connection-drop resilience (extracted from llm.py)
+- `tools/schema.py` — TOOLS list (API schema sent to LLM, extracted from tools/__init__.py)
+
+Config: `sub_agent_max_turns` (default 25) in AgentConfig and TOML schema.
+Limits: max 5 concurrent sub-agents, depth 1 (no recursive spawns), 25 turns each.
+Sub-agents share the same tool registry, safety layer, and workspace as the parent.
 
 ## Directory Map
 
 ```
-mini_agent/
+[workspace root]/
 ├── mini_agent.py        Terminal REPL entry point
 ├── tui.py               Textual TUI (dark theme, streaming, cancel)
-├── llm.py               LLM comms, streaming SSE parse, agent turn loop
+├── llm.py               LLM comms, agent turn loop (uses retry.py + stream.py)
 ├── prompt.py            System prompt (standalone module)
 ├── config.py            AgentConfig: TOML + env vars + CLI flags
 ├── memory.py            SQLite conversation store + pruning/compression
 ├── safety.py            ReadSafetyGate + WriteSafetyGate
 ├── terminal.py          ANSI colour helpers, format_table()
+├── retry.py             HTTP retry with exponential backoff + cancel support
+├── stream.py            SSE stream parser, tool-call accumulation
+├── agent_runtime.py     SubAgentResult + AgentRuntime (thread-safe registry)
+├── sub_agent.py         run_sub_agent() — isolated background agent loop
 ├── tools/
 │   ├── __init__.py      ToolResult, dispatch registry, cache, JSON repair
 │   ├── schema.py        TOOLS list (API schema sent to LLM)
 │   ├── file_ops.py      read/write/edit/list/info/scratchpad/diff/restore/plan
 │   ├── shell_ops.py     run_shell, search_files, run_tests, git, task_status, verify
-│   └── search_ops.py    find_symbol, find_usages, semantic_search, web_search, recall_turn
-└── test_*.py            11 test files, 274 tests
+│   ├── search_ops.py    find_symbol, find_usages, semantic_search, web_search, recall_turn
+│   └── agent_ops.py     spawn_agent, agent_status, collect_agent
+├── setup.sh / setup.bat  Quick-start scripts (venv + pip install)
+└── test_*.py            12 test files, 316 tests
 ```
 
-## Tools (18)
+## Tools (24)
 
 | Tool | Module | Gate | Notes |
 |------|--------|:----:|-------|
 | `find_symbol` | search_ops | read | Indexed at startup, substring matching |
 | `find_usages` | search_ops | read | Reverse symbol index + grep fallback |
-| `read_file` | file_ops | read | Truncates at ~300 lines |
+| `read_file` | file_ops | read | Truncates at ~300 lines, cached within turn |
 | `write_file` | file_ops | write | Triggers symbol reindex for .py files |
 | `edit_file` | file_ops | write | Returns unified diff on success |
 | `list_directory` | file_ops | read | — |
 | `file_info` | file_ops | read | Size, permissions, mtime, type |
-| `run_shell` | shell_ops | — | cwd locked, 60s timeout, streaming output |
+| `run_shell` | shell_ops | — | cwd locked, 60s timeout, streaming output, bg mode |
 | `search_files` | shell_ops | read | Regex or literal, 50-result cap, file_path mode |
 | `run_tests` | shell_ops | — | Structured pass/fail, background mode |
-| `semantic_search` | search_ops | read | all-MiniLM-L6-v2, local embeddings |
-| `web_search` | search_ops | — | Exa API with DuckDuckGo fallback |
+| `semantic_search` | search_ops | read | all-MiniLM-L6-v2, local embeddings, loading indicator |
+| `web_search` | search_ops | — | Exa API with retry |
 | `git` | shell_ops | — | status/diff/log/init/add/commit/show/restore |
 | `diff` | file_ops | read | Shows unstaged git changes |
 | `task_status` | shell_ops | — | Poll background task state |
@@ -49,6 +74,9 @@ mini_agent/
 | `plan` | file_ops | — | Declare numbered step list |
 | `plan_status` | file_ops | — | Mark steps complete or view progress |
 | `recall_turn` | search_ops | — | Recall summary of a past turn from history |
+| `spawn_agent` | agent_ops | — | Launch sub-agent in background thread, returns task_id |
+| `agent_status` | agent_ops | — | Poll sub-agent: running, completed, or not_found |
+| `collect_agent` | agent_ops | — | Block until sub-agent completes, return full result |
 
 ## Key Systems
 
@@ -56,11 +84,25 @@ mini_agent/
 Priority: CLI flags > env vars > `.mini_agent.toml` > hard-coded defaults.
 - `DEEPSEEK_API_KEY`, `AGENT_WORKSPACE`, `EXA_API_KEY` env vars
 - TOML fields: model, api_key, api_url, stream, quiet, max_messages, max_tokens, verbose, exa_api_key, allow_overwrites, approve_write_ops, no_color
+- CLI flags: --workspace, --stream, --quiet, --no-color, --approve, --allow-overwrites, --unrestricted, --help
 
 ### Safety (safety.py)
 - `ReadSafetyGate`: resolves path, checks it's inside workspace root
 - `WriteSafetyGate`: same + overwrite check (blocked unless `allow_overwrites=True`)
 - Both return frozen dataclass results — never raw exceptions
+
+### HTTP Retry (retry.py)
+- `_request_with_retry()` — exponential backoff on 429/5xx and network errors
+- Cancel-aware: accepts `threading.Event`, returns `None` when cancelled
+- Uses `requests.Session` when available, falls back to `requests.post`
+- 3 retries max, retryable statuses: {429, 500, 502, 503, 504}
+
+### SSE Streaming (stream.py)
+- `_parse_stream()` — parses DeepSeek SSE event stream
+- Accumulates text content, reasoning blocks, tool call fragments
+- Resilient to connection drops — returns partial results instead of crashing
+- Name field set once per tool call (API sends atomic names, not fragments)
+- Missing `choices` key gracefully skipped
 
 ### Memory (memory.py)
 SQLite-backed, three-tier management on every save:
@@ -70,12 +112,12 @@ SQLite-backed, three-tier management on every save:
 Also: backward/forward orphan detection, transient message stripping, scratchpad table, test output persistence, JSON→DB migration.
 
 ### LLM Agent Loop (llm.py)
-- `call_deepseek()` — streaming or non-streaming, exponential backoff retry (429/5xx)
-- `_parse_stream()` — SSE parsing, incremental tool-call accumulation, connection-drop resilience
+- `call_deepseek()` — streaming or non-streaming, delegates to retry.py + stream.py
 - `run_agent_turn()` — shared by terminal and TUI; handles:
   - Pre-turn injections (scratchpad, plan, git diff, progress checks, circuit breaker)
   - Parallel tool execution via ThreadPoolExecutor
   - **Tool piping**: `_pipe` meta-field on tool calls; dependency graph via Kahn's algorithm; independent tools still parallel; cycle detection falls back to sequential
+  - Returns `None` on cancel (propagated from retry.py)
   - Session reuse (one `requests.Session`)
   - Tool cache clearing, circuit breaker, turn summaries
   - Incremental tool execution (fires `on_tool_ready` during stream)
@@ -89,7 +131,13 @@ Also: backward/forward orphan detection, transient message stripping, scratchpad
 - `_TOOL_CACHE` — per-turn cache for read-only tools; cleared each turn
 - `_MODIFIED_FILES` — tracked by write_file/edit_file; used by `verify`
 - `_TASK_REGISTRY` — background shell tasks
-- Context keys: `CTX_SCRATCHPAD_PATH`, `CTX_SCRATCHPAD_UPDATED`, `CTX_TURN_HISTORY`, `CTX_PLAN_STEPS`, `CTX_PLAN_DONE`
+- `_TOOL_CONTEXT` — context keys: scratchpad path, plan state, turn history, agent runtime
+- `_AGENT_RUNTIME` — AgentRuntime singleton for sub-agent management
+
+### Multi-Agent System
+- **agent_runtime.py**: `SubAgentResult` (success, turns_used, content, tool_calls) + `AgentRuntime` (register, store_result, get_status, get_result, cancel, cancel_all, active_count). Thread-safe via `threading.Lock`. `store_result()` cleans up tasks and cancel events to prevent memory leak.
+- **sub_agent.py**: `run_sub_agent()` — isolated agent loop: init session → prompt → loop: call_deepseek → execute tools → until done or max_turns or cancelled. Handles tool context injection, recursion guard (blocks spawn/agent/collect tools), scratchpad per-agent.
+- **tools/agent_ops.py**: Tool implementations for spawn_agent (max 5 concurrent, 15 default / 25 absolute max turns), agent_status (non-blocking poll), collect_agent (blocking collect with 120s timeout).
 
 ### Search & Lookup Strategy
 | Need | Tool |
@@ -110,6 +158,8 @@ Also: backward/forward orphan detection, transient message stripping, scratchpad
 | Circuit breaker | llm.py | Trips when same call repeats ≥3x in 6-call window |
 | Transient messages | memory.py | Injected context stripped from saved history |
 | Tool cache | tools/__init__.py | Read-only tools cached within a turn |
+| Connection resilience | stream.py | SSE connection drops return partial results, not crashes |
+| Cancel propagation | retry.py | Cancel events stop retry loops, return None cleanly |
 
 ### Context Injections (all transient — never persisted)
 | Injection | When | Role |
@@ -152,6 +202,7 @@ Also: backward/forward orphan detection, transient message stripping, scratchpad
 --no-color             Disable ANSI colours
 --approve              Ask confirmation before write/destructive tools
 --allow-overwrites     Allow overwriting existing files
+--unrestricted         Remove workspace boundary checks (read/write anywhere)
 --help, -h             Show help
 ```
 
@@ -159,7 +210,16 @@ Also: backward/forward orphan detection, transient message stripping, scratchpad
 15 destructive patterns blocked (rm -rf, fork bomb, dd, mkfs, etc.). `force=True` bypasses.
 
 ### Test Suite
-274 tests across 11 files:
-- test_tools.py (66), test_resilience.py (36), test_safety.py (25), test_memory.py (22)
-- test_config.py (18), test_agent_loop.py (16), test_git.py (16), test_tui.py (15)
-- test_terminal.py (11), test_parse_stream.py (10), test_lint.py (1)
+316 tests across 12 files:
+- test_tools.py (66), test_resilience.py (36), test_safety.py (32), test_memory.py (22)
+- test_config.py (18), test_agent_loop.py (17), test_sub_agent.py (17), test_git.py (16)
+- test_tui.py (15), test_terminal.py (11), test_parse_stream.py (8), test_lint.py (1)
+
+## Recent git log
+```
+fd5aca4 -m "TUI: hide scrollbars with scrollbar-size 0 0, remove dead scrollbar theme code"
+c6cbc16 -m "TUI: faster drain 20ms, dimmed thinking, smarter sentence breaks; fix flake8 in verify"
+972713d -m "Mock SentenceTransformer in semantic_search tests, 18s -> 7s suite time"
+4a16b3a -m "G-H-I: semantic_search loading indicator, TUI background task indicator, _TOOL_CONTEXT constants"
+11165f1 -m "A-E: terminal scratchpad, shared init_session, /stats, event-driven TUI drain, search_files cancel"
+```

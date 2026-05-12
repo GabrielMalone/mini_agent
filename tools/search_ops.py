@@ -11,6 +11,8 @@ from safety import ReadSafetyGate, WriteSafetyGate
 from tools import _register, _summarize, ToolResult, _TOOL_CONTEXT
 from tools.shell_ops import _SKIP_DIRS
 
+import re as _re
+
 
 # ---------------------------------------------------------------------------
 # symbol_index — fast workspace symbol lookup
@@ -145,6 +147,64 @@ def build_symbol_index(root: str) -> dict[str, list[dict]]:
     return symbol_idx
 
 
+def _reindex_file(filepath: str, root: str) -> None:
+    """Re-index a single .py file into the global symbol and reference indices.
+
+    Call this after writing a new/updated .py file so find_symbol and
+    find_usages stay current without a full workspace re-scan.
+    """
+    global _SYMBOL_INDEX, _REF_INDEX
+    if _SYMBOL_INDEX is None:
+        return  # index not yet built; next find_symbol will build from scratch
+
+    # Add/update symbol definitions
+    def_pat = _re.compile(r"^\s*(def|class)\s+(\w+)")
+    new_symbols: dict[str, list[dict]] = {}
+    try:
+        with open(filepath, "r") as f:
+            for lineno, line in enumerate(f, 1):
+                m = def_pat.match(line)
+                if m:
+                    kind, name = m.group(1), m.group(2)
+                    new_symbols.setdefault(name, []).append({
+                        "path": filepath, "line": lineno, "kind": kind,
+                    })
+    except (OSError, PermissionError):
+        return
+
+    # Remove old entries for this file from both indices
+    for name in list(_SYMBOL_INDEX.keys()):
+        _SYMBOL_INDEX[name] = [e for e in _SYMBOL_INDEX[name] if e["path"] != filepath]
+        if not _SYMBOL_INDEX[name]:
+            del _SYMBOL_INDEX[name]
+
+    if _REF_INDEX:
+        for name in list(_REF_INDEX.keys()):
+            _REF_INDEX[name] = [r for r in _REF_INDEX[name] if r["path"] != filepath]
+            if not _REF_INDEX[name]:
+                del _REF_INDEX[name]
+
+    # Insert new symbol entries
+    for name, entries in new_symbols.items():
+        _SYMBOL_INDEX.setdefault(name, []).extend(entries)
+
+    # Rebuild reference entries for this file
+    if _REF_INDEX is not None:
+        word_pat = _re.compile(r"\b(\w+)\b")
+        try:
+            with open(filepath, "r") as f:
+                for lineno, line in enumerate(f, 1):
+                    stripped = line.strip()
+                    for match in word_pat.finditer(line):
+                        word = match.group(1)
+                        if word in _SYMBOL_INDEX:
+                            _REF_INDEX.setdefault(word, []).append({
+                                "path": filepath, "line": lineno, "context": stripped[:120],
+                            })
+        except (OSError, PermissionError):
+            pass
+
+
 def _get_symbol_index(root: str) -> dict[str, list[dict]]:
     """Return the symbol index, building it lazily if needed."""
     global _SYMBOL_INDEX
@@ -200,6 +260,8 @@ def _find_symbol_summary(args: dict) -> str:
 # ---------------------------------------------------------------------------
 
 _SEMANTIC_STORE: dict[str, tuple[float, list[tuple[int, int, str, "numpy.ndarray"]]]] = {}
+_SEMANTIC_LRU: list[str] = []  # tracks access order for eviction
+_SEMANTIC_MAX_ENTRIES = 500    # per-file entries before eviction kicks in
 _SEM_MODEL = None
 
 
@@ -286,6 +348,16 @@ def _sem_index(root: str) -> None:
                 texts,
                 list(embeddings),
             )))
+
+            # LRU eviction: if we exceed the cap, drop the oldest entry
+            global _SEMANTIC_LRU
+            if fpath not in _SEMANTIC_LRU:
+                _SEMANTIC_LRU.append(fpath)
+            while len(_SEMANTIC_LRU) > _SEMANTIC_MAX_ENTRIES:
+                old = _SEMANTIC_LRU.pop(0)
+                if old in _SEMANTIC_STORE:
+                    del _SEMANTIC_STORE[old]
+
     stale = [p for p in _SEMANTIC_STORE if p not in current and p != "_max_mtime"]
     for p in stale:
         del _SEMANTIC_STORE[p]
@@ -358,10 +430,11 @@ def _web_search(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolRe
         return ToolResult(success=False, content="Missing required parameter: 'query'.")
     num = min(args.get("num_results", 5), 20)
     stype = args.get("search_type", "auto")
-    api_key = _TOOL_CONTEXT.get("exa_api_key") or os.environ.get("EXA_API_KEY", "")
+    api_key = _TOOL_CONTEXT.exa_api_key or os.environ.get("EXA_API_KEY", "")
 
     if not api_key:
-        return ToolResult(success=False, content="EXA_API_KEY not configured.")
+        # Fall back to DuckDuckGo (free, no API key needed)
+        return _web_search_ddg(query, num)
 
     try:
         from exa_py import Exa
@@ -388,6 +461,63 @@ def _web_search(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolRe
         lines.append("")
 
     return ToolResult(success=True, content="\n".join(lines).rstrip())
+
+
+def _web_search_ddg(query: str, num: int = 5) -> ToolResult:
+    """Fallback web search using DuckDuckGo's HTML (no API key)."""
+    try:
+        from urllib.request import Request, urlopen
+        from urllib.parse import quote_plus
+        import html as _html
+        import re as _re
+        import json as _json
+
+        url = f"https://html.duckduckgo.com/html/?q={quote_plus(query)}"
+        req = Request(url, headers={"User-Agent": "mini_agent/1.0"})
+        with urlopen(req, timeout=15) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+
+        # Extract result blocks: <a class="result__a" href="...">Title</a>
+        # and <a class="result__snippet" >Snippet</a>
+        results: list[dict] = []
+        snippet_pat = _re.compile(
+            r'<a[^>]*class="result__snippet"[^>]*>(.*?)</a>', _re.DOTALL
+        )
+        link_pat = _re.compile(
+            r'<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>(.*?)</a>', _re.DOTALL
+        )
+
+        links = link_pat.findall(raw)
+        snippets = snippet_pat.findall(raw)
+
+        for i, (href, title) in enumerate(links):
+            if i >= num:
+                break
+            title_clean = _re.sub(r"<[^>]*>", "", title).strip()
+            title_clean = _html.unescape(title_clean)
+            snippet = ""
+            if i < len(snippets):
+                snippet = _re.sub(r"<[^>]*>", "", snippets[i]).strip()
+                snippet = _html.unescape(snippet)
+            results.append({
+                "title": title_clean,
+                "url": href,
+                "snippet": snippet,
+            })
+
+        if not results:
+            return ToolResult(success=True, content="No results found (DuckDuckGo fallback).")
+
+        lines: list[str] = ["(via DuckDuckGo fallback — no Exa key configured)\n"]
+        for i, r in enumerate(results, 1):
+            lines.append(f"{i}. {r['title']}")
+            lines.append(f"   {r['url']}")
+            if r["snippet"]:
+                lines.append(f"   > {r['snippet']}")
+            lines.append("")
+        return ToolResult(success=True, content="\n".join(lines).rstrip())
+    except Exception as e:
+        return ToolResult(success=False, content=f"DuckDuckGo fallback search error: {e}")
 
 
 @_summarize("web_search")
@@ -557,3 +687,33 @@ def _find_usages(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolRe
 @_summarize("find_usages")
 def _find_usages_summary(args: dict) -> str:
     return f"find_usages({args.get('name', '?')})"
+
+
+# ---------------------------------------------------------------------------
+# recall_turn — retrieve a summary of a past turn
+# ---------------------------------------------------------------------------
+
+@_register("recall_turn")
+def _recall_turn(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
+    """Return a summary of what happened on a given turn number."""
+    turn = args.get("turn", 0)
+    if not isinstance(turn, int) or turn < 1:
+        return ToolResult(success=False, content="turn must be a positive integer")
+
+    history = _TOOL_CONTEXT._turn_history
+    if turn not in history:
+        available = sorted(history.keys()) if history else []
+        return ToolResult(
+            success=True,
+            content=(
+                f"No record of turn {turn}. "
+                + (f"Available turns: {available}" if available else "No turns recorded yet.")
+            ),
+        )
+
+    return ToolResult(success=True, content=f"Turn {turn}:\n{history[turn]}")
+
+
+@_summarize("recall_turn")
+def _recall_turn_summary(args: dict) -> str:
+    return f"recall_turn({args.get('turn', '?')})"

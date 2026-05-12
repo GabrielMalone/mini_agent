@@ -1,0 +1,73 @@
+#!/usr/bin/env python3
+"""
+retry.py — HTTP retry logic for mini_agent.
+
+Provides ``_request_with_retry()`` with exponential backoff on transient
+failures (429, 5xx).  Used by ``llm.py::call_deepseek()``.
+"""
+
+import sys
+import threading
+
+import requests
+
+# ---------------------------------------------------------------------------
+# Retry configuration
+# ---------------------------------------------------------------------------
+
+_MAX_RETRIES = 3
+_RETRYABLE_STATUSES: set[int] = {429, 500, 502, 503, 504}
+
+
+def _request_with_retry(
+    session,  # requests.Session or the requests module itself
+    *args,
+    stream: bool = False,
+    cancel_event: threading.Event | None = None,
+    **kwargs,
+) -> requests.Response | None:
+    """Send an HTTP request with retry on transient errors.
+
+    Retries up to *_MAX_RETRIES* times with exponential backoff (1s, 2s, 4s)
+    on 429 / 5xx status codes.  Non-retryable errors raise immediately.
+
+    *session* is a requests.Session for connection reuse, or the requests
+    module itself (for testability — tests patch requests.post).
+    """
+    post = session.post if hasattr(session, "post") and callable(session.post) else requests.post
+    kwargs.pop("stream", None)  # avoid duplicate kwarg
+    last_exc: Exception | None = None
+    for attempt in range(_MAX_RETRIES + 1):
+        try:
+            r = post(*args, stream=stream, **kwargs)
+            if r.ok or r.status_code not in _RETRYABLE_STATUSES:
+                return r
+            # Transient error — retry
+            if attempt < _MAX_RETRIES:
+                delay = 2 ** attempt  # 1, 2, 4
+                print(
+                    f"  ⚠ API {r.status_code}, retrying in {delay}s "
+                    f"(attempt {attempt + 1}/{_MAX_RETRIES})",
+                    file=sys.stderr, flush=True,
+                )
+                if cancel_event is not None and cancel_event.wait(delay):
+                    return r  # cancelled during wait
+            else:
+                return r  # exhausted retries, let caller handle
+        except requests.RequestException as exc:
+            last_exc = exc
+            if attempt < _MAX_RETRIES:
+                delay = 2 ** attempt
+                print(
+                    f"  ⚠ network error ({exc}), retrying in {delay}s "
+                    f"(attempt {attempt + 1}/{_MAX_RETRIES})",
+                    file=sys.stderr, flush=True,
+                )
+                if cancel_event is not None and cancel_event.wait(delay):
+                    return None  # cancelled during wait
+            else:
+                raise  # exhausted retries, re-raise
+
+    if last_exc is not None:
+        raise last_exc
+    return r  # pragma: no cover

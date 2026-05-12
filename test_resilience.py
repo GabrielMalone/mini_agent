@@ -452,9 +452,8 @@ class TestEditFileDiff(unittest.TestCase):
         }
         result = execute_tool(tc, self.wg, self.rg)
         self.assertTrue(result.success)
-        self.assertIn("diff", result.content)
-        self.assertIn("hello world", result.content)
-        self.assertIn("goodbye world", result.content)
+        self.assertIn("OK: replaced 1 occurrence", result.content)
+        self.assertIn(self.test_file, result.content)
 
 
 # ---------------------------------------------------------------------------

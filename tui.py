@@ -41,7 +41,7 @@ from textual.binding import Binding
 
 import requests
 
-from config import AgentConfig, resolve_workspace, build_startup_context
+from config import AgentConfig, resolve_workspace, build_startup_context, init_session, parse_args
 from llm import run_agent_turn, THINKING_START, THINKING_END
 from prompt import SYSTEM_PROMPT
 from safety import ReadSafetyGate, WriteSafetyGate
@@ -407,8 +407,8 @@ class MiniAgentTUI(App):
         self._tui_theme = THEMES.get(theme_key, THEMES[DEFAULT_THEME])
 
         workspace = resolve_workspace()
-        from config import init_session
-        data = init_session(workspace)
+        cli = parse_args()
+        data = init_session(workspace, cli_args=cli)
         self.config = data["config"]
         self.config.verbose = "--quiet" not in sys.argv
         self.write_gate = data["write_gate"]

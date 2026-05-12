@@ -2,18 +2,25 @@
 """
 llm.py — DeepSeek API communication for mini_agent.
 
-Provides ``call_deepseek()`` for non-streaming and streaming (single-pass)
+Provides ``call_deepseek()`` for non-streaming and streaming API
+requests, ``run_agent_turn()`` orchestrator, circuit breaker,
+tool piping (Kahns algorithm), and turn-summary persistence.
+Retry logic lives in ``retry.py``; SSE parsing in ``stream.py``.
 requests with automatic retry on transient failures, and ``_parse_stream()``
 for SSE parsing with tool-call accumulation and connection-drop resilience.
 """
 
 import json
 import os
+import subprocess as _sp
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
+
+from retry import _request_with_retry
+from stream import _parse_stream, THINKING_START, THINKING_END
 
 from config import AgentConfig
 from terminal import c, _DIM
@@ -21,71 +28,6 @@ from tools import TOOLS, execute_tool, tool_summary, clear_tool_cache
 from safety import ReadSafetyGate, WriteSafetyGate
 
 # Thinking-mode delimiters sent through the on_token stream
-THINKING_START = "\n[thinking] "
-THINKING_END = "\n[/thinking]"
-
-
-# ---------------------------------------------------------------------------
-# Retry configuration
-# ---------------------------------------------------------------------------
-
-_MAX_RETRIES = 3
-_RETRYABLE_STATUSES: set[int] = {429, 500, 502, 503, 504}
-
-
-def _request_with_retry(
-    session,  # requests.Session or the requests module itself
-    *args,
-    stream: bool = False,
-    cancel_event: threading.Event | None = None,
-    **kwargs,
-) -> requests.Response:
-    """Send an HTTP request with retry on transient errors.
-
-    Retries up to *_MAX_RETRIES* times with exponential backoff (1s, 2s, 4s)
-    on 429 / 5xx status codes.  Non-retryable errors raise immediately.
-
-    *session* is a requests.Session for connection reuse, or the requests
-    module itself (for testability — tests patch requests.post).
-    """
-    post = session.post if hasattr(session, "post") else requests.post
-    last_exc: Exception | None = None
-    for attempt in range(_MAX_RETRIES + 1):
-        try:
-            r = post(*args, stream=stream, **kwargs)
-            if r.ok or r.status_code not in _RETRYABLE_STATUSES:
-                return r
-            # Transient error — retry
-            if attempt < _MAX_RETRIES:
-                delay = 2 ** attempt  # 1, 2, 4
-                print(
-                    f"  ⚠ API {r.status_code}, retrying in {delay}s "
-                    f"(attempt {attempt + 1}/{_MAX_RETRIES})",
-                    file=sys.stderr, flush=True,
-                )
-                if cancel_event is not None and cancel_event.wait(delay):
-                    return r  # cancelled during wait
-            else:
-                return r  # exhausted retries, let caller handle
-        except requests.RequestException as exc:
-            last_exc = exc
-            if attempt < _MAX_RETRIES:
-                delay = 2 ** attempt
-                print(
-                    f"  ⚠ network error ({exc}), retrying in {delay}s "
-                    f"(attempt {attempt + 1}/{_MAX_RETRIES})",
-                    file=sys.stderr, flush=True,
-                )
-                if cancel_event is not None and cancel_event.wait(delay):
-                    raise  # cancelled during wait
-            else:
-                raise  # exhausted retries, re-raise
-
-    if last_exc is not None:
-        raise last_exc
-    return r  # pragma: no cover
-
-
 # ---------------------------------------------------------------------------
 # API call
 # ---------------------------------------------------------------------------
@@ -143,6 +85,9 @@ def call_deepseek(
         cancel_event=cancel_event,
     )
 
+    if r is None:
+        return None  # cancelled during retry
+
     if not r.ok:
         try:
             err = r.json()
@@ -157,151 +102,6 @@ def call_deepseek(
         return r.json()["choices"][0]["message"]
 
 
-def _parse_stream(response: requests.Response, on_token: callable = None, on_tool_ready: callable = None) -> dict:
-    """Parse an SSE streamed response, printing text as it arrives.
-
-    Accumulates both text content and tool_calls from deltas.  Tool call
-    arguments arrive in fragments across multiple chunks and are reassembled
-    by index.  Reasoning (thinking) content is printed dimmed in real-time
-    for debugging visibility.
-
-    If *on_token* is provided, it is called with each content token (str)
-    instead of printing to stdout.
-
-    If *on_tool_ready* is provided, it is called with a complete tool call
-    dict the moment its arguments form valid JSON.  This allows incremental
-    tool execution while the stream tail is still arriving.
-
-    If the connection drops mid-stream, whatever was accumulated so far is
-    returned rather than crashing — a warning is printed to stderr.
-
-    Returns a reconstructed message dict (role, content, optional
-    reasoning_content, optional tool_calls).
-    """
-    full_content = ""
-    full_reasoning = ""
-    tool_calls_by_index: dict[int, dict] = {}  # index → accumulated tc dict
-    fired_indices: set[int] = set()
-    reasoning_header_printed = False
-    usage: dict | None = None
-
-    if not on_token:
-        print(flush=True)  # separate streaming output from the prompt line
-
-    try:
-        for line in response.iter_lines(decode_unicode=True):
-            if not line or not line.startswith("data: "):
-                continue
-            data_str = line[len("data: "):]
-            if data_str.strip() == "[DONE]":
-                break
-            try:
-                chunk = json.loads(data_str)
-                delta = chunk["choices"][0].get("delta", {})
-
-                # Usage may appear in any chunk (usually the last)
-                if "usage" in chunk and chunk["usage"]:
-                    usage = chunk["usage"]
-
-                # Text content — print and accumulate
-                if "content" in delta and delta["content"]:
-                    if full_reasoning and not full_content:
-                        # First content token after reasoning — signal end of thinking
-                        if on_token:
-                            on_token(THINKING_END)
-                    full_content += delta["content"]
-                    if on_token:
-                        on_token(delta["content"])
-                    else:
-                        print(delta["content"], end="", flush=True)
-
-                # Reasoning content (thinking mode) — forward via on_token or print
-                if "reasoning_content" in delta and delta["reasoning_content"]:
-                    if not reasoning_header_printed and not full_content:
-                        if on_token:
-                            on_token(THINKING_START)
-                        else:
-                            print(c("  thinking…", _DIM), file=sys.stderr, flush=True)
-                        reasoning_header_printed = True
-                    full_reasoning += delta["reasoning_content"]
-                    if on_token:
-                        on_token(delta["reasoning_content"])
-                    else:
-                        print(c(delta["reasoning_content"], _DIM), end="", flush=True)
-
-                # Tool calls — accumulate fragments by index and detect completion
-                if "tool_calls" in delta:
-                    for tc_delta in delta["tool_calls"]:
-                        idx = tc_delta.get("index", 0)
-                        if idx not in tool_calls_by_index:
-                            tool_calls_by_index[idx] = {
-                                "id": "",
-                                "type": "function",
-                                "function": {"name": "", "arguments": ""},
-                            }
-                        tc = tool_calls_by_index[idx]
-                        if "id" in tc_delta:
-                            tc["id"] = tc_delta["id"]
-                        if "type" in tc_delta:
-                            tc["type"] = tc_delta["type"]
-                        if "function" in tc_delta:
-                            fn_delta = tc_delta["function"]
-                            if "name" in fn_delta and fn_delta["name"]:
-                                tc["function"]["name"] += fn_delta["name"]
-                            if "arguments" in fn_delta:
-                                tc["function"]["arguments"] += fn_delta["arguments"]
-
-                        # Fire on_tool_ready when arguments form valid JSON
-                        if on_tool_ready and idx not in fired_indices:
-                            args = tc["function"]["arguments"]
-                            try:
-                                json.loads(args)
-                                fired_indices.add(idx)
-                                ready = dict(tc)
-                                ready["_index"] = idx
-                                on_tool_ready(ready)
-                            except (json.JSONDecodeError, ValueError):
-                                pass  # still fragmentary
-            except Exception:
-                continue
-    except (
-        requests.exceptions.ChunkedEncodingError,
-        requests.exceptions.ConnectionError,
-        requests.exceptions.StreamConsumedError,
-        ConnectionError,
-        OSError,
-    ) as exc:
-        print(
-            f"\n  ⚠ stream interrupted ({exc}) — using partial response",
-            file=sys.stderr, flush=True,
-        )
-
-    if full_reasoning and not on_token:
-        print(file=sys.stderr, flush=True)  # newline after dimmed reasoning block
-
-    if full_content and not on_token:
-        print(flush=True)  # final newline after streamed text
-
-    msg: dict = {"role": "assistant", "content": full_content}
-    if full_reasoning:
-        msg["reasoning_content"] = full_reasoning
-    if usage:
-        msg["_usage"] = usage
-
-    if tool_calls_by_index:
-        msg["tool_calls"] = [
-            tool_calls_by_index[i]
-            for i in sorted(tool_calls_by_index)
-        ]
-        # Tag which ones were already incrementally executed
-        if fired_indices:
-            msg["_fired_indices"] = list(fired_indices)
-
-    return msg
-
-
-
-# ---------------------------------------------------------------------------
 # Circuit breaker — guards against repeated identical tool calls
 # ---------------------------------------------------------------------------
 
@@ -346,6 +146,31 @@ def _check_circuit(recent_keys: list[str]) -> str | None:
 # ---------------------------------------------------------------------------
 # Shared agent loop — used by both terminal REPL and TUI
 # ---------------------------------------------------------------------------
+
+def _save_turn_summary(
+    turn: int,
+    msg: dict,
+    deferred_results: list,
+    messages: list[dict],
+) -> None:
+    """Save a concise summary of this turn for later recall via recall_turn()."""
+    from tools import _TOOL_CONTEXT
+
+    parts: list[str] = []
+    content = msg.get("content", "")
+    if content:
+        parts.append(f"Assistant: {content[:200]}")
+    tool_calls = msg.get("tool_calls", [])
+    if tool_calls:
+        for tc in tool_calls:
+            fn = tc.get("function", {})
+            parts.append(f"  Tool: {fn.get('name', '?')}({str(fn.get('arguments', ''))[:100]})")
+    for tc, result in deferred_results:
+        ok = "✓" if result.success else "✗"
+        summary = result.content[:150].replace("\n", " ")
+        parts.append(f"  Result: {ok} {summary}")
+    _TOOL_CONTEXT._turn_history[turn] = "\n".join(parts)
+
 
 def run_agent_turn(
     messages: list[dict],
@@ -404,7 +229,6 @@ def run_agent_turn(
     # --- inject recent git changes (first turn only) ---
     if turn_count == 0 and memory_store is not None:
         try:
-            import subprocess as _sp
             result = _sp.run(
                 ["git", "diff", "--stat", "HEAD~1"],
                 capture_output=True, text=True, timeout=5,
@@ -430,6 +254,22 @@ def run_agent_turn(
             turn_count += 1
             if cancel_event is not None and cancel_event.is_set():
                 return None
+
+            # Token budget awareness — inject context usage at turn start
+            if turn_count > 1:
+                from memory import _total_tokens
+                estimate = _total_tokens(messages)
+                # Rough max: model's context window minus headroom
+                budget = 64000
+                pct = min(100, estimate * 100 // budget)
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        f"[Context: ~{estimate}//{budget} tokens ({pct}%). "
+                        f"Be concise if nearing limit.]"
+                    ),
+                    "_transient": True,
+                })
 
             # Periodic progress check — inject a system reminder
             if turn_count > 1 and turn_count % PROGRESS_INTERVAL == 0:
@@ -471,9 +311,9 @@ def run_agent_turn(
                 messages.append({"role": "user", "content": warning, "_transient": True})
 
             # Scratchpad staleness nudge — warn if not updated in several turns
-            from tools import _TOOL_CONTEXT, CTX_SCRATCHPAD_UPDATED
+            from tools import _TOOL_CONTEXT
             if turn_count > 4 and (turn_count - 1) % 3 == 0:
-                if not _TOOL_CONTEXT.get(CTX_SCRATCHPAD_UPDATED):
+                if not _TOOL_CONTEXT._scratchpad_updated:
                     messages.append({
                         "role": "user",
                         "content": (
@@ -483,7 +323,23 @@ def run_agent_turn(
                         ),
                         "_transient": True,
                     })
-                _TOOL_CONTEXT[CTX_SCRATCHPAD_UPDATED] = False
+                _TOOL_CONTEXT._scratchpad_updated = False
+
+            # Inject active plan status at turn start
+            from tools import _TOOL_CONTEXT
+            plan_steps = _TOOL_CONTEXT._plan_steps
+            if plan_steps:
+                plan_done = _TOOL_CONTEXT._plan_done
+                lines = [f"Active plan ({len(plan_done)}/{len(plan_steps)} done):"]
+                for i, s in enumerate(plan_steps, 1):
+                    mark = "✓" if (i - 1) in plan_done else "○"
+                    lines.append(f"  [{mark}] {i}. {s}")
+                lines.append("Use plan_status to mark steps complete as you finish them.")
+                messages.append({
+                    "role": "user",
+                    "content": "\n".join(lines),
+                    "_transient": True,
+                })
 
             # Collect tools executed incrementally during the stream.
             # Tool results MUST be appended AFTER the assistant message (which
@@ -545,6 +401,7 @@ def run_agent_turn(
                 if turn_count > 1:
                     msg["_turn_count"] = turn_count
                 messages.append(msg)
+                _save_turn_summary(turn_count, msg, [], messages)
                 return msg
 
             # Keep ALL tool_calls on the assistant message for valid API
@@ -570,6 +427,7 @@ def run_agent_turn(
                     recent_tool_keys.append(_tool_call_key(tc))
                     while len(recent_tool_keys) > _CIRCUIT_WINDOW:
                         recent_tool_keys.pop(0)
+                _save_turn_summary(turn_count, msg, deferred_stream_results, messages)
                 continue
 
             # Keep all tool_calls so deferred results have a reference
@@ -586,39 +444,173 @@ def run_agent_turn(
                 while len(recent_tool_keys) > _CIRCUIT_WINDOW:
                     recent_tool_keys.pop(0)
 
-            # Single tool — run inline (no thread overhead)
-            if len(remaining) == 1:
-                tc = remaining[0]
-                if cancel_event is not None and cancel_event.is_set():
-                    return None
-                if on_tool_start is not None:
-                    on_tool_start(tool_summary(tc))
-                result = execute_tool(tc, write_gate, read_gate,
-                                      on_output=on_tool_output,
-                                      approve_callback=approve_callback)
-                _append_tool_result(messages, tc, result, on_tool_end,
-                                    recent_keys=recent_tool_keys)
-                continue
+            # --- Tool piping: extract _pipe deps from remaining tools ---
+            # _pipe format: {"from": <source_index_in_remaining>, "into": "<param_name>"}
+            # Source index is relative to `remaining` list.
+            import json as _json
+            pipe_deps: dict[int, tuple[int, str]] = {}  # target_idx -> (source_idx, param)
+            pipe_results: dict[int, "ToolResult"] = {}   # idx -> result (for substitution)
+            for i, tc in enumerate(remaining):
+                raw = tc["function"].get("arguments", "{}")
+                try:
+                    ad = _json.loads(raw) if isinstance(raw, str) else dict(raw)
+                except Exception:
+                    continue
+                pipe_cfg = ad.pop("_pipe", None)
+                if isinstance(pipe_cfg, dict) and "from" in pipe_cfg:
+                    pipe_deps[i] = (int(pipe_cfg["from"]), pipe_cfg.get("into", ""))
+                tc["function"]["arguments"] = _json.dumps(ad)
 
-            # Multiple tools — run in parallel thread pool
-            if on_tool_start is not None:
-                for tc in remaining:
-                    on_tool_start(tool_summary(tc), True)
-
-            def _run_tool(tc):
-                return tc, execute_tool(tc, write_gate, read_gate,
-                                        on_output=on_tool_output,
-                                        approve_callback=approve_callback)
-
-            with ThreadPoolExecutor(max_workers=len(remaining)) as pool:
-                futures = {pool.submit(_run_tool, tc): tc for tc in remaining}
-                for future in as_completed(futures):
+            if not pipe_deps:
+                # No piping — original behavior
+                if len(remaining) == 1:
+                    tc = remaining[0]
                     if cancel_event is not None and cancel_event.is_set():
-                        pool.shutdown(wait=False, cancel_futures=True)
                         return None
-                    tc, result = future.result()
+                    if on_tool_start is not None:
+                        on_tool_start(tool_summary(tc))
+                    result = execute_tool(tc, write_gate, read_gate,
+                                          on_output=on_tool_output,
+                                          approve_callback=approve_callback)
                     _append_tool_result(messages, tc, result, on_tool_end,
                                         recent_keys=recent_tool_keys)
+                    _save_turn_summary(turn_count, msg, [(tc, result)], messages)
+                    continue
+
+                if on_tool_start is not None:
+                    for tc in remaining:
+                        on_tool_start(tool_summary(tc), True)
+
+                def _run_tool(tc):
+                    return tc, execute_tool(tc, write_gate, read_gate,
+                                            on_output=on_tool_output,
+                                            approve_callback=approve_callback)
+
+                with ThreadPoolExecutor(max_workers=len(remaining)) as pool:
+                    futures = {pool.submit(_run_tool, tc): tc for tc in remaining}
+                    for future in as_completed(futures):
+                        if cancel_event is not None and cancel_event.is_set():
+                            pool.shutdown(wait=False, cancel_futures=True)
+                            return None
+                        tc, result = future.result()
+                        _append_tool_result(messages, tc, result, on_tool_end,
+                                            recent_keys=recent_tool_keys)
+
+                _save_turn_summary(turn_count, msg, [], messages)
+                continue
+
+            # --- Piping: topological sort into execution groups ---
+            # Build adjacency: source_idx -> [target indices that depend on it]
+            children: dict[int, list[int]] = {i: [] for i in range(len(remaining))}
+            indeg: dict[int, int] = {i: 0 for i in range(len(remaining))}
+            for tgt, (src, _) in pipe_deps.items():
+                children.setdefault(src, []).append(tgt)
+                indeg[tgt] = indeg.get(tgt, 0) + 1
+
+            # Kahn's algorithm → ordered groups
+            import collections
+            queue = collections.deque([i for i in range(len(remaining)) if indeg[i] == 0])
+            groups: list[list[int]] = []
+            seen = 0
+            while queue:
+                group = list(queue)
+                groups.append(group)
+                queue.clear()
+                for node in group:
+                    seen += 1
+                    for child in children.get(node, []):
+                        indeg[child] -= 1
+                        if indeg[child] == 0:
+                            queue.append(child)
+
+            if seen != len(remaining):
+                # Cycle detected — fall back to sequential execution
+                if on_tool_start is not None:
+                    for tc in remaining:
+                        on_tool_start(tool_summary(tc))
+                for i, tc in enumerate(remaining):
+                    if cancel_event is not None and cancel_event.is_set():
+                        break
+                    result = execute_tool(tc, write_gate, read_gate,
+                                          on_output=on_tool_output,
+                                          approve_callback=approve_callback)
+                    pipe_results[i] = result
+                    _append_tool_result(messages, tc, result, on_tool_end,
+                                        recent_keys=recent_tool_keys)
+                _save_turn_summary(turn_count, msg, [], messages)
+                continue
+
+            # Execute groups in order (parallel within group, sequential across groups)
+            all_results: list[tuple] = []
+            for group in groups:
+                if on_tool_start is not None:
+                    for i in group:
+                        on_tool_start(tool_summary(remaining[i]),
+                                      parallel=len(group) > 1)
+
+                if len(group) == 1:
+                    i = group[0]
+                    tc = remaining[i]
+                    # Substitute pipe input if this tool has a dep
+                    if i in pipe_deps:
+                        src_idx, into_param = pipe_deps[i]
+                        src_result = pipe_results.get(src_idx)
+                        if src_result is not None:
+                            args_dict = _json.loads(tc["function"]["arguments"])
+                            if not into_param:
+                                # Default: first string parameter
+                                for k, v in args_dict.items():
+                                    if isinstance(v, str):
+                                        into_param = k
+                                        break
+                            if into_param and into_param in args_dict:
+                                args_dict[into_param] = src_result.content.strip()
+                                tc["function"]["arguments"] = _json.dumps(args_dict)
+                    if cancel_event is not None and cancel_event.is_set():
+                        break
+                    result = execute_tool(tc, write_gate, read_gate,
+                                          on_output=on_tool_output,
+                                          approve_callback=approve_callback)
+                    pipe_results[i] = result
+                    _append_tool_result(messages, tc, result, on_tool_end,
+                                        recent_keys=recent_tool_keys)
+                    all_results.append((tc, result))
+                else:
+                    results_lock = __import__("threading").Lock()
+
+                    def _run_piped(i):
+                        tc = remaining[i]
+                        if i in pipe_deps:
+                            src_idx, into_param = pipe_deps[i]
+                            src_result = pipe_results.get(src_idx)
+                            if src_result is not None:
+                                args_dict = _json.loads(tc["function"]["arguments"])
+                                if not into_param:
+                                    for k, v in args_dict.items():
+                                        if isinstance(v, str):
+                                            into_param = k
+                                            break
+                                if into_param and into_param in args_dict:
+                                    args_dict[into_param] = src_result.content.strip()
+                                    tc["function"]["arguments"] = _json.dumps(args_dict)
+                        return i, tc, execute_tool(tc, write_gate, read_gate,
+                                                   on_output=on_tool_output,
+                                                   approve_callback=approve_callback)
+
+                    with ThreadPoolExecutor(max_workers=len(group)) as pool:
+                        futures = {pool.submit(_run_piped, i): i for i in group}
+                        for future in as_completed(futures):
+                            if cancel_event is not None and cancel_event.is_set():
+                                pool.shutdown(wait=False, cancel_futures=True)
+                                break
+                            i, tc, result = future.result()
+                            with results_lock:
+                                pipe_results[i] = result
+                            _append_tool_result(messages, tc, result, on_tool_end,
+                                                recent_keys=recent_tool_keys)
+                            all_results.append((tc, result))
+
+            _save_turn_summary(turn_count, msg, all_results, messages)
 
         # Exceeded max_turns — return last assistant message (still has tool_calls)
         if total_usage:

@@ -41,7 +41,7 @@ import time
 
 import requests
 
-from config import AgentConfig, CONFIG_FILENAME, resolve_workspace, init_session
+from config import AgentConfig, CONFIG_FILENAME, resolve_workspace, init_session, parse_args
 from llm import run_agent_turn
 from prompt import SYSTEM_PROMPT
 from safety import ReadSafetyGate, WriteSafetyGate
@@ -94,13 +94,11 @@ def _export_conversation(messages: list[dict], workspace: str) -> str:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    # --help
-    if "--help" in sys.argv or "-h" in sys.argv:
-        print(__doc__)
-        return
+    # Parse with argparse (gives --help for free)
+    cli = parse_args()
 
-    workspace = resolve_workspace()
-    session_data = init_session(workspace)
+    workspace = resolve_workspace(override=cli.workspace)
+    session_data = init_session(workspace, cli_args=cli)
     config = session_data["config"]
     write_gate = session_data["write_gate"]
     read_gate = session_data["read_gate"]
@@ -116,7 +114,7 @@ def main() -> None:
         _log(config.verbose, f"config: {CONFIG_FILENAME} loaded")
     _log(config.verbose, "Type 'quit' to exit, 'clear' to reset memory, --help for flags.")
     if not config.verbose:
-        _log(config.verbose, "(quiet mode — use without --quiet to see tool execution)")
+        _log(config.verbose, "(quiet mode — use --quiet to suppress tool logs)")
     _log(config.verbose)
 
     session = requests.Session()

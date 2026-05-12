@@ -1,0 +1,452 @@
+#!/usr/bin/env python3
+"""
+file_ops.py — file/directory tools for mini_agent.
+
+Tools: read_file, write_file, edit_file, list_directory, file_info
+"""
+
+import os
+import stat as stat_module
+import shutil
+import time
+
+from safety import ReadSafetyGate, WriteSafetyGate
+from tools import _register, _summarize, ToolResult, _TOOL_CONTEXT, CTX_SCRATCHPAD_PATH, CTX_SCRATCHPAD_UPDATED
+
+
+# ---------------------------------------------------------------------------
+# Session undo — backs up files before modification
+# ---------------------------------------------------------------------------
+
+_BACKUPS: dict[str, str] = {}  # resolved_path -> backup path
+
+
+def _backup_before_write(resolved_path: str) -> None:
+    """Save a backup of *resolved_path* if it exists and hasn't already been backed up."""
+    if resolved_path in _BACKUPS:
+        return  # already backed up
+    if not os.path.isfile(resolved_path):
+        return  # nothing to back up
+    backup_dir = os.path.join(os.path.dirname(resolved_path), ".mini_agent_backups")
+    os.makedirs(backup_dir, exist_ok=True)
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    fname = os.path.basename(resolved_path)
+    backup_path = os.path.join(backup_dir, f"{fname}.{timestamp}.bak")
+    shutil.copy2(resolved_path, backup_path)
+    _BACKUPS[resolved_path] = backup_path
+
+
+# ---------------------------------------------------------------------------
+# read_file
+# ---------------------------------------------------------------------------
+
+# Default maximum lines returned by read_file when no limit is given.
+_DEFAULT_READ_LINES = 300
+# Absolute maximum (safety cap) — never return more than this.
+_ABSOLUTE_MAX_LINES = 1000
+
+
+@_register("read_file")
+def _read_file(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
+    path = args["path"]
+    safety_result = rg.check(path)
+    if not safety_result.allowed:
+        return ToolResult(
+            success=False,
+            content=f"Read blocked by safety layer: {safety_result.reason}",
+        )
+    try:
+        with open(safety_result.resolved_path, "r") as f:
+            content = f.read()
+    except Exception as e:
+        hint = ""
+        if isinstance(e, FileNotFoundError) or "No such file" in str(e):
+            hint = "\nHint: Check the path spelling. Try list_directory to see available files."
+        return ToolResult(success=False, content=f"Error reading '{safety_result.resolved_path}': {e}{hint}")
+
+    lines = content.split("\n")
+
+    # Apply offset (0-indexed line number to start from)
+    offset = args.get("offset", 0)
+    if offset < 0:
+        offset = 0
+    if offset > 0:
+        if offset >= len(lines):
+            return ToolResult(success=False, content=f"Offset {offset} exceeds file length ({len(lines)} lines).")
+        lines = lines[offset:]
+
+    # Apply limit (max lines to return)
+    limit = args.get("limit", _DEFAULT_READ_LINES)
+    if limit < 1:
+        limit = _DEFAULT_READ_LINES
+    limit = min(limit, _ABSOLUTE_MAX_LINES)
+
+    if len(lines) > limit:
+        truncated = "\n".join(lines[:limit])
+        msg = (
+            f"{truncated}\n"
+            f"… (truncated at {limit} lines — {len(lines)} total in selection. "
+            f"Use a higher limit or offset to see more.)"
+        )
+        return ToolResult(success=True, content=msg)
+
+    return ToolResult(success=True, content="\n".join(lines))
+
+
+@_summarize("read_file")
+def _read_file_summary(args: dict) -> str:
+    return f"read_file({args.get('path', '?')})"
+
+
+# ---------------------------------------------------------------------------
+# write_file
+# ---------------------------------------------------------------------------
+
+@_register("write_file")
+def _write_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
+    path = args["path"]
+    content = args["content"]
+    safety_result = wg.check(path)
+    if not safety_result.allowed:
+        return ToolResult(
+            success=False,
+            content=(
+                f"Write blocked by safety layer: {safety_result.reason}\n"
+                f"Hint: Use a path inside the workspace ({wg.workspace_root})."
+            ),
+        )
+    try:
+        parent = os.path.dirname(safety_result.resolved_path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        _backup_before_write(safety_result.resolved_path)
+        with open(safety_result.resolved_path, "w") as f:
+            f.write(content)
+        from tools import _MODIFIED_FILES
+        _MODIFIED_FILES.add(args["path"])
+        return ToolResult(
+            success=True,
+            content=f"OK: wrote {len(content)} bytes to {safety_result.resolved_path}",
+        )
+    except Exception as e:
+        return ToolResult(
+            success=False,
+            content=f"Error writing '{safety_result.resolved_path}': {e}",
+        )
+
+
+@_summarize("write_file")
+def _write_file_summary(args: dict) -> str:
+    path = args.get("path", "?")
+    content = args.get("content", "")
+    preview = content[:60].replace("\n", "\\n")
+    if len(content) > 60:
+        preview += "…"
+    return f"write_file({path}, {len(content)}B → \"{preview}\")"
+
+
+# ---------------------------------------------------------------------------
+# edit_file
+# ---------------------------------------------------------------------------
+
+@_register("edit_file")
+def _edit_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
+    path = args["path"]
+    old = args["old_string"]
+    new = args["new_string"]
+    count = args.get("count", 1)  # 1 = first occurrence, -1 = all occurrences
+    safety_result = wg.check(path)
+    if not safety_result.allowed:
+        return ToolResult(
+            success=False,
+            content=f"Edit blocked by safety layer: {safety_result.reason}",
+        )
+    try:
+        with open(safety_result.resolved_path, "r") as f:
+            original = f.read()
+        _backup_before_write(safety_result.resolved_path)
+        if old not in original:
+            # Search for similar substrings to help the agent self-correct
+            candidates: list[str] = []
+            old_first_line = old.split("\n")[0].strip()
+            for lineno, line in enumerate(original.split("\n"), 1):
+                if old_first_line and old_first_line[:30] in line:
+                    candidates.append(f"  line {lineno}: {line.rstrip()[:120]}")
+                if len(candidates) >= 3:
+                    break
+            hint = (
+                f"Edit failed: old_string not found in '{safety_result.resolved_path}'.\n"
+                f"Hint: The string must match exactly — check whitespace, indentation, "
+                f"and line endings. Try read_file first to verify the exact text."
+            )
+            if candidates:
+                hint += "\nSimilar lines found (did you mean one of these?):\n" + "\n".join(candidates)
+            return ToolResult(success=False, content=hint)
+
+        if count == -1:
+            # Replace all occurrences
+            occurrences = original.count(old)
+            updated = original.replace(old, new)
+            replaced = occurrences
+        elif count == 1:
+            updated = original.replace(old, new, 1)
+            replaced = 1
+        elif count < 1:
+            return ToolResult(success=False, content=f"Invalid count: {count}. Use 1 (first) or -1 (all).")
+        else:
+            return ToolResult(success=False, content=f"Invalid count: {count}. Use 1 (first) or -1 (all).")
+
+        with open(safety_result.resolved_path, "w") as f:
+            f.write(updated)
+
+        # Build a short unified diff for verification
+        import difflib
+        diff_lines = list(difflib.unified_diff(
+            original.splitlines(keepends=True),
+            updated.splitlines(keepends=True),
+            fromfile=f"a/{path}",
+            tofile=f"b/{path}",
+        ))
+        diff_text = "".join(diff_lines)
+        if len(diff_text) > 2000:
+            diff_text = diff_text[:2000] + "\n… (diff truncated)"
+
+        from tools import _MODIFIED_FILES
+        _MODIFIED_FILES.add(args["path"])
+        label = f"{replaced} occurrence(s)" if replaced > 1 else "1 occurrence"
+        return ToolResult(
+            success=True,
+            content=(
+                f"OK: replaced {label} in {safety_result.resolved_path}\n"
+                f"```diff\n{diff_text}```"
+            ),
+        )
+    except Exception as e:
+        return ToolResult(
+            success=False,
+            content=f"Error editing '{safety_result.resolved_path}': {e}",
+        )
+
+
+@_summarize("edit_file")
+def _edit_file_summary(args: dict) -> str:
+    path = args.get("path", "?")
+    old = args.get("old_string", "")
+    preview = old[:40].replace("\n", "\\n")
+    if len(old) > 40:
+        preview += "…"
+    return f"edit_file({path}, \"{preview}\")"
+
+
+# ---------------------------------------------------------------------------
+# list_directory
+# ---------------------------------------------------------------------------
+
+@_register("list_directory")
+def _list_directory(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
+    path = args["path"]
+    safety_result = rg.check(path)
+    if not safety_result.allowed:
+        return ToolResult(
+            success=False,
+            content=f"List blocked by safety layer: {safety_result.reason}",
+        )
+    try:
+        entries = os.listdir(safety_result.resolved_path)
+        rows: list[str] = []
+        for name in sorted(entries):
+            full = os.path.join(safety_result.resolved_path, name)
+            prefix = "d" if os.path.isdir(full) else "f"
+            rows.append(f"  [{prefix}] {name}")
+        if not rows:
+            content = f"{safety_result.resolved_path}  (empty)"
+        else:
+            content = f"{safety_result.resolved_path}\n" + "\n".join(rows)
+        return ToolResult(success=True, content=content)
+    except Exception as e:
+        return ToolResult(success=False, content=f"Error listing '{safety_result.resolved_path}': {e}")
+
+
+@_summarize("list_directory")
+def _list_directory_summary(args: dict) -> str:
+    return f"list_directory({args.get('path', '?')})"
+
+
+# ---------------------------------------------------------------------------
+# file_info
+# ---------------------------------------------------------------------------
+
+@_register("file_info")
+def _file_info(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
+    path = args["path"]
+    safety_result = rg.check(path)
+    if not safety_result.allowed:
+        return ToolResult(
+            success=False,
+            content=f"File info blocked by safety layer: {safety_result.reason}",
+        )
+    resolved = safety_result.resolved_path
+    try:
+        st = os.stat(resolved)
+        parts = [
+            f"path: {resolved}",
+            f"size: {st.st_size} bytes",
+            f"mode: {stat_module.filemode(st.st_mode)}",
+            f"modified: {time.ctime(st.st_mtime)}",
+        ]
+        if stat_module.S_ISDIR(st.st_mode):
+            parts.append("type: directory")
+        else:
+            parts.append("type: file")
+        return ToolResult(success=True, content="\n".join(parts))
+    except FileNotFoundError:
+        return ToolResult(success=True, content=f"path: {resolved}\nexists: no")
+    except Exception as e:
+        return ToolResult(success=False, content=f"Error stating '{resolved}': {e}")
+
+
+@_summarize("file_info")
+def _file_info_summary(args: dict) -> str:
+    return f"file_info({args.get('path', '?')})"
+
+
+# ---------------------------------------------------------------------------
+# write_scratchpad
+# ---------------------------------------------------------------------------
+
+@_register("write_scratchpad")
+def _write_scratchpad(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
+    """Write content to the agent's persistent working scratchpad."""
+    import os as _os
+    content_text = args["content"]
+
+    # Find the MemoryStore instance via _TOOL_CONTEXT
+    # The scratchpad is stored in the SQLite DB alongside messages
+    scratchpad_path = _TOOL_CONTEXT.get(CTX_SCRATCHPAD_PATH, "")
+    if scratchpad_path:
+        try:
+            import sqlite3
+            conn = sqlite3.connect(scratchpad_path)
+            conn.execute(
+                "INSERT OR REPLACE INTO scratchpad (id, content) VALUES (1, ?)",
+                (content_text,),
+            )
+            conn.commit()
+            conn.close()
+            _TOOL_CONTEXT[CTX_SCRATCHPAD_UPDATED] = True
+            return ToolResult(
+                success=True,
+                content=f"Scratchpad updated ({len(content_text)} chars).",
+            )
+        except Exception as e:
+            return ToolResult(
+                success=False,
+                content=f"Failed to update scratchpad: {e}",
+            )
+
+    # Fallback: store in a file
+    fallback = _os.path.join(
+        _TOOL_CONTEXT.get("workspace", "."), ".mini_agent_scratchpad.md"
+    )
+    try:
+        with open(fallback, "w") as f:
+            f.write(content_text)
+        return ToolResult(
+            success=True,
+            content=f"Scratchpad updated ({len(content_text)} chars).",
+        )
+    except Exception as e:
+        return ToolResult(
+            success=False,
+            content=f"Failed to update scratchpad: {e}",
+        )
+
+
+@_summarize("write_scratchpad")
+def _write_scratchpad_summary(args: dict) -> str:
+    content = args.get("content", "")
+    preview = content[:60].replace("\n", " ")
+    if len(content) > 60:
+        preview += "…"
+    return f"write_scratchpad(…{len(content)} chars → \"{preview}\")"
+
+
+# ---------------------------------------------------------------------------
+# diff tool — show unstaged changes via git
+# ---------------------------------------------------------------------------
+
+@_register("diff")
+def _diff(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
+    """Show unstaged changes (git diff) for the workspace or a specific file."""
+    import subprocess
+    path = args.get("path", "")
+    cmd = ["git", "-C", rg.workspace_root, "diff"]
+    if path:
+        cmd.append(path)
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        if r.returncode != 0:
+            return ToolResult(success=False, content=r.stderr or "git diff failed")
+        if not r.stdout.strip():
+            return ToolResult(success=True, content="No unstaged changes.")
+        return ToolResult(success=True, content=r.stdout.rstrip())
+    except FileNotFoundError:
+        return ToolResult(success=False, content="git not found")
+    except subprocess.TimeoutExpired:
+        return ToolResult(success=False, content="diff timed out")
+    except Exception as e:
+        return ToolResult(success=False, content=f"Error running diff: {e}")
+
+
+@_summarize("diff")
+def _diff_summary(args: dict) -> str:
+    path = args.get("path", "")
+    if path:
+        return f"diff({path})"
+    return "diff()"
+
+
+# ---------------------------------------------------------------------------
+# restore_file — session undo
+# ---------------------------------------------------------------------------
+
+
+@_register("restore_file")
+def _restore_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
+    """Restore a file from its session backup (undo the last write/edit)."""
+    path = args["path"]
+    safety_result = wg.check(path)
+    if not safety_result.allowed:
+        return ToolResult(
+            success=False,
+            content=f"Restore blocked by safety layer: {safety_result.reason}",
+        )
+    resolved = safety_result.resolved_path
+
+    if resolved not in _BACKUPS:
+        return ToolResult(
+            success=False,
+            content=f"No backup available for '{resolved}'. Only files modified this session can be restored.",
+            hint="No backup exists. Either the file hasn't been modified this session, or it was already restored.",
+        )
+
+    backup_path = _BACKUPS[resolved]
+    try:
+        shutil.copy2(backup_path, resolved)
+        del _BACKUPS[resolved]
+        from tools import _MODIFIED_FILES
+        _MODIFIED_FILES.discard(path)
+        return ToolResult(
+            success=True,
+            content=f"Restored '{resolved}' from backup ({os.path.basename(backup_path)}).",
+        )
+    except Exception as e:
+        return ToolResult(
+            success=False,
+            content=f"Error restoring '{resolved}': {e}",
+        )
+
+
+@_summarize("restore_file")
+def _restore_file_summary(args: dict) -> str:
+    return f"restore_file({args.get('path', '?')})"

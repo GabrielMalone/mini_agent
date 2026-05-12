@@ -7,6 +7,7 @@ Tools: read_file, write_file, edit_file, list_directory, file_info
 
 import os
 import stat as stat_module
+import shutil
 import time
 
 from safety import ReadSafetyGate, WriteSafetyGate
@@ -14,12 +15,35 @@ from tools import _register, _summarize, ToolResult, _TOOL_CONTEXT, CTX_SCRATCHP
 
 
 # ---------------------------------------------------------------------------
+# Session undo — backs up files before modification
+# ---------------------------------------------------------------------------
+
+_BACKUPS: dict[str, str] = {}  # resolved_path -> backup path
+
+
+def _backup_before_write(resolved_path: str) -> None:
+    """Save a backup of *resolved_path* if it exists and hasn't already been backed up."""
+    if resolved_path in _BACKUPS:
+        return  # already backed up
+    if not os.path.isfile(resolved_path):
+        return  # nothing to back up
+    backup_dir = os.path.join(os.path.dirname(resolved_path), ".mini_agent_backups")
+    os.makedirs(backup_dir, exist_ok=True)
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    fname = os.path.basename(resolved_path)
+    backup_path = os.path.join(backup_dir, f"{fname}.{timestamp}.bak")
+    shutil.copy2(resolved_path, backup_path)
+    _BACKUPS[resolved_path] = backup_path
+
+
+# ---------------------------------------------------------------------------
 # read_file
 # ---------------------------------------------------------------------------
 
-# Maximum lines returned by read_file (tool result sent to the LLM).
-# Beyond this, content is truncated with a note to use offset/limit.
-_MAX_READ_LINES = 300
+# Default maximum lines returned by read_file when no limit is given.
+_DEFAULT_READ_LINES = 300
+# Absolute maximum (safety cap) — never return more than this.
+_ABSOLUTE_MAX_LINES = 1000
 
 
 @_register("read_file")
@@ -41,16 +65,32 @@ def _read_file(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResu
         return ToolResult(success=False, content=f"Error reading '{safety_result.resolved_path}': {e}{hint}")
 
     lines = content.split("\n")
-    if len(lines) > _MAX_READ_LINES:
-        truncated = "\n".join(lines[:_MAX_READ_LINES])
+
+    # Apply offset (0-indexed line number to start from)
+    offset = args.get("offset", 0)
+    if offset < 0:
+        offset = 0
+    if offset > 0:
+        if offset >= len(lines):
+            return ToolResult(success=False, content=f"Offset {offset} exceeds file length ({len(lines)} lines).")
+        lines = lines[offset:]
+
+    # Apply limit (max lines to return)
+    limit = args.get("limit", _DEFAULT_READ_LINES)
+    if limit < 1:
+        limit = _DEFAULT_READ_LINES
+    limit = min(limit, _ABSOLUTE_MAX_LINES)
+
+    if len(lines) > limit:
+        truncated = "\n".join(lines[:limit])
         msg = (
             f"{truncated}\n"
-            f"… (truncated at {_MAX_READ_LINES} lines — {len(lines)} total. "
-            f"Use edit_file with a specific line range if you need more detail.)"
+            f"… (truncated at {limit} lines — {len(lines)} total in selection. "
+            f"Use a higher limit or offset to see more.)"
         )
         return ToolResult(success=True, content=msg)
 
-    return ToolResult(success=True, content=content)
+    return ToolResult(success=True, content="\n".join(lines))
 
 
 @_summarize("read_file")
@@ -79,10 +119,15 @@ def _write_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolRes
         parent = os.path.dirname(safety_result.resolved_path)
         if parent:
             os.makedirs(parent, exist_ok=True)
+        _backup_before_write(safety_result.resolved_path)
         with open(safety_result.resolved_path, "w") as f:
             f.write(content)
         from tools import _MODIFIED_FILES
         _MODIFIED_FILES.add(args["path"])
+        # Keep symbol index fresh for newly written .py files
+        if path.endswith(".py"):
+            from tools.search_ops import _reindex_file
+            _reindex_file(safety_result.resolved_path, wg.workspace_root)
         return ToolResult(
             success=True,
             content=f"OK: wrote {len(content)} bytes to {safety_result.resolved_path}",
@@ -113,6 +158,7 @@ def _edit_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResu
     path = args["path"]
     old = args["old_string"]
     new = args["new_string"]
+    count = args.get("count", 1)  # 1 = first occurrence, -1 = all occurrences
     safety_result = wg.check(path)
     if not safety_result.allowed:
         return ToolResult(
@@ -122,6 +168,7 @@ def _edit_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResu
     try:
         with open(safety_result.resolved_path, "r") as f:
             original = f.read()
+        _backup_before_write(safety_result.resolved_path)
         if old not in original:
             # Search for similar substrings to help the agent self-correct
             candidates: list[str] = []
@@ -139,29 +186,34 @@ def _edit_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResu
             if candidates:
                 hint += "\nSimilar lines found (did you mean one of these?):\n" + "\n".join(candidates)
             return ToolResult(success=False, content=hint)
-        updated = original.replace(old, new, 1)
+
+        if count == -1:
+            # Replace all occurrences
+            occurrences = original.count(old)
+            updated = original.replace(old, new)
+            replaced = occurrences
+        elif count == 1:
+            updated = original.replace(old, new, 1)
+            replaced = 1
+        elif count < 1:
+            return ToolResult(success=False, content=f"Invalid count: {count}. Use 1 (first) or -1 (all).")
+        else:
+            return ToolResult(success=False, content=f"Invalid count: {count}. Use 1 (first) or -1 (all).")
+
         with open(safety_result.resolved_path, "w") as f:
             f.write(updated)
 
-        # Build a short unified diff for verification
-        import difflib
-        diff_lines = list(difflib.unified_diff(
-            original.splitlines(keepends=True),
-            updated.splitlines(keepends=True),
-            fromfile=f"a/{path}",
-            tofile=f"b/{path}",
-        ))
-        diff_text = "".join(diff_lines)
-        if len(diff_text) > 2000:
-            diff_text = diff_text[:2000] + "\n… (diff truncated)"
-
         from tools import _MODIFIED_FILES
         _MODIFIED_FILES.add(args["path"])
+
+        # Short summary: no full diff on success (saves context tokens)
+        added = updated.count("\n") - original.count("\n")
+        label = f"{replaced} occurrence(s)" if replaced > 1 else "1 occurrence"
         return ToolResult(
             success=True,
             content=(
-                f"OK: replaced 1 occurrence in {safety_result.resolved_path}\n"
-                f"```diff\n{diff_text}```"
+                f"OK: replaced {label} in {safety_result.resolved_path}"
+                + (f" (+{added} lines)" if added > 0 else f" ({added} lines)" if added < 0 else "")
             ),
         )
     except Exception as e:
@@ -265,7 +317,7 @@ def _write_scratchpad(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> 
 
     # Find the MemoryStore instance via _TOOL_CONTEXT
     # The scratchpad is stored in the SQLite DB alongside messages
-    scratchpad_path = _TOOL_CONTEXT.get(CTX_SCRATCHPAD_PATH, "")
+    scratchpad_path = _TOOL_CONTEXT.scratchpad_path or ""
     if scratchpad_path:
         try:
             import sqlite3
@@ -276,7 +328,7 @@ def _write_scratchpad(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> 
             )
             conn.commit()
             conn.close()
-            _TOOL_CONTEXT[CTX_SCRATCHPAD_UPDATED] = True
+            _TOOL_CONTEXT._scratchpad_updated = True
             return ToolResult(
                 success=True,
                 content=f"Scratchpad updated ({len(content_text)} chars).",
@@ -289,7 +341,7 @@ def _write_scratchpad(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> 
 
     # Fallback: store in a file
     fallback = _os.path.join(
-        _TOOL_CONTEXT.get("workspace", "."), ".mini_agent_scratchpad.md"
+        _TOOL_CONTEXT.workspace or ".", ".mini_agent_scratchpad.md"
     )
     try:
         with open(fallback, "w") as f:
@@ -347,3 +399,120 @@ def _diff_summary(args: dict) -> str:
     if path:
         return f"diff({path})"
     return "diff()"
+
+
+# ---------------------------------------------------------------------------
+# restore_file — session undo
+# ---------------------------------------------------------------------------
+
+
+@_register("restore_file")
+def _restore_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
+    """Restore a file from its session backup (undo the last write/edit)."""
+    path = args["path"]
+    safety_result = wg.check(path)
+    if not safety_result.allowed:
+        return ToolResult(
+            success=False,
+            content=f"Restore blocked by safety layer: {safety_result.reason}",
+        )
+    resolved = safety_result.resolved_path
+
+    if resolved not in _BACKUPS:
+        return ToolResult(
+            success=False,
+            content=f"No backup available for '{resolved}'. Only files modified this session can be restored.",
+            hint="No backup exists. Either the file hasn't been modified this session, or it was already restored.",
+        )
+
+    backup_path = _BACKUPS[resolved]
+    try:
+        shutil.copy2(backup_path, resolved)
+        del _BACKUPS[resolved]
+        from tools import _MODIFIED_FILES
+        _MODIFIED_FILES.discard(path)
+        return ToolResult(
+            success=True,
+            content=f"Restored '{resolved}' from backup ({os.path.basename(backup_path)}).",
+        )
+    except Exception as e:
+        return ToolResult(
+            success=False,
+            content=f"Error restoring '{resolved}': {e}",
+        )
+
+
+@_summarize("restore_file")
+def _restore_file_summary(args: dict) -> str:
+    return f"restore_file({args.get('path', '?')})"
+
+
+# ---------------------------------------------------------------------------
+# plan / plan_status tools — structured task tracking
+# ---------------------------------------------------------------------------
+
+CTX_PLAN_STEPS = "_plan_steps"       # list[str]
+CTX_PLAN_DONE = "_plan_done"         # set[int] — 0-indexed completed step indices
+
+
+@_register("plan")
+def _plan(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
+    """Declare a structured task plan."""
+    steps = args["steps"]
+    if not isinstance(steps, list) or not steps:
+        return ToolResult(
+            success=False,
+            content="Plan must have at least one step.",
+            hint="Provide a non-empty array of step descriptions.",
+        )
+    _TOOL_CONTEXT._plan_steps = steps
+    _TOOL_CONTEXT._plan_done = set()
+    lines = [f"Plan ({len(steps)} steps):"]
+    for i, step in enumerate(steps, 1):
+        lines.append(f"  [{i}] {step}")
+    return ToolResult(success=True, content="\n".join(lines))
+
+
+@_summarize("plan")
+def _plan_summary(args: dict) -> str:
+    steps = args.get("steps", [])
+    return f"plan({len(steps)} steps: {steps[0][:40] if steps else '?'}…)"
+
+
+@_register("plan_status")
+def _plan_status(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
+    """Mark a step complete or report status."""
+    step = args.get("step")
+    steps = _TOOL_CONTEXT._plan_steps
+    done = _TOOL_CONTEXT._plan_done
+
+    if not steps:
+        return ToolResult(success=True, content="No active plan.")
+
+    if step is not None:
+        idx = step - 1  # 1-indexed → 0-indexed
+        if idx < 0 or idx >= len(steps):
+            return ToolResult(
+                success=False,
+                content=f"Invalid step {step}. Plan has {len(steps)} steps.",
+                hint=f"Step must be between 1 and {len(steps)}.",
+            )
+        done.add(idx)
+        _TOOL_CONTEXT._plan_done = done
+
+    lines = [f"Plan ({len(done)}/{len(steps)} complete):"]
+    for i, s in enumerate(steps, 1):
+        mark = "✓" if (i - 1) in done else "○"
+        lines.append(f"  [{mark}] {i}. {s}")
+    all_done = len(done) == len(steps)
+    if all_done:
+        lines.append("  All steps complete!")
+    return ToolResult(success=True, content="\n".join(lines))
+
+
+@_summarize("plan_status")
+def _plan_status_summary(args: dict) -> str:
+    step = args.get("step")
+    if step is not None:
+        return f"plan_status(complete step {step})"
+    return "plan_status()"

@@ -26,12 +26,17 @@ class ReadSafetyResult:
 class ReadSafetyGate:
     """Gate that validates file-read operations before execution."""
 
-    def __init__(self, workspace_root: str) -> None:
+    def __init__(self, workspace_root: str, *, unrestricted: bool = False) -> None:
         self._root = os.path.realpath(os.path.abspath(workspace_root))
+        self._unrestricted = unrestricted
 
     @property
     def workspace_root(self) -> str:
         return self._root
+
+    @property
+    def unrestricted(self) -> bool:
+        return self._unrestricted
 
     def check(self, path: str) -> ReadSafetyResult:
         """Validate a proposed read path.
@@ -40,12 +45,13 @@ class ReadSafetyGate:
         """
         resolved = os.path.realpath(os.path.abspath(path))
 
-        if not resolved.startswith(self._root + os.sep) and resolved != self._root:
-            return ReadSafetyResult(
-                allowed=False,
-                reason=f"Path '{resolved}' is outside workspace root '{self._root}'.",
-                resolved_path=resolved,
-            )
+        if not self._unrestricted:
+            if not resolved.startswith(self._root + os.sep) and resolved != self._root:
+                return ReadSafetyResult(
+                    allowed=False,
+                    reason=f"Path '{resolved}' is outside workspace root '{self._root}'.",
+                    resolved_path=resolved,
+                )
 
         return ReadSafetyResult(
             allowed=True,
@@ -68,13 +74,19 @@ class WriteSafetyResult:
 class WriteSafetyGate:
     """Gate that validates file-write operations before execution."""
 
-    def __init__(self, workspace_root: str, *, allow_overwrites: bool = False) -> None:
+    def __init__(self, workspace_root: str, *, allow_overwrites: bool = False,
+                 unrestricted: bool = False) -> None:
         self._root = os.path.realpath(os.path.abspath(workspace_root))
         self._allow_overwrites = allow_overwrites
+        self._unrestricted = unrestricted
 
     @property
     def workspace_root(self) -> str:
         return self._root
+
+    @property
+    def unrestricted(self) -> bool:
+        return self._unrestricted
 
     def check(self, path: str) -> WriteSafetyResult:
         """Validate a proposed write path.
@@ -84,13 +96,14 @@ class WriteSafetyGate:
         # Resolve the intended absolute path
         resolved = os.path.realpath(os.path.abspath(path))
 
-        # 1. Workspace boundary check
-        if not resolved.startswith(self._root + os.sep) and resolved != self._root:
-            return WriteSafetyResult(
-                allowed=False,
-                reason=f"Path '{resolved}' is outside workspace root '{self._root}'.",
-                resolved_path=resolved,
-            )
+        # 1. Workspace boundary check (skipped when unrestricted)
+        if not self._unrestricted:
+            if not resolved.startswith(self._root + os.sep) and resolved != self._root:
+                return WriteSafetyResult(
+                    allowed=False,
+                    reason=f"Path '{resolved}' is outside workspace root '{self._root}'.",
+                    resolved_path=resolved,
+                )
 
         # 2. Overwrite check (only for existing files, not directories)
         if os.path.isfile(resolved) and not self._allow_overwrites:

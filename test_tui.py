@@ -13,7 +13,9 @@ from tui import _Done, _Error
 from tui import (
     MiniAgentTUI, AgentWorker,
     _TokenMsg, _ToolStart, _ToolEnd, _Done, _Error,
+    _safe,
 )
+from llm import THINKING_START, THINKING_END
 from config import AgentConfig, DEFAULT_API_KEY
 from safety import ReadSafetyGate, WriteSafetyGate
 
@@ -112,6 +114,206 @@ class TestAgentWorker(unittest.TestCase):
         w.start()
         w.join(timeout=5)
         self.assertTrue(config.stream)
+
+
+class TestSafe(unittest.TestCase):
+    """Tests for the _safe() helper that escapes Textual markup."""
+
+    def test_plain_text_passes_through(self):
+        self.assertEqual(_safe("hello world"), "hello world")
+
+    def test_brackets_escaped(self):
+        self.assertEqual(_safe("[bold]text[/]"), r"\[bold]text\[/]")
+
+    def test_backslash_escaped(self):
+        self.assertEqual(_safe(r"c:\path"), r"c:\\path")
+
+    def test_empty_string(self):
+        self.assertEqual(_safe(""), "")
+
+
+class TestBoxHelpers(unittest.TestCase):
+    """Tests for the static _box_* rendering helpers."""
+
+    def test_box_open(self):
+        log = MagicMock()
+        MiniAgentTUI._box_open(log, "Label", "green")
+        log.write.assert_called_once_with("[green]╭── Label ──[/]")
+
+    def test_box_line(self):
+        log = MagicMock()
+        MiniAgentTUI._box_line(log, "hello", "blue")
+        log.write.assert_called_once_with("[blue]│ hello[/]")
+
+    def test_box_empty(self):
+        log = MagicMock()
+        MiniAgentTUI._box_empty(log, "red")
+        log.write.assert_called_once_with("[red]│[/]")
+
+    def test_box_close_no_label(self):
+        log = MagicMock()
+        MiniAgentTUI._box_close(log, "green")
+        log.write.assert_called_once_with("[green]╰──[/]")
+
+    def test_box_close_with_label(self):
+        log = MagicMock()
+        MiniAgentTUI._box_close(log, "green", "OK")
+        log.write.assert_called_once_with("[green]╰──[/] OK")
+
+
+class TestHandleToken(unittest.TestCase):
+    """Tests for _handle_token thinking/content routing."""
+
+    def setUp(self):
+        self.workspace = tempfile.mkdtemp()
+        from memory import MemoryStore
+        self.config = AgentConfig.load(self.workspace)
+        self.config.api_key = DEFAULT_API_KEY
+        self.app = MiniAgentTUI()
+        self.app._in_thinking = False
+        self.app._thinking_buf = ""
+        self.app._thinking_flush_pos = 0
+        self.app._buf = ""
+        self.app._tui_theme = MagicMock()
+        self.app._tui_theme.accent = "green"
+        self.app._tui_theme.thinking = "#aaa"
+        self.app._tui_theme.dim = "#666"
+        self.app._tui_theme.bg = "#111"
+        self.app._tui_theme.surface = "#222"
+        self.app._agent_box_open = False
+        self.app.memory = MemoryStore(os.path.join(self.workspace, ".test_mem.db"))
+        self.app.messages = []
+        self.app._table_buf = []
+        self.app._accumulated_content = []
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.workspace, ignore_errors=True)
+
+    def test_thinking_start_sets_in_thinking_flag(self):
+        log = MagicMock()
+        self.app._handle_token(_TokenMsg(THINKING_START), log)
+        self.assertTrue(self.app._in_thinking)
+
+    def test_thinking_end_clears_flag(self):
+        log = MagicMock()
+        self.app._in_thinking = True
+        self.app._thinking_buf = ""
+        self.app._handle_token(_TokenMsg(THINKING_END), log)
+        self.assertFalse(self.app._in_thinking)
+
+    def test_thinking_buffers_text(self):
+        log = MagicMock()
+        self.app._in_thinking = True
+        self.app._handle_token(_TokenMsg("hello "), log)
+        self.assertEqual(self.app._thinking_buf, "hello ")
+
+    def test_content_opens_agent_box(self):
+        log = MagicMock()
+        self.app._handle_token(_TokenMsg("Hello, World!"), log)
+        self.assertTrue(self.app._agent_box_open)
+
+    def test_content_buffers_text(self):
+        log = MagicMock()
+        self.app._handle_token(_TokenMsg("Hello"), log)
+        self.app._handle_token(_TokenMsg(" World"), log)
+        self.assertIn("Hello World", self.app._buf)
+
+
+class TestFlushBuf(unittest.TestCase):
+    """Tests for _flush_buf behavior."""
+
+    def setUp(self):
+        self.workspace = tempfile.mkdtemp()
+        from memory import MemoryStore
+        self.config = AgentConfig.load(self.workspace)
+        self.config.api_key = DEFAULT_API_KEY
+        self.app = MiniAgentTUI()
+        self.app._buf = ""
+        self.app._agent_box_open = False
+        self.app._tui_theme = MagicMock()
+        self.app._tui_theme.accent = "green"
+        self.app._tui_theme.dim = "#666"
+        self.app._accumulated_content = []
+        self.app._table_buf = []
+        self.app.memory = MemoryStore(os.path.join(self.workspace, ".test_mem.db"))
+        self.app.messages = []
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.workspace, ignore_errors=True)
+
+    def test_blank_buf_no_write(self):
+        mock_chat = MagicMock()
+        self.app.query_one = MagicMock(return_value=mock_chat)
+        self.app._flush_buf()
+        mock_chat.write.assert_not_called()
+
+    def test_nonblank_buf_flushes(self):
+        mock_chat = MagicMock()
+        self.app.query_one = MagicMock(return_value=mock_chat)
+        self.app._buf = "some text here"
+        self.app._flush_buf()
+        self.assertEqual(self.app._buf, "")
+        # _box_line should have been called via the mocked chat
+        self.assertTrue(mock_chat.write.called or self.app._agent_box_open)
+
+
+class TestFinishTurn(unittest.TestCase):
+    """Tests for _finish_turn cleanup and promotion."""
+
+    def setUp(self):
+        self.workspace = tempfile.mkdtemp()
+        from memory import MemoryStore
+        self.config = AgentConfig.load(self.workspace)
+        self.config.api_key = DEFAULT_API_KEY
+        self.app = MiniAgentTUI()
+        self.app._in_thinking = False
+        self.app._thinking_buf = ""
+        self.app._thinking_flush_pos = 0
+        self.app._buf = ""
+        self.app._agent_box_open = True
+        self.app._tui_theme = MagicMock()
+        self.app._tui_theme.accent = "green"
+        self.app._tui_theme.dim = "#666"
+        self.app._accumulated_content = []
+        self.app._table_buf = []
+        self.app.memory = MemoryStore(os.path.join(self.workspace, ".test_mem.db"))
+        self.app.messages = [{"role": "user", "content": "test"}]
+        self.app.config = self.config
+        self.app._total_tokens = 0
+        self.app._total_turns = 0
+        self.app.worker = MagicMock()
+        self.app._turn_finished = False
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.workspace, ignore_errors=True)
+
+    def _mock_query_one(self, chat=None, static=None, textarea=None):
+        """Set up query_one side_effect for _finish_turn call chain:
+        _close_agent_box (chat), chat, static, input."""
+        self.app.query_one = MagicMock(side_effect=[
+            chat or MagicMock(),      # _close_agent_box
+            chat or MagicMock(),      # chat-pane
+            static or MagicMock(),    # static-pane
+            textarea or MagicMock(),  # input
+        ])
+
+    def test_finish_turn_clears_state(self):
+        mock_input = MagicMock()
+        self._mock_query_one(textarea=mock_input)
+        self.app._finish_turn()
+        self.assertFalse(self.app._in_thinking)
+        self.assertEqual(self.app._buf, "")
+        self.assertTrue(self.app._turn_finished)
+
+    def test_finish_turn_updates_token_count(self):
+        mock_input = MagicMock()
+        self._mock_query_one(textarea=mock_input)
+        self.app._finish_turn(usage={"total_tokens": 1500}, turn_count=3)
+        self.assertEqual(self.app._total_tokens, 1500)
+        self.assertEqual(self.app._total_turns, 3)
 
 
 class TestDrainEvent(unittest.TestCase):

@@ -18,388 +18,11 @@ Submodules:
 """
 
 import json
+import subprocess
+import re
 
 from safety import ReadSafetyGate, WriteSafetyGate
-
-
-# ---------------------------------------------------------------------------
-# Tool definitions (API schema sent to the LLM)
-# ---------------------------------------------------------------------------
-
-TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "find_symbol",
-            "description": "Find where a Python symbol (function, class, method name) is defined in the workspace. Returns file path and line number for each match. Much faster than grep/search_files for symbol lookup. Use this to locate definitions before editing code.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "name": {
-                        "type": "string",
-                        "description": "Symbol name to find (e.g. '_request_with_retry', 'ToolResult'). Supports substring matching."
-                    }
-                },
-                "required": [
-                    "name"
-                ]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "read_file",
-            "description": "Read the contents of a file at the given path.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Path to the file to read"
-                    }
-                },
-                "required": [
-                    "path"
-                ]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "write_file",
-            "description": "Write content to a file, overwriting if it exists.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Path to the file to write"
-                    },
-                    "content": {
-                        "type": "string",
-                        "description": "Content to write"
-                    }
-                },
-                "required": [
-                    "path",
-                    "content"
-                ]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "edit_file",
-            "description": "Edit a file by replacing a specific string with another. Replaces the first occurrence of old_string with new_string. Returns an error if old_string is not found in the file.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Path to the file to edit"
-                    },
-                    "old_string": {
-                        "type": "string",
-                        "description": "Exact string to find and replace"
-                    },
-                    "new_string": {
-                        "type": "string",
-                        "description": "String to replace it with"
-                    }
-                },
-                "required": [
-                    "path",
-                    "old_string",
-                    "new_string"
-                ]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "list_directory",
-            "description": "List the contents of a directory at the given path.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Path to the directory to list"
-                    }
-                },
-                "required": [
-                    "path"
-                ]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "run_shell",
-            "description": "Run a shell command inside the workspace directory. Returns exit code, stdout, and stderr. Commands time out after 60 seconds. Use this to run tests, check syntax, invoke build tools, etc.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "command": {
-                        "type": "string",
-                        "description": "Shell command to execute (e.g. 'python -m pytest test_safety.py -v')"
-                    },
-                    "background": {
-                        "type": "boolean",
-                        "description": "Run in background, return immediately with task ID. Use task_status to check."
-                    },
-                    "force": {
-                        "type": "boolean",
-                        "description": "Bypass the destructive-command guard. Default: false. Required for rm, mkfs, etc."
-                    }
-                },
-                "required": [
-                    "command"
-                ]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "search_files",
-            "description": "Search for a text pattern recursively in files within the workspace. Returns matching lines with file path and line number. Skips hidden directories, binary files, and common VCS/venv dirs. Capped at 50 results.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "pattern": {
-                        "type": "string",
-                        "description": "Text or substring to search for (case-sensitive by default). If regex is true, treated as a Python regex."
-                    },
-                    "path": {
-                        "type": "string",
-                        "description": "Directory to search in (defaults to workspace root)"
-                    },
-                    "regex": {
-                        "type": "boolean",
-                        "description": "If true, treat pattern as a Python regex. Default: false."
-                    },
-                    "ignore_case": {
-                        "type": "boolean",
-                        "description": "If true, case-insensitive search. Default: false."
-                    }
-                },
-                "required": [
-                    "pattern"
-                ]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "file_info",
-            "description": "Get metadata about a file or directory at the given path. Returns size, permissions, modification time, and type (file/directory). Also reports whether the path exists.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Path to the file or directory to inspect"
-                    }
-                },
-                "required": [
-                    "path"
-                ]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "run_tests",
-            "description": "Run tests in the workspace. Returns structured pass/fail counts and failure details. If 'path' is given, runs only those tests; otherwise runs all. Use background=True to run tests asynchronously and poll with task_status.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Optional: specific test file or directory to run (e.g. 'test_tools.py' or 'test_memory.py'). If omitted, runs all tests."
-                    },
-                    "background": {
-                        "type": "boolean",
-                        "description": "If true, run tests in background and return a task_id immediately. Use task_status to poll for completion."
-                    },
-                    "timeout": {
-                        "type": "integer",
-                        "description": "Max seconds before timing out (default 120). Only applies in foreground mode."
-                    }
-                },
-                "required": []
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "semantic_search",
-            "description": "Search code by meaning using embeddings. Finds code chunks semantically similar to the query, even if they don't share keywords. Good for finding related functionality, similar patterns, or code that 'feels like' something. Indexes files live — no pre-indexing needed. Returns top 10 matches.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "Natural language description of what to find (e.g. 'error handling around file writes', 'retry logic')"
-                    },
-                    "path": {
-                        "type": "string",
-                        "description": "Directory to search in (defaults to workspace root)"
-                    }
-                },
-                "required": [
-                    "query"
-                ]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "web_search",
-            "description": "Search the web using Exa. Returns relevant pages with titles, URLs, and highlighted excerpts. Good for documentation lookup, API references, current information, and technical questions.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "Search query. Be specific and use technical terms for best results."
-                    },
-                    "num_results": {
-                        "type": "integer",
-                        "description": "Number of results to return (default 5, max 20)."
-                    },
-                    "search_type": {
-                        "type": "string",
-                        "description": "Search depth: 'auto' (default, balanced), 'fast', 'deep'. 'auto' works for most queries."
-                    }
-                },
-                "required": [
-                    "query"
-                ]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "git",
-            "description": "Run a git command in the workspace. Supports: status, diff, log, init, add, commit, show, restore. All operations are local-only (no push/pull). Use 'diff' to see unstaged changes, 'status' to see file states, 'log' for recent commits, 'init' to initialize a repo, 'add' to stage files, 'commit' to commit staged changes, 'show' to read a committed version of a file, 'restore' to recover a file from the last commit.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "subcommand": {
-                        "type": "string",
-                        "description": "Git subcommand: status, diff, log, init, add, or commit"
-                    },
-                    "args": {
-                        "type": "string",
-                        "description": "Optional arguments: file paths for 'add', commit message for 'commit', etc."
-                    }
-                },
-                "required": [
-                    "subcommand"
-                ]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "diff",
-            "description": "Show unstaged changes (git diff) in the workspace. If 'path' is given, shows diff for that file only; otherwise shows all unstaged changes. Returns the raw diff output. Works even on files that haven't been staged.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Optional: specific file path to diff. If omitted, shows all unstaged changes."
-                    }
-                },
-                "required": []
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "task_status",
-            "description": "Check the status of a background shell task by its ID. background=True in run_shell returns a task_id.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "task_id": {
-                        "type": "string",
-                        "description": "Task ID returned by run_shell with background=True"
-                    }
-                },
-                "required": [
-                    "task_id"
-                ]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "write_scratchpad",
-            "description": "Write content to the agent's scratchpad — a persistent working note that survives across turns. Use this to track your plan, progress, decisions, things you've tried, and open questions. The scratchpad is shown to you at the start of every turn. Overwrites previous content.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "content": {
-                        "type": "string",
-                        "description": "Content to write to the scratchpad. Use markdown."
-                    }
-                },
-                "required": [
-                    "content"
-                ]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "find_usages",
-            "description": "Find all usages (references) of a Python symbol across the workspace. Returns file path, line number, and surrounding context for each usage. Much faster than grep for symbol references. Use this to find all callers of a function or all places a class/variable is used before refactoring.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "name": {
-                        "type": "string",
-                        "description": "Symbol name to find usages of (e.g. 'execute_tool', 'ToolResult')."
-                    }
-                },
-                "required": [
-                    "name"
-                ]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "verify",
-            "description": "Run lint + relevant tests for files modified in the current session. Uses tracked writes/edits to find matching test files. Falls back to running all tests if nothing has been modified yet. Use after code changes to verify nothing broke before moving on.",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
-        }
-    }
-]
-
+from tools.schema import TOOLS
 
 # ---------------------------------------------------------------------------
 # Structured tool result
@@ -437,8 +60,37 @@ _TOOL_SUMMARIES: dict[str, callable] = {}
 # Context keys used across tools and llm
 CTX_SCRATCHPAD_PATH = "scratchpad_path"
 CTX_SCRATCHPAD_UPDATED = "_scratchpad_updated"
+CTX_TURN_HISTORY = "_turn_history"  # dict[int, str] — turn number → summary
+CTX_PLAN_STEPS = "_plan_steps"      # list[str] — from plan tool
+CTX_PLAN_DONE = "_plan_done"        # set[int] — completed step indices
 
-_TOOL_CONTEXT: dict = {}
+class AgentContext:
+    """Mutable context shared across tools and the agent loop.
+
+    Replaces the old ``_TOOL_CONTEXT`` dict.  Initialized once at startup
+    via ``set_context()``, then read/written by tools and ``llm.py``.
+
+    Attributes (all optional, defaulting to None or empty):
+        scratchpad_path     SQLite DB path for scratchpad persistence
+        exa_api_key         API key for Exa web search
+        workspace           Workspace root directory
+        _scratchpad_updated Flag: scratchpad was updated this turn
+        _turn_history       dict[int, str] — turn number → summary
+        _plan_steps         list[str] — declared plan steps
+        _plan_done          set[int] — completed step indices
+    """
+
+    def __init__(self):
+        self.scratchpad_path: str | None = None
+        self.exa_api_key: str | None = None
+        self.workspace: str | None = None
+        self._scratchpad_updated: bool = False
+        self._turn_history: dict[int, str] = {}
+        self._plan_steps: list[str] = []
+        self._plan_done: set[int] = set()
+
+
+_TOOL_CONTEXT = AgentContext()
 
 # Per-turn cache for read-only tools. Cleared by run_agent_turn each turn.
 # Key: (tool_name, sorted_args_json). Cached read_file/file_info/etc.
@@ -447,6 +99,9 @@ _TOOL_CACHE: dict[str, "ToolResult"] = {}
 # Files modified by write/edit — used by verify
 _MODIFIED_FILES: set[str] = set()
 _TASK_REGISTRY: dict[str, subprocess.Popen] = {}  # background shell task registry
+
+# Sub-agent runtime registry (lazy init in config.init_session)
+_AGENT_RUNTIME = None  # AgentRuntime — set by init_session
 _CACHEABLE = frozenset({
     "read_file", "file_info", "list_directory",
     "search_files", "semantic_search", "web_search",
@@ -455,7 +110,16 @@ _CACHEABLE = frozenset({
 
 def set_context(**kwargs) -> None:
     """Set module-level context accessible to tool implementations."""
-    _TOOL_CONTEXT.update(kwargs)
+    ctx = _TOOL_CONTEXT
+    for key, value in kwargs.items():
+        if key == "scratchpad_path":
+            ctx.scratchpad_path = value
+        elif key == "exa_api_key":
+            ctx.exa_api_key = value
+        elif key == "workspace":
+            ctx.workspace = value
+        else:
+            setattr(ctx, key, value)
 
 
 def _register(name: str):
@@ -602,6 +266,11 @@ def execute_tool(
         if cache_key in _TOOL_CACHE:
             return _TOOL_CACHE[cache_key]
 
+    # --- strip _pipe meta-field before validation (tool piping) ---
+    pipe_config = None
+    if isinstance(args, dict):
+        pipe_config = args.pop("_pipe", None)
+
     # --- schema validation: check parameter names against tool definition ---
     if isinstance(args, dict):
         tool_schema = None
@@ -687,4 +356,5 @@ def tool_summary(tc: dict) -> str:
 from tools import file_ops    # noqa: E402, F401
 from tools import shell_ops   # noqa: E402, F401
 from tools import search_ops  # noqa: E402, F401
+from tools import agent_ops   # noqa: E402, F401
 from tools.search_ops import build_symbol_index  # noqa: E402, F401
