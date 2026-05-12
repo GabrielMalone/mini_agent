@@ -1,25 +1,34 @@
 # mini_agent — Architecture & State
 
 A coding agent powered by DeepSeek V4 Pro. Terminal REPL + Textual TUI.
-316 tests, 24 tools, SQLite memory.
+320 tests, 28 tools, SQLite memory.
 
-## Multi-Agent Support (v1)
+## Multi-Agent Support (v2)
 
-Async foreman pattern: parent spawns sub-agents via `spawn_agent(task)` which
-return a `task_id` immediately. Sub-agents run in background threads with their
-own context, scratchpad, and tool cache. Parent polls with `agent_status` or
-blocks with `collect_agent`.
+Async foreman pattern: parent spawns sub-agents via `spawn_agent(task=...)` or 
+batch `spawn_agent(tasks=[...])` which return task_ids immediately. Sub-agents run 
+in background threads with their own context, scratchpad, and tool cache. Parent 
+polls with `agent_status`, blocks with `collect_agent`, or grabs fastest with 
+`collect_any`. Inter-agent messaging via `agent_message` / `agent_read`. Turn 
+budget extension via `agent_extend`.
+
+TUI: horizontal per-agent panes in `#subagent-pane` (HorizontalScroll), each 
+labeled "Agent N (taskid)" with unique cycling colors (green/yellow/accent/
+pulse/red). Sub-agent tokens buffered per task_id and flushed on newlines. 
+Borders via CSS `border: solid` on each child RichLog. Divider between static 
+pane and subagent area via CSS `border-bottom` on `#static-pane`.
 
 New modules:
-- `agent_runtime.py` — SubAgentResult dataclass + AgentRuntime (thread-safe registry, cleanup on store)
+- `agent_runtime.py` — SubAgentResult dataclass + AgentRuntime (thread-safe registry)
 - `sub_agent.py` — run_sub_agent() — isolated agent loop for background threads
-- `tools/agent_ops.py` — spawn_agent, agent_status, collect_agent tool implementations
-- `retry.py` — _request_with_retry() — HTTP exponential backoff, cancel-aware (extracted from llm.py)
-- `stream.py` — _parse_stream() — SSE parsing, tool-call accumulation, connection-drop resilience (extracted from llm.py)
-- `tools/schema.py` — TOOLS list (API schema sent to LLM, extracted from tools/__init__.py)
+- `tools/agent_ops.py` — spawn_agent, agent_status, collect_agent, collect_any,
+  agent_message, agent_read, agent_extend tool implementations
+- `retry.py` — _request_with_retry() (extracted from llm.py)
+- `stream.py` — _parse_stream() (extracted from llm.py)
+- `tools/schema.py` — TOOLS list (extracted from tools/__init__.py)
 
-Config: `sub_agent_max_turns` (default 25) in AgentConfig and TOML schema.
-Limits: max 5 concurrent sub-agents, depth 1 (no recursive spawns), 25 turns each.
+Config: `sub_agent_max_turns` (default 15, absolute max 25) in AgentConfig.
+Limits: max 5 concurrent sub-agents, depth 1 (no recursive spawns).
 Sub-agents share the same tool registry, safety layer, and workspace as the parent.
 
 ## Directory Map
@@ -44,9 +53,10 @@ Sub-agents share the same tool registry, safety layer, and workspace as the pare
 │   ├── file_ops.py      read/write/edit/list/info/scratchpad/diff/restore/plan
 │   ├── shell_ops.py     run_shell, search_files, run_tests, git, task_status, verify
 │   ├── search_ops.py    find_symbol, find_usages, semantic_search, web_search, recall_turn
-│   └── agent_ops.py     spawn_agent, agent_status, collect_agent
+│   └── agent_ops.py     spawn_agent, agent_status, collect_agent, collect_any,
+│                         agent_message, agent_read, agent_extend
 ├── setup.sh / setup.bat  Quick-start scripts (venv + pip install)
-└── test_*.py            12 test files, 316 tests
+└── test_*.py            12 test files, 320 tests
 ```
 
 ## Tools (24)
@@ -174,8 +184,9 @@ Also: backward/forward orphan detection, transient message stripping, scratchpad
 | Scratchpad staleness nudge | Every 3 turns after turn 4 if not updated | user |
 
 ### TUI (tui.py)
-- Textual framework, two-pane layout (static + chat) with pane divider
+- Textual framework, three-pane layout (static + subagent + chat) with pane divider
   - **Static pane (top, 35%)**: Final assistant responses, tool calls & results, system commands
+  - **Subagent pane (auto-height, max 12)**: Streaming output from sub-agents spawned with visible=True (hidden when idle via display:none)
   - **Chat pane (bottom, 1fr)**: User input, thinking stream, assistant content stream
   - Every message block rendered inside Unicode box-drawing borders (`╭──`, `│`, `╰──`)
   - Final responses promoted from chat pane to static pane on turn completion
@@ -187,6 +198,7 @@ Also: backward/forward orphan detection, transient message stripping, scratchpad
 - `/clear`, `/help`, `/export`, `/stats`, `/theme <name>` commands
 - Approval mode with footer pulse animation
 - Worker thread → message queue → drain every 20ms (smooth streaming)
+- Sub-agent streaming: `_SubAgentToken` message type; `_TOOL_CONTEXT._tui_queue` wired in `on_mount`; `_spawn_agent._runner` pushes tokens via plain tuples; `_drain` writes to `#subagent-pane`
 - Multi-line paste support, markup escaping
 
 ### Terminal REPL (mini_agent.py)

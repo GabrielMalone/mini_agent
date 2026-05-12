@@ -37,6 +37,8 @@ def run_sub_agent(
     parent_depth: int = 0,
     shared_context: str = "",
     stream: bool = False,
+    tui_queue=None,       # Queue for TUI subagent pane streaming
+    tui_task_id: str = "",  # task_id for TUI streaming prefix
 ) -> SubAgentResult:
     """Run a sub-agent loop in the current thread (called from a background thread).
 
@@ -124,11 +126,19 @@ def run_sub_agent(
                 "_transient": True,
             })
 
-        # Call the LLM — stream to stderr if config.stream is set
+        # Call the LLM — stream to TUI subagent pane or stderr if config.stream is set
         on_token = None
         if config.stream:
-            import sys as _sys
-            on_token = lambda t: (_sys.stderr.write(t), _sys.stderr.flush())
+            if tui_queue is not None:
+                def _on_token_sub(t: str) -> None:
+                    tui_queue.put(("sub_token", tui_task_id, t))
+                on_token = _on_token_sub
+            else:
+                import sys as _sys
+                def _on_token_stderr(t: str) -> None:
+                    _sys.stderr.write(t)
+                    _sys.stderr.flush()
+                on_token = _on_token_stderr
         msg = call_deepseek(
             messages, config,
             session=requests,

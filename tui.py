@@ -35,7 +35,7 @@ def _safe(text: str) -> str:
     return text.replace("\\", "\\\\").replace("[", r"\[")
 
 from textual.app import App, ComposeResult
-from textual.containers import Container
+from textual.containers import Container, HorizontalScroll
 from textual.widgets import Header, Footer, RichLog, TextArea
 from textual.binding import Binding
 
@@ -128,6 +128,7 @@ THEMES: dict[str, TuiTheme] = {
 }
 
 DEFAULT_THEME = "slate"
+_AGENT_COLORS = ["green", "yellow", "accent", "pulse", "red"]
 
 
 def _build_css(theme: TuiTheme) -> str:
@@ -136,7 +137,6 @@ def _build_css(theme: TuiTheme) -> str:
     Layout (top to bottom):
       Header
       #static-pane   — final responses, tool calls, tasks  (35%)
-      #pane-divider  — single-line visual separator
       #chat-pane     — user input, streaming assistant     (1fr)
       #input-area    — TextArea for user typing
       Footer
@@ -153,7 +153,7 @@ Header {{
 }}
 
 Footer {{
-    background: {theme.surface};
+    background: {theme.bg};
     color: {theme.dim};
     transition: background 300ms;
 }}
@@ -166,18 +166,34 @@ Footer.pulse {{
     background: {theme.bg};
     color: {theme.text};
     border: none;
+    border-bottom: solid {theme.border};
     padding: 0 1;
     height: 35%;
     min-height: 5;
+    overflow-y: auto;
     scrollbar-size: 0 0;
 }}
 
-#pane-divider {{
+#subagent-pane {{
     background: {theme.bg};
-    color: {theme.border};
-    height: 1;
-    padding: 0 2;
+    color: {theme.dim};
+    border: none;
+    border-top: solid {theme.border};
+    padding: 0 1;
+    height: auto;
+    max-height: 12;
+    min-height: 0;
     scrollbar-size: 0 0;
+    display: none;
+    layout: horizontal;
+}}
+
+#subagent-pane RichLog {{
+    background: {theme.bg};
+    width: 1fr;
+    margin: 0 1;
+    scrollbar-size: 0 0;
+    border: solid {theme.border};
 }}
 
 #chat-pane {{
@@ -190,7 +206,8 @@ Footer.pulse {{
 }}
 
 #input-area {{
-    background: {theme.surface};
+    background: {theme.bg};
+    border-top: solid {theme.dim};
     padding: 1 2;
     height: auto;
     min-height: 3;
@@ -198,7 +215,7 @@ Footer.pulse {{
 }}
 
 #input {{
-    background: {theme.surface};
+    background: {theme.bg};
     color: {theme.text};
     border: none;
     width: 100%;
@@ -231,6 +248,14 @@ class _ToolStart:
 class _ToolEnd:
     ok: bool
     detail: str
+
+@dataclass
+class _SubAgentToken:
+    """A token of streaming output from a sub-agent."""
+    task_id: str
+    text: str
+    def __repr__(self):
+        return f"_SubAgentToken(task_id={self.task_id!r}, text={self.text!r})"
 
 @dataclass
 class _ToolOutput:
@@ -311,7 +336,8 @@ class MiniAgentTUI(App):
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
         yield RichLog(id="static-pane", highlight=True, markup=True, wrap=True)
-        yield RichLog(id="pane-divider", highlight=True, markup=False, wrap=False)
+        with HorizontalScroll(id="subagent-pane"):
+            pass
         yield RichLog(id="chat-pane", highlight=True, markup=True, wrap=True)
         with Container(id="input-area"):
             yield TextArea("", id="input")
@@ -381,19 +407,13 @@ class MiniAgentTUI(App):
             except Exception:
                 pass
         try:
-            divider = self.query_one("#pane-divider", RichLog)
-            divider.styles.background = t.bg
-            divider.styles.color = t.border
-        except Exception:
-            pass
-        try:
             input_area = self.query_one("#input-area", Container)
-            input_area.styles.background = t.surface
+            input_area.styles.background = t.bg
         except Exception:
             pass
         try:
             inp = self.query_one("#input", TextArea)
-            inp.styles.background = t.surface
+            inp.styles.background = t.bg
             inp.styles.color = t.text
         except Exception:
             pass
@@ -425,9 +445,6 @@ class MiniAgentTUI(App):
             static.write(f"[{t.dim}]Restored {saved} messages from previous session[/]")
         static.write(f"[{t.dim}]Theme: {t.name}  (/theme to switch)[/]")
 
-        # Draw the pane divider
-        divider = self.query_one("#pane-divider", RichLog)
-        divider.write(f"[{t.border}]" + "—" * 60 + "[/]")
 
         self.query_one("#input", TextArea).focus()
         self._drain_event = threading.Event()
@@ -446,6 +463,10 @@ class MiniAgentTUI(App):
         self._git_branch: str = ""
         self._git_dirty: bool = False
         self._approval_active: bool = False
+
+        # Wire TUI queue for sub-agent streaming
+        from tools import _TOOL_CONTEXT
+        _TOOL_CONTEXT.__dict__["_tui_queue"] = self.queue
 
         self._apply_theme()
         self._refresh_git_status()
@@ -584,6 +605,16 @@ class MiniAgentTUI(App):
         # Defensive: clear any stale table buffer from a previous turn
         if hasattr(self, "_table_buf"):
             self._table_buf = []
+        # Clear stale sub-agent panes and buffers
+        if hasattr(self, "_sub_bufs"):
+            self._sub_bufs.clear()
+        if hasattr(self, "_sub_panes"):
+            sap = self.query_one("#subagent-pane", HorizontalScroll)
+            for child in sap.query(RichLog):
+                child.remove()
+            self._sub_panes.clear()
+            self._sub_count = 0
+            sap.styles.display = "none"
 
         input_widget = self.query_one("#input", TextArea)
         text = input_widget.text.strip()
@@ -699,6 +730,37 @@ class MiniAgentTUI(App):
         try:
             while True:
                 msg = self.queue.get_nowait()
+
+                # Sub-agent streaming (checked first — tuples, not dataclass instances)
+                if isinstance(msg, tuple) and len(msg) == 3 and msg[0] == "sub_token":
+                    _tag, task_id, text = msg
+                    if not hasattr(self, "_sub_panes"):
+                        self._sub_panes = {}
+                        self._sub_count = 0
+                    if task_id not in self._sub_panes:
+                        sap = self.query_one("#subagent-pane", HorizontalScroll)
+                        sap.styles.display = "block"
+                        self._sub_count += 1
+                        rlog = RichLog(highlight=True, markup=True, wrap=True, max_lines=12)
+                        color = _AGENT_COLORS[(self._sub_count - 1) % len(_AGENT_COLORS)]
+                        ac = getattr(t, color)
+                        if not hasattr(self, "_sub_colors"):
+                            self._sub_colors = {}
+                        self._sub_colors[task_id] = ac
+                        rlog.write(f"[{ac}]Agent {self._sub_count}  ({task_id})[/]")
+                        sap.mount(rlog)
+                        self._sub_panes[task_id] = rlog
+                    sublog = self._sub_panes[task_id]
+                    if not hasattr(self, "_sub_bufs"):
+                        self._sub_bufs = {}
+                    buf = self._sub_bufs.get(task_id, "")
+                    buf += text
+                    ac = self._sub_colors[task_id]
+                    for line in buf.split("\n")[:-1]:
+                        if line:
+                            sublog.write(f"[{ac}][/] {_safe(line)}", shrink=False)
+                    self._sub_bufs[task_id] = buf.split("\n")[-1]
+                    continue
 
                 if isinstance(msg, _TokenMsg):
                     self._handle_token(msg, chat)
