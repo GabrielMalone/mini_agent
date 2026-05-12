@@ -434,6 +434,10 @@ class ToolResult:
 
 _TOOL_DISPATCH: dict[str, callable] = {}
 _TOOL_SUMMARIES: dict[str, callable] = {}
+# Context keys used across tools and llm
+CTX_SCRATCHPAD_PATH = "scratchpad_path"
+CTX_SCRATCHPAD_UPDATED = "_scratchpad_updated"
+
 _TOOL_CONTEXT: dict = {}
 
 # Per-turn cache for read-only tools. Cleared by run_agent_turn each turn.

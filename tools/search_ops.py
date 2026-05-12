@@ -206,8 +206,11 @@ _SEM_MODEL = None
 def _sem_get_model():
     global _SEM_MODEL
     if _SEM_MODEL is None:
+        import sys
+        print('  ⏳ Loading embedding model (first use, ~5s)...', file=sys.stderr, end='', flush=True)
         from sentence_transformers import SentenceTransformer
         _SEM_MODEL = SentenceTransformer("all-MiniLM-L6-v2")
+        print(' done.', file=sys.stderr)
     return _SEM_MODEL
 
 

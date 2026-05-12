@@ -10,7 +10,7 @@ import stat as stat_module
 import time
 
 from safety import ReadSafetyGate, WriteSafetyGate
-from tools import _register, _summarize, ToolResult, _TOOL_CONTEXT
+from tools import _register, _summarize, ToolResult, _TOOL_CONTEXT, CTX_SCRATCHPAD_PATH, CTX_SCRATCHPAD_UPDATED
 
 
 # ---------------------------------------------------------------------------
@@ -265,7 +265,7 @@ def _write_scratchpad(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> 
 
     # Find the MemoryStore instance via _TOOL_CONTEXT
     # The scratchpad is stored in the SQLite DB alongside messages
-    scratchpad_path = _TOOL_CONTEXT.get("scratchpad_path", "")
+    scratchpad_path = _TOOL_CONTEXT.get(CTX_SCRATCHPAD_PATH, "")
     if scratchpad_path:
         try:
             import sqlite3
@@ -276,7 +276,7 @@ def _write_scratchpad(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> 
             )
             conn.commit()
             conn.close()
-            _TOOL_CONTEXT["_scratchpad_updated"] = True
+            _TOOL_CONTEXT[CTX_SCRATCHPAD_UPDATED] = True
             return ToolResult(
                 success=True,
                 content=f"Scratchpad updated ({len(content_text)} chars).",

@@ -226,6 +226,7 @@ class MiniAgentTUI(App):
         log.write("—" * 50)
 
         self.query_one("#input", TextArea).focus()
+        self._drain_event = threading.Event()
         self.queue: Queue = _NotifyQueue(self._drain_event)
         self.worker: AgentWorker | None = None
         self._buf = ""
@@ -235,7 +236,6 @@ class MiniAgentTUI(App):
         self._turn_finished = True
         self._history: list[str] = []
         self._history_pos: int = 0
-        self._drain_event = threading.Event()
         self.set_interval(0.05, self._drain)
 
     # ------------------------------------------------------------------
