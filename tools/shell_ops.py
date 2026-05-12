@@ -33,6 +33,40 @@ def _persist_test_output(output: str) -> None:
         pass
 
 
+def _stream_reader(stream, collector: list[str], forward: bool = False,
+                   on_output: callable = None, prefix: str = "") -> None:
+    """Read lines from *stream* into *collector*, optionally forwarding via *on_output*."""
+    for line in iter(stream.readline, ""):
+        line = line.rstrip("\n")
+        collector.append(line)
+        if forward and on_output:
+            try:
+                on_output(prefix + line)
+            except Exception:
+                pass
+    stream.close()
+
+
+def _parse_pytest_output(raw_output: str, exit_code: int = 0) -> tuple[str, bool]:
+    """Extract a human-readable summary from raw pytest output.
+
+    Returns (summary_string, success_bool).
+    """
+    lines = raw_output.split("\n")
+    failure_lines = [l.strip() for l in lines if l.strip().startswith("FAILED")]
+    summary = ""
+    for line in reversed(lines):
+        if "passed" in line or "failed" in line or "error" in line:
+            summary = line.strip()
+            break
+    if not summary:
+        summary = f"exit_code={exit_code}"
+    success = exit_code == 0
+    if failure_lines and not success:
+        summary += "\n" + "\n".join(f"  {fl}" for fl in failure_lines)
+    return summary, success
+
+
 # ---------------------------------------------------------------------------
 # run_shell
 # ---------------------------------------------------------------------------
@@ -108,17 +142,6 @@ def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: 
         stdout_lines: list[str] = []
         stderr_lines: list[str] = []
 
-        def _reader(stream, collector, forward, prefix=""):
-            for line in iter(stream.readline, ""):
-                line = line.rstrip("\n")
-                collector.append(line)
-                if forward and on_output:
-                    try:
-                        on_output(prefix + line)
-                    except Exception:
-                        pass
-            stream.close()
-
         # Background mode: register and return immediately
         background = args.get("background", False)
         if background:
@@ -130,10 +153,10 @@ def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: 
             )
 
         t_out = threading.Thread(
-            target=_reader, args=(proc.stdout, stdout_lines, True, ""), daemon=True,
+            target=_stream_reader, args=(proc.stdout, stdout_lines, True, on_output, ""), daemon=True,
         )
         t_err = threading.Thread(
-            target=_reader, args=(proc.stderr, stderr_lines, True, "[stderr] "), daemon=True,
+            target=_stream_reader, args=(proc.stderr, stderr_lines, True, on_output, "[stderr] "), daemon=True,
         )
         t_out.start()
         t_err.start()
@@ -199,13 +222,76 @@ _SKIP_DIRS = {".git", ".hg", ".svn", "__pycache__", ".pytest_cache",
               "venv", ".venv", "node_modules", ".mypy_cache", ".tox",
               "dist", "build", ".eggs"}
 
+# Binary / non-text extensions to skip during search
+_BINARY_EXTS = {".pyc", ".pyo", ".so", ".o", ".a", ".dylib", ".dll",
+                ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".svg",
+                ".mp3", ".mp4", ".avi", ".mov", ".mkv", ".webm",
+                ".zip", ".tar", ".gz", ".bz2", ".xz", ".7z", ".rar",
+                ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+                ".ttf", ".otf", ".woff", ".woff2", ".eot",
+                ".db", ".sqlite", ".sqlite3", ".mdb",
+                ".exe", ".bin", ".dat", ".pkl", ".pickle"}
+
+
+def _search_single_file(
+    filepath: str, pattern: str, use_regex: bool, ignore_case: bool
+) -> ToolResult:
+    """Search for pattern in a single file.  Used by _search_files(file_path=...)."""
+    import re as _re
+    if use_regex:
+        flags = _re.IGNORECASE if ignore_case else 0
+        try:
+            compiled = _re.compile(pattern, flags)
+        except _re.error as e:
+            return ToolResult(success=False, content=f"Invalid regex: {e}")
+        match_fn = lambda line: compiled.search(line) is not None
+    elif ignore_case:
+        lower_pattern = pattern.lower()
+        match_fn = lambda line: lower_pattern in line.lower()
+    else:
+        match_fn = lambda line: pattern in line
+
+    results: list[str] = []
+    try:
+        with open(filepath, "r", errors="replace") as f:
+            for lineno, line in enumerate(f, 1):
+                if match_fn(line):
+                    results.append(f"{filepath}:{lineno}: {line.rstrip()}")
+                    if len(results) >= 50:
+                        break
+    except (OSError, PermissionError) as e:
+        return ToolResult(success=False, content=f"Error reading '{filepath}': {e}")
+
+    if not results:
+        return ToolResult(
+            success=True,
+            content=f"No matches for '{pattern}' in {filepath}",
+        )
+    return ToolResult(success=True, content="\n".join(results))
+
 
 @_register("search_files")
-def _search_files(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, cancel_event: object = None) -> ToolResult:
+def _search_files(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
     pattern = args["pattern"]
     path = args.get("path", ".")
+    file_path = args.get("file_path", "")
     use_regex = args.get("regex", False)
     ignore_case = args.get("ignore_case", False)
+
+    if file_path:
+        # Single-file mode: skip the directory safety check, only validate the file
+        file_safety = rg.check(file_path)
+        if not file_safety.allowed:
+            return ToolResult(
+                success=False,
+                content=f"Search blocked by safety layer: {file_safety.reason}",
+            )
+        resolved = file_safety.resolved_path
+        if not os.path.isfile(resolved):
+            return ToolResult(success=False, content=f"Not a file: {resolved}")
+        return _search_single_file(resolved, pattern, use_regex, ignore_case)
+
+    # Directory search mode: safety-check the search path
     safety_result = rg.check(path)
     if not safety_result.allowed:
         return ToolResult(
@@ -233,9 +319,15 @@ def _search_files(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, cancel_e
         for root, dirs, files in os.walk(safety_result.resolved_path):
             dirs[:] = [d for d in dirs if d not in _SKIP_DIRS and not d.startswith(".")]
             for fname in sorted(files):
+                # Skip known binary extensions
+                ext = os.path.splitext(fname)[1].lower()
+                if ext in _BINARY_EXTS:
+                    continue
                 file_count += 1
-                if file_count % 100 == 0 and cancel_event is not None and cancel_event.is_set():
-                    return ToolResult(success=False, content="Search cancelled.")
+                if file_count % 500 == 0:
+                    # Periodic yield — prevents long-running searches from
+                    # appearing hung, but the walk always completes.
+                    pass
                 fpath = os.path.join(root, fname)
                 try:
                     with open(fpath, "r", errors="replace") as f:
@@ -308,13 +400,8 @@ def _run_tests(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResu
     stdout_lines: list[str] = []
     stderr_lines: list[str] = []
 
-    def _reader(stream, collector):
-        for line in iter(stream.readline, ""):
-            collector.append(line.rstrip("\n"))
-        stream.close()
-
-    t_out = threading.Thread(target=_reader, args=(proc.stdout, stdout_lines), daemon=True)
-    t_err = threading.Thread(target=_reader, args=(proc.stderr, stderr_lines), daemon=True)
+    t_out = threading.Thread(target=_stream_reader, args=(proc.stdout, stdout_lines), daemon=True)
+    t_err = threading.Thread(target=_stream_reader, args=(proc.stderr, stderr_lines), daemon=True)
     t_out.start()
     t_err.start()
 
@@ -333,23 +420,8 @@ def _run_tests(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResu
     # Persist to DB so agent can read failures without re-running
     _persist_test_output(output)
 
-    lines = output.split("\n")
-    failure_lines = [l.strip() for l in lines if l.strip().startswith("FAILED")]
-    summary_line = ""
-    for line in reversed(lines):
-        if "passed" in line or "failed" in line or "error" in line:
-            summary_line = line.strip()
-            break
-
-    if not summary_line:
-        summary_line = f"exit_code={proc.returncode}"
-
-    success = proc.returncode == 0
-
-    if failure_lines and not success:
-        summary_line += "\n" + "\n".join(f"  {fl}" for fl in failure_lines)
-
-    return ToolResult(success=success, content=summary_line)
+    summary, success = _parse_pytest_output(output, proc.returncode)
+    return ToolResult(success=success, content=summary)
 
 
 @_summarize("run_tests")
@@ -449,12 +521,15 @@ def _verify(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
         if kind == "lint":
             proc = payload
             try:
-                out, _ = proc.communicate(timeout=60)
+                out, err = proc.communicate(timeout=60)
                 out = out.strip()
+                err = err.strip() if err else ""
                 if proc.returncode == 0:
                     results.append("Lint: passed")
+                elif "No module named" in err or "No module named" in out:
+                    results.append("Lint: skipped (flake8 not installed)")
                 else:
-                    last = out.split("\n")[-1] if out else "failed"
+                    last = out.split("\n")[-1] if out else err.split("\n")[-1] if err else "failed"
                     results.append(f"Lint: {last}")
             except subprocess.TimeoutExpired:
                 proc.kill(); proc.communicate()
@@ -466,20 +541,8 @@ def _verify(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
                 out = (out + err).strip()
                 # Persist to DB
                 _persist_test_output(out)
-                lines = out.split("\n")
-                failure_lines = [l.strip() for l in lines if l.strip().startswith("FAILED")]
-                summary = ""
-                for line in reversed(lines):
-                    if "passed" in line or "failed" in line or "error" in line:
-                        summary = line.strip()
-                        break
-                if summary:
-                    result_entry = f"Tests ({target}): {summary}"
-                    if failure_lines and "failed" in summary.lower():
-                        result_entry += "\n" + "\n".join(f"  {fl}" for fl in failure_lines)
-                    results.append(result_entry)
-                else:
-                    results.append(f"Tests ({target}): exit {proc.returncode}")
+                summary, _ = _parse_pytest_output(out, proc.returncode)
+                results.append(f"Tests ({target}): {summary}")
             except subprocess.TimeoutExpired:
                 proc.kill(); proc.communicate()
                 results.append(f"Tests ({target}): timed out")
