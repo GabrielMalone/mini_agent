@@ -203,6 +203,43 @@ def build_startup_context(workspace: str) -> str:
     return "\n".join(parts) + "\n"
 
 
+def init_session(workspace: str) -> dict:
+    """Shared agent initialization used by both terminal and TUI.
+
+    Returns: config, write_gate, read_gate, memory, messages
+    """
+    from safety import ReadSafetyGate, WriteSafetyGate
+    from memory import MemoryStore
+    from prompt import SYSTEM_PROMPT
+    from tools import set_context, build_symbol_index
+
+    config = AgentConfig.load(workspace)
+    write_gate = WriteSafetyGate(workspace, allow_overwrites=config.allow_overwrites)
+    read_gate = ReadSafetyGate(workspace)
+    memory_path = os.path.join(workspace, config.memory_filename)
+    memory = MemoryStore(memory_path, max_messages=config.max_messages,
+                        max_tokens=config.max_tokens)
+    set_context(exa_api_key=config.exa_api_key, scratchpad_path=memory._db_path)
+    build_symbol_index(workspace)
+
+    saved = memory.load()
+    startup_ctx = build_startup_context(workspace)
+    messages: list[dict] = [
+        {"role": "system", "content": startup_ctx},
+        {"role": "system", "content": SYSTEM_PROMPT},
+    ]
+    if saved:
+        messages.extend(saved)
+
+    return {
+        "config": config,
+        "write_gate": write_gate,
+        "read_gate": read_gate,
+        "memory": memory,
+        "messages": messages,
+    }
+
+
 def resolve_workspace() -> str:
     """Resolve workspace root from CLI arg, env var, or default to cwd.
 

@@ -11,6 +11,17 @@ import threading
 from queue import Queue, Empty
 from dataclasses import dataclass
 
+
+class _NotifyQueue(Queue):
+    """Queue that fires an event on every put."""
+    def __init__(self, event, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._event = event
+    def put(self, item, *args, **kwargs):
+        super().put(item, *args, **kwargs)
+        self._event.set()
+
+
 # Escape user content for Rich markup.  rich.markup.escape() skips
 # '[' that looks like a valid tag opener (e.g. '[/') — we can't
 # trust it, so do our own simple escaping.
@@ -196,36 +207,26 @@ class MiniAgentTUI(App):
 
     def on_mount(self) -> None:
         workspace = resolve_workspace()
-
-        self.config = AgentConfig.load(workspace)
+        from config import init_session
+        data = init_session(workspace)
+        self.config = data["config"]
         self.config.verbose = "--quiet" not in sys.argv
-        self.write_gate = WriteSafetyGate(workspace, allow_overwrites=self.config.allow_overwrites)
-        self.read_gate = ReadSafetyGate(workspace)
-        memory_path = os.path.join(workspace, self.config.memory_filename)
-        self.memory = MemoryStore(memory_path, max_messages=self.config.max_messages, max_tokens=self.config.max_tokens)
-        set_context(exa_api_key=self.config.exa_api_key, scratchpad_path=self.memory._db_path)
+        self.write_gate = data["write_gate"]
+        self.read_gate = data["read_gate"]
+        self.memory = data["memory"]
+        self.messages = data["messages"]
         self.session = requests.Session()
-        # Build symbol index in background (fast, <1s for most workspaces)
-        build_symbol_index(self.config.workspace)
 
-        saved = self.memory.load()
-        startup_ctx = build_startup_context(workspace)
-        self.messages: list[dict] = [
-            {"role": "system", "content": startup_ctx},
-            {"role": "system", "content": SYSTEM_PROMPT},
-        ]
-        if saved:
-            self.messages.extend(saved)
 
         log = self.query_one("#conversation", RichLog)
         log.write(f"[bold {ACCENT}]mini_agent[/]  —  {self.config.model}")
         log.write(f"Workspace: {_safe(workspace)}")
-        if saved:
-            log.write(f"Restored {len(saved)} messages from previous session")
+        if saved := len(self.messages) - 2:  # minus 2 system messages
+            log.write(f"Restored {saved} messages from previous session")
         log.write("—" * 50)
 
         self.query_one("#input", TextArea).focus()
-        self.queue: Queue = Queue()
+        self.queue: Queue = _NotifyQueue(self._drain_event)
         self.worker: AgentWorker | None = None
         self._buf = ""
         self._thinking_buf = ""
@@ -234,7 +235,8 @@ class MiniAgentTUI(App):
         self._turn_finished = True
         self._history: list[str] = []
         self._history_pos: int = 0
-        self._poll_timer = self.set_interval(0.05, self._drain)
+        self._drain_event = threading.Event()
+        self.set_interval(0.05, self._drain)
 
     # ------------------------------------------------------------------
     # Actions
@@ -385,9 +387,13 @@ class MiniAgentTUI(App):
     # ------------------------------------------------------------------
 
     def _drain(self) -> None:
-        """Pull messages off the queue and write to the conversation log."""
+        """Pull messages off the queue and write to the conversation log.
+        Uses drain_event to skip cycles when queue is empty."""
+        # If no data was pushed since last drain and queue is empty, skip
+        if not self._drain_event.is_set() and self.queue.empty():
+            return
+        self._drain_event.clear()
         log = self.query_one("#conversation", RichLog)
-
         try:
             while True:
                 msg = self.queue.get_nowait()

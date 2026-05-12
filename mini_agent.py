@@ -41,7 +41,7 @@ import time
 
 import requests
 
-from config import AgentConfig, CONFIG_FILENAME, resolve_workspace, build_startup_context
+from config import AgentConfig, CONFIG_FILENAME, resolve_workspace, init_session
 from llm import run_agent_turn
 from prompt import SYSTEM_PROMPT
 from safety import ReadSafetyGate, WriteSafetyGate
@@ -100,29 +100,17 @@ def main() -> None:
         return
 
     workspace = resolve_workspace()
-    config = AgentConfig.load(workspace)
-
-    write_gate = WriteSafetyGate(config.workspace, allow_overwrites=config.allow_overwrites)
-    read_gate = ReadSafetyGate(config.workspace)
-    memory_path = os.path.join(config.workspace, config.memory_filename)
-    memory = MemoryStore(memory_path, max_messages=config.max_messages, max_tokens=config.max_tokens)
-    set_context(exa_api_key=config.exa_api_key, scratchpad_path=memory._db_path)
-    _log(config.verbose, "Indexing workspace symbols...")
-    build_symbol_index(workspace)
-    _log(config.verbose, f"Workspace indexed.")
-
-    # Restore previous session (system prompt is always fresh)
-    saved = memory.load()
-    startup_ctx = build_startup_context(workspace)
-    messages: list[dict] = [
-        {"role": "system", "content": startup_ctx},
-        {"role": "system", "content": SYSTEM_PROMPT},
-    ]
-    if saved:
-        messages.extend(saved)
-        _log(config.verbose, f"(restored {len(saved)} messages from previous session)")
+    session_data = init_session(workspace)
+    config = session_data["config"]
+    write_gate = session_data["write_gate"]
+    read_gate = session_data["read_gate"]
+    memory = session_data["memory"]
+    messages = session_data["messages"]
 
     _log(config.verbose, f"mini_agent — workspace: {write_gate.workspace_root}")
+
+    # Session stats
+    stats = {"turns": 0, "tool_calls": 0}
     _log(config.verbose, f"model: {config.model}  stream: {config.stream}")
     if os.path.isfile(os.path.join(config.workspace, CONFIG_FILENAME)):
         _log(config.verbose, f"config: {CONFIG_FILENAME} loaded")
@@ -143,11 +131,14 @@ def main() -> None:
 
             if user_input.lower() == "quit":
                 memory.save(messages)
+                if stats["turns"] > 0:
+                    print(f"Session: {stats['turns']} turns, {stats['tool_calls']} tool calls")
                 break
 
             if user_input.lower() == "clear":
                 messages = [{"role": "system", "content": SYSTEM_PROMPT}]
                 memory.clear()
+                stats = {"turns": 0, "tool_calls": 0}
                 _log(config.verbose, "Memory cleared.\n")
                 continue
 
@@ -156,8 +147,20 @@ def main() -> None:
                 print(f"Exported to {path}")
                 continue
 
+            if user_input.lower() == "/stats":
+                print(f"Turns: {stats['turns']}  Tool calls: {stats['tool_calls']}  Messages: {len(messages)}")
+                continue
+
             if not user_input:
                 continue
+
+            # Show scratchpad
+            sp = memory.get_scratchpad()
+            if sp.strip():
+                _log(config.verbose, f"  {c('📝 scratchpad:', _DIM)}")
+                for line in sp.strip().split("\n"):
+                    _log(config.verbose, f"  {c(line, _DIM)}")
+                _log(config.verbose)
 
             # ----- User turn -----
             messages.append({"role": "user", "content": user_input})
@@ -168,7 +171,8 @@ def main() -> None:
             t0 = time.monotonic()
 
             def _tool_start(summary: str, parallel: bool = False) -> None:
-                nonlocal t0
+                nonlocal t0, stats
+                stats["tool_calls"] += 1
                 elapsed = time.monotonic() - t0
                 _log(config.verbose,
                      f"  {c('←', _YELLOW)} tool call(s) after {elapsed:.1f}s",
@@ -204,6 +208,8 @@ def main() -> None:
                      f"  {c('←', _DIM)} text response ({elapsed:.1f}s)",
                      file=sys.stderr)
 
+            # Track stats
+            stats["turns"] += 1
             # Persist after every turn
             memory.save(messages)
             _log(config.verbose, c("─" * 50, _DIM), file=sys.stderr)

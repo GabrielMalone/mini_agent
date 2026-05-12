@@ -201,7 +201,7 @@ _SKIP_DIRS = {".git", ".hg", ".svn", "__pycache__", ".pytest_cache",
 
 
 @_register("search_files")
-def _search_files(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
+def _search_files(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, cancel_event: object = None) -> ToolResult:
     pattern = args["pattern"]
     path = args.get("path", ".")
     use_regex = args.get("regex", False)
@@ -228,10 +228,14 @@ def _search_files(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolR
         match_fn = lambda line: pattern in line
 
     results: list[str] = []
+    file_count = 0
     try:
         for root, dirs, files in os.walk(safety_result.resolved_path):
             dirs[:] = [d for d in dirs if d not in _SKIP_DIRS and not d.startswith(".")]
             for fname in sorted(files):
+                file_count += 1
+                if file_count % 100 == 0 and cancel_event is not None and cancel_event.is_set():
+                    return ToolResult(success=False, content="Search cancelled.")
                 fpath = os.path.join(root, fname)
                 try:
                     with open(fpath, "r", errors="replace") as f:
