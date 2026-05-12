@@ -16,5 +16,12 @@ venv/
 .mini_agent_memory.db
 .mini_agent_index.json
 
-# Secrets
+# Secrets / local config (contains API keys)
 keys
+.mini_agent.toml
+
+# Session backups
+.mini_agent_backups/
+
+# Local data mounted in workspace
+$HOME/

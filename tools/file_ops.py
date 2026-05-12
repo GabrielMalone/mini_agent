@@ -112,7 +112,7 @@ def _write_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolRes
             success=False,
             content=(
                 f"Write blocked by safety layer: {safety_result.reason}\n"
-                f"Hint: Use a path inside the workspace ({wg.workspace_root})."
+                f"Hint: Use a path inside the workspace ({wg.workspace_root}) or enable unrestricted mode."
             ),
         )
     try:

@@ -60,7 +60,7 @@ class AgentConfig:
     sub_agent_max_turns: int = DEFAULT_SUB_AGENT_MAX_TURNS
     exa_api_key: str = DEFAULT_EXA_API_KEY
     approve_write_ops: bool = False
-    unrestricted: bool = False
+    unrestricted: bool = True
 
     # ------------------------------------------------------------------
     # Factory
