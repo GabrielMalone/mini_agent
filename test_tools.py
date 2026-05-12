@@ -7,6 +7,7 @@ import json
 import os
 import tempfile
 import unittest
+from unittest.mock import patch, MagicMock
 
 from safety import ReadSafetyGate, WriteSafetyGate
 from tools import ToolResult, execute_tool, tool_summary
@@ -611,7 +612,10 @@ class TestSemanticSearch(unittest.TestCase):
         self.assertFalse(result.success)
         self.assertIn("query", result.content)
 
-    def test_finds_relevant_chunks(self):
+    @patch("tools.search_ops._sem_get_model")
+    def test_finds_relevant_chunks(self, mock_model):
+        import numpy as np
+        mock_model.return_value.encode.return_value = np.array([[0.0, 1.0], [1.0, 0.0]])
         self._write("auth.py", "def authenticate_user(token):\n    if token:\n        return True\n    return False\n")
         self._write("storage.py", "def save_file(path, data):\n    with open(path, 'w') as f:\n        f.write(data)\n")
         tc = _make_tool_call("semantic_search", query="user login and authentication", path=self.workspace)
@@ -620,7 +624,16 @@ class TestSemanticSearch(unittest.TestCase):
         # Should find the auth function first
         self.assertIn("auth.py", result.content.lower())
 
-    def test_finds_file_io_chunks(self):
+    @patch("tools.search_ops._sem_get_model")
+    def test_finds_file_io_chunks(self, mock_model):
+        import numpy as np
+        mock = mock_model.return_value
+        # "writing files to disk" → similar to storage.py (0.95), not auth.py (0.3)
+        mock.encode.side_effect = lambda texts, **kw: np.array([
+            [1.0, 0.0] if "save_file" in t else [1.0, 0.0] if "writing" in t else [0.0, 1.0]
+            for t in texts
+        ])
+
         self._write("auth.py", "def authenticate_user(token):\n    if token:\n        return True\n    return False\n")
         self._write("storage.py", "def save_file(path, data):\n    with open(path, 'w') as f:\n        f.write(data)\n")
         tc = _make_tool_call("semantic_search", query="writing files to disk", path=self.workspace)
@@ -628,7 +641,8 @@ class TestSemanticSearch(unittest.TestCase):
         self.assertTrue(result.success)
         self.assertIn("storage.py", result.content.lower())
 
-    def test_no_python_files_returns_message(self):
+    @patch("tools.search_ops._sem_get_model")
+    def test_no_python_files_returns_message(self, mock_model):
         self._write("readme.md", "# hello")
         tc = _make_tool_call("semantic_search", query="anything", path=self.workspace)
         result = execute_tool(tc, self.write_gate, self.read_gate)
