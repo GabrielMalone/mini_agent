@@ -131,7 +131,8 @@ def _parse_stream(response: requests.Response, on_token: callable = None, on_too
                                     on_tool_ready(ready)
                                 except (json.JSONDecodeError, ValueError):
                                     pass  # still fragmentary
-            except Exception:
+            except Exception as _e:
+                print(f"[SSE] stream parse: {_e}", file=sys.stderr)
                 continue
     except (
         requests.exceptions.ChunkedEncodingError,

@@ -61,12 +61,12 @@ def run_sub_agent(
         _TOOL_CACHE, _MODIFIED_FILES, _CACHEABLE,
     )
     from tools.schema import TOOLS
-    from prompt import SYSTEM_PROMPT
+    from prompt import build_system_prompt
 
     # --- build messages for sub-agent ---
     messages: list[dict] = [
         {"role": "system", "content": _SUB_AGENT_SYSTEM_PROMPT},
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": build_system_prompt(config)},
     ]
     if shared_context:
         messages.append({

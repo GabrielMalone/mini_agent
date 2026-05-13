@@ -894,9 +894,11 @@ class TestPlanningPrompt(unittest.TestCase):
 
     def test_prompt_includes_planning_instruction(self):
         """System prompt tells agent to state a plan before tools."""
-        from prompt import SYSTEM_PROMPT
-        self.assertIn("state your plan", SYSTEM_PROMPT.lower())
-        self.assertIn("1-3 sentences", SYSTEM_PROMPT)
+        from prompt import build_system_prompt
+        from config import AgentConfig
+        prompt = build_system_prompt(AgentConfig())
+        self.assertIn("state your plan", prompt.lower())
+        self.assertIn("1-3 sentences", prompt)
 
 
 # ---------------------------------------------------------------------------

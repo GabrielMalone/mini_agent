@@ -43,7 +43,7 @@ import requests
 
 from config import AgentConfig, CONFIG_FILENAME, resolve_workspace, init_session, parse_args
 from llm import run_agent_turn
-from prompt import SYSTEM_PROMPT
+from prompt import build_system_prompt
 from safety import ReadSafetyGate, WriteSafetyGate
 from memory import MemoryStore
 from terminal import c, _DIM, _CYAN, _YELLOW, _GREEN, _RED
@@ -134,7 +134,7 @@ def main() -> None:
                 break
 
             if user_input.lower() == "clear":
-                messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+                messages = [{"role": "system", "content": build_system_prompt(config)}]
                 memory.clear()
                 stats = {"turns": 0, "tool_calls": 0}
                 _log(config.verbose, "Memory cleared.\n")

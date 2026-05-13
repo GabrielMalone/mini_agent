@@ -6,7 +6,45 @@ Kept in its own module so it can evolve independently of the orchestrator
 and execution logic.
 """
 
-SYSTEM_PROMPT = (
+from __future__ import annotations
+
+import os
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from config import AgentConfig
+
+
+def build_system_prompt(config: "AgentConfig") -> str:
+    """Build the full system prompt with dynamic context injected.
+
+    Includes a header showing the current workspace location and
+    safety flag status, followed by the static behavioural prompt.
+    """
+    workspace = os.path.abspath(config.workspace) if config.workspace else os.getcwd()
+
+    # --- Safety flags summary ---
+    safety_lines: list[str] = []
+    if config.unrestricted:
+        safety_lines.append("  unrestricted = True  (NO workspace boundary checks)")
+    else:
+        safety_lines.append("  unrestricted = False (reads/writes restricted to workspace)")
+    safety_lines.append(f"  allow_overwrites = {config.allow_overwrites}")
+    safety_lines.append(f"  approve_write_ops = {config.approve_write_ops}")
+
+    header = (
+        "\n"
+        "══════════════════════════════════════════════════════════════\n"
+        f"  WORKSPACE   : {workspace}\n"
+        f"  SAFETY FLAGS:\n"
+        + "\n".join(safety_lines) +
+        "\n══════════════════════════════════════════════════════════════\n"
+    )
+
+    return header + _STATIC_PROMPT
+
+
+_STATIC_PROMPT = (
     "You are an agentic development assistant.\n"
     "Use the available tools when they are needed. Do not assume tools exist unless "
     "they are provided by the current runtime/tool registry.\n"

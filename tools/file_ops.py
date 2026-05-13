@@ -11,6 +11,7 @@ import shutil
 import time
 
 from safety import ReadSafetyGate, WriteSafetyGate
+from tools import clear_tool_cache
 from tools import _register, _summarize, ToolResult, _TOOL_CONTEXT, CTX_SCRATCHPAD_PATH, CTX_SCRATCHPAD_UPDATED
 
 
@@ -124,6 +125,7 @@ def _write_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolRes
             f.write(content)
         from tools import _MODIFIED_FILES
         _MODIFIED_FILES.add(safety_result.resolved_path)
+        clear_tool_cache()
         # Keep symbol index fresh for newly written .py files
         if path.endswith(".py"):
             from tools.search_ops import _reindex_file
@@ -204,6 +206,7 @@ def _edit_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResu
 
         from tools import _MODIFIED_FILES
         _MODIFIED_FILES.add(safety_result.resolved_path)
+        clear_tool_cache()
 
         # Short summary: no full diff on success (saves context tokens)
         added = updated.count("\n") - original.count("\n")
@@ -341,6 +344,9 @@ def _write_scratchpad(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> 
     fallback = _os.path.join(
         _TOOL_CONTEXT.workspace or ".", ".mini_agent_scratchpad.md"
     )
+    sr = _wg.check(fallback)
+    if not sr.allowed:
+        return ToolResult(success=False, content=f"Scratchpad blocked: {sr.reason}")
     try:
         with open(fallback, "w") as f:
             f.write(content_text)
@@ -428,7 +434,7 @@ def _restore_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolR
         shutil.copy2(backup_path, resolved)
         del _BACKUPS[resolved]
         from tools import _MODIFIED_FILES
-        _MODIFIED_FILES.discard(path)
+        _MODIFIED_FILES.discard(safety_result.resolved_path)
         return ToolResult(
             success=True,
             content=f"Restored '{resolved}' from backup ({os.path.basename(backup_path)}).",

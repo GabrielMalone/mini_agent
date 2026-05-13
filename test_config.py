@@ -17,10 +17,17 @@ class TestAgentConfigDefaults(unittest.TestCase):
 
     def setUp(self):
         self.workspace = tempfile.mkdtemp()
+        # Unset env vars that override defaults
+        self._prev_api_key = os.environ.pop("DEEPSEEK_API_KEY", None)
+        self._prev_api_url = os.environ.pop("DEEPSEEK_API_URL", None)
 
     def tearDown(self):
         import shutil
         shutil.rmtree(self.workspace, ignore_errors=True)
+        if self._prev_api_key is not None:
+            os.environ["DEEPSEEK_API_KEY"] = self._prev_api_key
+        if self._prev_api_url is not None:
+            os.environ["DEEPSEEK_API_URL"] = self._prev_api_url
 
     def test_defaults_are_set(self):
         config = AgentConfig.load(self.workspace)
@@ -42,10 +49,17 @@ class TestAgentConfigTOML(unittest.TestCase):
 
     def setUp(self):
         self.workspace = tempfile.mkdtemp()
+        # Unset env vars that override TOML values
+        self._prev_api_key = os.environ.pop("DEEPSEEK_API_KEY", None)
+        self._prev_api_url = os.environ.pop("DEEPSEEK_API_URL", None)
 
     def tearDown(self):
         import shutil
         shutil.rmtree(self.workspace, ignore_errors=True)
+        if self._prev_api_key is not None:
+            os.environ["DEEPSEEK_API_KEY"] = self._prev_api_key
+        if self._prev_api_url is not None:
+            os.environ["DEEPSEEK_API_URL"] = self._prev_api_url
 
     def _write_toml(self, content: str) -> None:
         path = os.path.join(self.workspace, CONFIG_FILENAME)
