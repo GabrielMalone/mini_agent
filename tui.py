@@ -36,7 +36,7 @@ def _safe(text: str) -> str:
 
 from textual.app import App, ComposeResult
 from textual.containers import Container, HorizontalScroll
-from textual.widgets import Header, Footer, RichLog, TextArea
+from textual.widgets import Header, Footer, RichLog, TextArea, Tree
 from textual.binding import Binding
 
 import requests
@@ -169,12 +169,32 @@ Footer.pulse {{
     background: {theme.bg};
     color: {theme.text};
     border: none;
-    border-bottom: solid {theme.border};
     padding: 0 1;
-    height: 35%;
-    min-height: 5;
+    width: 1fr;
+    height: 100%;
     overflow-y: auto;
     scrollbar-size: 0 0;
+}}
+
+#static-area {{
+    background: {theme.bg};
+    border-bottom: solid {theme.border};
+    height: 35%;
+    min-height: 5;
+    layout: horizontal;
+}}
+
+#agent-tree {{
+    background: {theme.surface};
+    color: {theme.text};
+    border-left: solid {theme.border};
+    padding: 0 1;
+    width: 30%;
+    min-width: 20;
+    height: 100%;
+    overflow-y: auto;
+    scrollbar-size: 0 0;
+    display: none;
 }}
 
 #subagent-pane {{
@@ -341,7 +361,9 @@ class MiniAgentTUI(App):
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
-        yield RichLog(id="static-pane", highlight=True, markup=True, wrap=True)
+        with Horizontal(id="static-area"):
+            yield RichLog(id="static-pane", highlight=True, markup=True, wrap=True)
+            yield Tree("Agents", id="agent-tree")
         with HorizontalScroll(id="subagent-pane"):
             pass
         yield RichLog(id="chat-pane", highlight=True, markup=True, wrap=True)
@@ -798,6 +820,16 @@ class MiniAgentTUI(App):
                         rlog.write(f"[{ac}]Agent {self._sub_count}  ({task_id})[/]")
                         sap.mount(rlog)
                         self._sub_panes[task_id] = rlog
+                        # ---- Agent tree: show + add node ----
+                        if not hasattr(self, "_tree_nodes"):
+                            self._tree_nodes = {}
+                        tree = self.query_one("#agent-tree", Tree)
+                        tree.styles.display = "block"
+                        tree.root.expand()
+                        node = tree.root.add_leaf(
+                            f"[{ac}]\u25cf[/] Agent {self._sub_count}  [{ac}]{task_id[:8]}[/]"
+                        )
+                        self._tree_nodes[task_id] = node
                     sublog = self._sub_panes[task_id]
                     if not hasattr(self, "_sub_bufs"):
                         self._sub_bufs = {}
@@ -818,6 +850,15 @@ class MiniAgentTUI(App):
                         sublog.remove()
                         self._sub_colors.pop(task_id, None)
                         self._sub_bufs.pop(task_id, None)
+                    # ---- Agent tree: mark complete ----
+                    if hasattr(self, "_tree_nodes") and task_id in self._tree_nodes:
+                        node = self._tree_nodes.pop(task_id)
+                        ac = self._sub_colors.get(task_id, self._tui_theme.dim)
+                        node.label = f"[{ac}]\u2713[/] Agent done  [{ac}]{task_id[:8]}[/]"
+                        if not self._sub_panes:
+                            tree = self.query_one("#agent-tree", Tree)
+                            tree.styles.display = "none"
+                            self._tree_nodes = {}
                     continue
 
                 if isinstance(msg, _TokenMsg):
