@@ -291,17 +291,19 @@ def execute_tool(
             hint=hint,
         )
 
+    # --- strip _pipe meta-field before validation AND cache check (tool piping) ---
+    # Must happen BEFORE cache key is computed, otherwise piped calls
+    # get a different key and never hit the cache.
+    pipe_config = None
+    if isinstance(args, dict):
+        pipe_config = args.pop("_pipe", None)
+
     # Check cache for read-only tools (skip if on_output is streaming)
     cache_key = ""
     if on_output is None and name in _CACHEABLE:
         cache_key = json.dumps([name, args], sort_keys=True)
         if cache_key in _TOOL_CACHE:
             return _TOOL_CACHE[cache_key]
-
-    # --- strip _pipe meta-field before validation (tool piping) ---
-    pipe_config = None
-    if isinstance(args, dict):
-        pipe_config = args.pop("_pipe", None)
 
     # --- schema validation: check parameter names against tool definition ---
     if isinstance(args, dict):

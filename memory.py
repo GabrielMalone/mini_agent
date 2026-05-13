@@ -73,8 +73,24 @@ def _estimate_tokens(msg: dict) -> int:
 
 
 def _total_tokens(messages: list[dict]) -> int:
-    """Sum estimated tokens across all messages."""
-    return sum(_estimate_tokens(m) for m in messages)
+    """Sum estimated tokens across all messages.
+
+    Cached by list identity — repeated calls on the same unmodified
+    list return the memoized value.  Any mutation resets the cache.
+    """
+    global _TOKENS_CACHE_ID, _TOKENS_CACHE_COUNT
+    mid = id(messages)
+    if mid == _TOKENS_CACHE_ID:
+        return _TOKENS_CACHE_COUNT
+    count = sum(_estimate_tokens(m) for m in messages)
+    _TOKENS_CACHE_ID = mid
+    _TOKENS_CACHE_COUNT = count
+    return count
+
+
+# Identity-based cache for _total_tokens
+_TOKENS_CACHE_ID: int = 0
+_TOKENS_CACHE_COUNT: int = 0
 
 
 # ---------------------------------------------------------------------------
