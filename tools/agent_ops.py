@@ -68,6 +68,8 @@ def _spawn_one(
     visible: bool = False,
     shared_context: str = "",
     subscriptions: list[str] | None = None,
+    parent_depth: int = 0,
+    max_depth: int = 3,
 ) -> str:
     """Spawn a single sub-agent thread. Returns the task_id."""
     from tools import _TOOL_CONTEXT
@@ -80,6 +82,10 @@ def _spawn_one(
     def _runner() -> None:
         import sys as _sys
         tui_queue = _TOOL_CONTEXT.__dict__.get("_tui_queue")
+        # Set depth context for tools called by this sub-agent
+        current_depth = parent_depth + 1
+        _TOOL_CONTEXT.__dict__["_agent_depth"] = current_depth
+        _TOOL_CONTEXT.__dict__["_agent_max_depth"] = max_depth
         original_stream = config.stream
         try:
             if visible:
@@ -95,6 +101,8 @@ def _spawn_one(
                 read_gate=rg,
                 max_turns=max_turns,
                 cancel_event=cancel_event,
+                parent_depth=parent_depth,
+                max_depth=max_depth,
                 shared_context=shared_context,
                 tui_queue=tui_queue if visible else None,
                 tui_task_id=task_id if visible else "",
@@ -180,7 +188,9 @@ def _spawn_agent(args: dict, wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolRes
             tid = _spawn_one(task, config, runtime, wg, rg, max_turns,
                              cancel_event=None, visible=visible,
                              shared_context=shared_context,
-                             subscriptions=subscriptions)
+                             subscriptions=subscriptions,
+                             parent_depth=_TOOL_CONTEXT.__dict__.get("_agent_depth", 0),
+                             max_depth=_TOOL_CONTEXT.__dict__.get("_agent_max_depth", 3))
             task_ids.append(tid)
 
         if not task_ids:
@@ -241,7 +251,9 @@ def _spawn_agent(args: dict, wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolRes
     task_id = _spawn_one(task, config, runtime, wg, rg, max_turns,
                          cancel_event=None, visible=visible,
                          shared_context=shared_context,
-                         subscriptions=subscriptions)
+                         subscriptions=subscriptions,
+                         parent_depth=_TOOL_CONTEXT.__dict__.get("_agent_depth", 0),
+                         max_depth=_TOOL_CONTEXT.__dict__.get("_agent_max_depth", 3))
 
     return ToolResult(
         success=True,

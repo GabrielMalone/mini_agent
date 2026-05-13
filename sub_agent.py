@@ -35,6 +35,7 @@ def run_sub_agent(
     max_turns: int = 15,
     cancel_event: threading.Event | None = None,
     parent_depth: int = 0,
+    max_depth: int = 3,
     shared_context: str = "",
     stream: bool = False,
     tui_queue=None,       # Queue for TUI subagent pane streaming
@@ -49,11 +50,12 @@ def run_sub_agent(
     - Its own _MODIFIED_FILES tracking
     - Its own scratchpad (in-memory only — no SQLite for sub-agents)
 
-    The sub-agent CANNOT call spawn_agent (depth guard — prevents recursion).
-    All other tools are available.
+    Sub-agents CAN spawn further sub-agents up to *max_depth*.
+    Current depth is *parent_depth* + 1.  Tools are blocked when at max_depth.
 
     Returns a SubAgentResult with success, content, and metadata.
     """
+    current_depth = parent_depth + 1
     from config import AgentConfig
     from llm import call_deepseek
     from tools import (
@@ -68,6 +70,24 @@ def run_sub_agent(
         {"role": "system", "content": _SUB_AGENT_SYSTEM_PROMPT},
         {"role": "system", "content": build_system_prompt(config)},
     ]
+    if current_depth >= max_depth:
+        messages.append({
+            "role": "system",
+            "content": (
+                f"You are at depth {current_depth}/{max_depth}. "
+                "You CANNOT spawn further sub-agents — you are a leaf worker. "
+                "Complete your task directly."
+            ),
+        })
+    else:
+        messages.append({
+            "role": "system",
+            "content": (
+                f"You are at depth {current_depth}/{max_depth}. "
+                "You MAY spawn sub-agents for independent subtasks. "
+                "Your sub-agents will be at depth {current_depth + 1}."
+            ),
+        })
     if shared_context:
         messages.append({
             "role": "system",
@@ -180,14 +200,13 @@ def run_sub_agent(
             fn = tc.get("function", {})
             name = fn.get("name", "")
 
-            # --- Recursion guard: block sub-agent spawn/status/collect ---
-            if name in ("spawn_agent", "agent_status", "collect_agent", "collect_any", "agent_extend"):
+            # --- Depth guard: block spawn/status/collect at max depth ---
+            if current_depth >= max_depth and name in ("spawn_agent", "agent_status", "collect_agent", "collect_any", "agent_extend"):
                 from tools import ToolResult as TR
                 result = TR(
                     success=False,
                     content=(
-                        f"Tool '{name}' is not available inside sub-agents. "
-                        "Sub-agents cannot spawn further sub-agents. "
+                        f"Tool '{name}' is not available at max depth ({max_depth}). "
                         "Complete your assigned task directly."
                     ),
                 )
@@ -245,18 +264,21 @@ def run_sub_agent(
 # ---------------------------------------------------------------------------
 
 _SUB_AGENT_SYSTEM_PROMPT = (
-    "You are a sub-agent — a focused worker that completes one specific task "
+    "You are a sub-agent — a worker that completes one specific task "
     "delegated to you by a parent agent.\n"
     "\n"
     "Behavior:\n"
-    "- Work only on the task you were given. Do not expand scope.\n"
+    "- Work on the task you were given. Do not expand scope.\n"
     "- Use tools as needed to complete your work.\n"
     "- When done, produce a concise final answer summarizing what you did, "
     "what files you changed, and any results.\n"
-    "- Do not call spawn_agent, agent_status, collect_agent, collect_any, or agent_extend — those are "
-    "only for the parent orchestrator. You are a leaf worker.\n"
     "- Do not ask clarifying questions — just do the work and report back.\n"
     "- If you encounter an error you cannot fix, report it clearly in your "
     "final answer rather than looping.\n"
     "- Keep your response focused and under 2000 characters.\n"
+    "\n"
+    "You MAY spawn sub-agents (spawn_agent) to parallelize independent "
+    "subtasks. When you do, follow the same orchestrator rules as the "
+    "parent: monitor, collect, and extend — but do NOT duplicate work "
+    "you've delegated. Your sub-agents inherit your depth + 1.\n"
 )

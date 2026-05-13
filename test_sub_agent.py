@@ -274,14 +274,14 @@ class TestCollectAgentTool:
 # ---------------------------------------------------------------------------
 
 class TestRecursionGuard:
-    def test_blocked_tools_in_sub_agent(self):
-        """Verify that the blocked tool names are correct."""
-        blocked = {"spawn_agent", "agent_status", "collect_agent", "collect_any"}
+    def test_blocked_tools_at_max_depth(self):
+        """At max depth, spawn/status/collect tools are blocked."""
+        blocked = {"spawn_agent", "agent_status", "collect_agent", "collect_any", "agent_extend"}
         from sub_agent import run_sub_agent
         import inspect
         source = inspect.getsource(run_sub_agent)
         for tool in blocked:
-            assert tool in source, f"Recursion guard should block '{tool}'"
+            assert tool in source, f"Depth guard should mention '{tool}'"
 
 
 # ---------------------------------------------------------------------------
