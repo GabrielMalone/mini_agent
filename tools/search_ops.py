@@ -204,6 +204,14 @@ def _reindex_file(filepath: str, root: str) -> None:
         except (OSError, PermissionError):
             pass
 
+    # Persist updated indices to disk cache so next session picks them up
+    try:
+        cache_path = _os.path.join(root, ".mini_agent_index.json")
+        with open(cache_path, "w") as f:
+            _json.dump({"symbols": _SYMBOL_INDEX, "references": _REF_INDEX or {}}, f)
+    except Exception:
+        pass
+
 
 def _get_symbol_index(root: str) -> dict[str, list[dict]]:
     """Return the symbol index, building it lazily if needed."""
@@ -616,10 +624,16 @@ def build_ref_index(root: str) -> dict[str, list[dict]]:
 
 
 def _get_ref_index(root: str) -> dict[str, list[dict]]:
-    """Return the reference index, building it lazily."""
+    """Return the reference index, building it lazily.
+    
+    Delegates to _get_symbol_index which builds both the symbol and
+    reference indices in a single workspace walk — no duplicate I/O.
+    """
     global _REF_INDEX
     if _REF_INDEX is None:
-        return build_ref_index(root)
+        _get_symbol_index(root)  # builds both _SYMBOL_INDEX and _REF_INDEX
+        if _REF_INDEX is None:
+            _REF_INDEX = {}
     return _REF_INDEX
 
 
@@ -656,9 +670,11 @@ def _find_usages(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolRe
         import subprocess
         from tools.shell_ops import _SKIP_DIRS
         try:
-            exclude = " ".join(f"--exclude-dir={d}" for d in _SKIP_DIRS)
-            cmd = f"grep -rn --include='*.py' {exclude} -w '{name}' {root}"
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10)
+            cmd = ["grep", "-rn", "--include=*.py"]
+            for d in _SKIP_DIRS:
+                cmd.extend(["--exclude-dir", d])
+            cmd.extend(["-w", name, root])
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
             if result.stdout.strip():
                 lines_out = result.stdout.strip().split("\n")[:30]
                 return ToolResult(

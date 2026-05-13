@@ -15,6 +15,7 @@ import os
 import subprocess as _sp
 import sys
 import threading
+from collections import Counter, deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
@@ -24,7 +25,8 @@ from stream import _parse_stream, THINKING_START, THINKING_END
 
 from config import AgentConfig
 from terminal import c, _DIM
-from tools import TOOLS, execute_tool, tool_summary, clear_tool_cache
+from tools import TOOLS, execute_tool, tool_summary, clear_tool_cache, _TOOL_CONTEXT, _MODIFIED_FILES
+from memory import _total_tokens
 from safety import ReadSafetyGate, WriteSafetyGate
 
 # Thinking-mode delimiters sent through the on_token stream
@@ -95,7 +97,7 @@ def call_deepseek(
     if not r.ok:
         try:
             err = r.json()
-        except Exception:
+        except (ValueError, AttributeError):
             err = r.text
         print(f"\n[API {r.status_code}] {err}", file=sys.stderr, flush=True)
     r.raise_for_status()
@@ -133,7 +135,6 @@ def _check_circuit(recent_keys: list[str]) -> str | None:
     """
     if len(recent_keys) < _CIRCUIT_THRESHOLD:
         return None
-    from collections import Counter
     counts = Counter(recent_keys)
     for key, count in counts.items():
         if count >= _CIRCUIT_THRESHOLD:
@@ -158,7 +159,6 @@ def _save_turn_summary(
     messages: list[dict],
 ) -> None:
     """Save a concise summary of this turn for later recall via recall_turn()."""
-    from tools import _TOOL_CONTEXT
 
     parts: list[str] = []
     content = msg.get("content", "")
@@ -252,6 +252,7 @@ def run_agent_turn(
             pass
     if session is None:
         session = requests  # test-friendly: mockable via patch("llm.requests.post")
+    _original_session = session  # track whether we own the session for cleanup
     clear_tool_cache()
     try:
         for _ in range(max_turns):
@@ -261,7 +262,6 @@ def run_agent_turn(
 
             # Token budget awareness — inject context usage at turn start
             if turn_count > 1:
-                from memory import _total_tokens
                 estimate = _total_tokens(messages)
                 # Rough max: model's context window minus headroom
                 budget = 64000
@@ -288,7 +288,6 @@ def run_agent_turn(
 
             # Pre-turn checkpoint — remind agent of files modified and tests to run
             if turn_count == 2 and hasattr(read_gate, "workspace_root"):
-                from tools import _MODIFIED_FILES
                 if _MODIFIED_FILES:
                     mod_list = "\n".join(f"  - {f}" for f in sorted(_MODIFIED_FILES))
                     test_hint = ""
@@ -315,7 +314,6 @@ def run_agent_turn(
                 messages.append({"role": "user", "content": warning, "_transient": True})
 
             # Scratchpad staleness nudge — warn if not updated in several turns
-            from tools import _TOOL_CONTEXT
             if turn_count > 4 and (turn_count - 1) % 3 == 0:
                 if not _TOOL_CONTEXT._scratchpad_updated:
                     messages.append({
@@ -330,7 +328,6 @@ def run_agent_turn(
                 _TOOL_CONTEXT._scratchpad_updated = False
 
             # Inject active plan status at turn start
-            from tools import _TOOL_CONTEXT
             plan_steps = _TOOL_CONTEXT._plan_steps
             if plan_steps:
                 plan_done = _TOOL_CONTEXT._plan_done
@@ -580,7 +577,7 @@ def run_agent_turn(
                                         recent_keys=recent_tool_keys)
                     all_results.append((tc, result))
                 else:
-                    results_lock = __import__("threading").Lock()
+                    results_lock = threading.Lock()
 
                     def _run_piped(i):
                         tc = remaining[i]
@@ -623,7 +620,9 @@ def run_agent_turn(
             msg["_turn_count"] = turn_count
         return msg
     finally:
-        if hasattr(session, "close"):
+        # Only close the session if we created it; caller-managed sessions
+        # (passed via the session parameter) are the caller's responsibility.
+        if session is not _original_session and hasattr(session, "close"):
             session.close()
 
 

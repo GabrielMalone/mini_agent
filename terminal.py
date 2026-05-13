@@ -8,8 +8,13 @@ passes ``--no-color``.
 
 import sys
 
-# Enabled when stderr is a terminal and user didn't pass --no-color
-_ENABLED = sys.stderr.isatty() and "--no-color" not in sys.argv
+def _color_enabled() -> bool:
+    """Lazily check if ANSI colour output is enabled.
+    
+    Evaluated at call time, not import time, so TUI takeover of stderr
+    doesn't affect the result.
+    """
+    return sys.stderr.isatty() and "--no-color" not in sys.argv
 
 _RESET  = "\033[0m"
 _DIM    = "\033[2m"
@@ -21,7 +26,7 @@ _CYAN   = "\033[36m"
 
 def c(text: str, code: str) -> str:
     """Wrap *text* in an ANSI colour code, stripping when colours are off."""
-    if _ENABLED:
+    if _color_enabled():
         return f"{code}{text}{_RESET}"
     return text
 

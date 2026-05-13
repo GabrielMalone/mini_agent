@@ -54,6 +54,8 @@ def _parse_stream(response: requests.Response, on_token: callable = None, on_too
         for line in response.iter_lines(decode_unicode=True):
             if not line or not line.startswith("data: "):
                 continue
+            # Assumes SSE field name is exactly "data: " — adjust if the
+            # server uses a different field name or prefix convention.
             data_str = line[len("data: "):]
             if data_str.strip() == "[DONE]":
                 break

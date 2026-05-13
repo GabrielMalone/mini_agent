@@ -40,11 +40,6 @@ class SubAgentResult:
             "error": self.error,
         }
 
-    def to_dict(self) -> dict:
-        return {"success": self.success, "content": self.content,
-                "turns_used": self.turns_used, "tool_calls_made": self.tool_calls_made,
-                "scratchpad": getattr(self, "scratchpad", ""), "error": self.error}
-
     def to_json(self) -> str:
         import json
         return json.dumps({
@@ -74,6 +69,7 @@ class AgentRuntime:
         self.results: dict[str, SubAgentResult] = {}
         self.cancel_events: dict[str, threading.Event] = {}
         self.max_turns: dict[str, int] = {}  # mutable per-task turn budgets
+        self.abandoned: set[str] = set()     # zombie tasks whose store_result() is a no-op
 
     # ---- spawn ----
 
@@ -86,6 +82,17 @@ class AgentRuntime:
 
     def store_result(self, task_id: str, result: SubAgentResult) -> None:
         with self._lock:
+            if task_id in self.abandoned:
+                # Zombie thread finally finished after being abandoned —
+                # discard its result to avoid corrupting state.
+                import sys
+                print(
+                    f"[runtime] WARNING: discarding result from abandoned zombie "
+                    f"task '{task_id}' (thread completed after timeout)",
+                    file=sys.stderr, flush=True,
+                )
+                self.abandoned.discard(task_id)
+                return
             self.results[task_id] = result
             self.tasks.pop(task_id, None)
             self.cancel_events.pop(task_id, None)
@@ -110,7 +117,8 @@ class AgentRuntime:
         """Bump the max_turns budget for a running sub-agent. Returns True if found."""
         with self._lock:
             if task_id in self.max_turns:
-                self.max_turns[task_id] += additional
+                _ABSOLUTE_MAX = 35
+                self.max_turns[task_id] = min(self.max_turns[task_id] + additional, _ABSOLUTE_MAX)
                 return True
             return False
 
@@ -118,6 +126,20 @@ class AgentRuntime:
         """Read current max_turns for a running sub-agent."""
         with self._lock:
             return self.max_turns.get(task_id)
+
+    def mark_abandoned(self, task_id: str) -> None:
+        """Mark a task as abandoned so its store_result() is a no-op.
+
+        Used after collect_agent times out and the thread can't be joined —
+        the zombie thread will eventually call store_result(), which must be
+        ignored to avoid corrupting runtime state.
+        """
+        with self._lock:
+            self.abandoned.add(task_id)
+            # Also clean up tracking entries so status reports "not_found".
+            self.tasks.pop(task_id, None)
+            self.cancel_events.pop(task_id, None)
+            self.max_turns.pop(task_id, None)
 
     def cancel(self, task_id: str) -> bool:
         """Request cancellation of a running sub-agent. Returns True if found."""

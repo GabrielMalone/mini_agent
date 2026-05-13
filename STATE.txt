@@ -1,7 +1,7 @@
 # mini_agent — Architecture & State
 
 A coding agent powered by DeepSeek V4 Pro. Terminal REPL + Textual TUI.
-320 tests, 28 tools, SQLite memory.
+336 tests, 28 tools, SQLite memory.
 
 ## Multi-Agent Support (v2)
 
@@ -10,13 +10,17 @@ batch `spawn_agent(tasks=[...])` which return task_ids immediately. Sub-agents r
 in background threads with their own context, scratchpad, and tool cache. Parent 
 polls with `agent_status`, blocks with `collect_agent`, or grabs fastest with 
 `collect_any`. Inter-agent messaging via `agent_message` / `agent_read`. Turn 
-budget extension via `agent_extend`.
+budget extension via `agent_extend` (capped at absolute max 35).
 
 TUI: horizontal per-agent panes in `#subagent-pane` (HorizontalScroll), each 
 labeled "Agent N (taskid)" with unique cycling colors (green/yellow/accent/
 pulse/red). Sub-agent tokens buffered per task_id and flushed on newlines. 
 Borders via CSS `border: solid` on each child RichLog. Divider between static 
 pane and subagent area via CSS `border-bottom` on `#static-pane`.
+
+Zombie thread defense: `AgentRuntime.mark_abandoned()` marks timed-out tasks 
+so their eventual `store_result()` is a no-op. `AgentWorker` carries a `turn_id` 
+so the TUI drains ignore stale `_Done` messages from cancelled/previous turns.
 
 New modules:
 - `agent_runtime.py` — SubAgentResult dataclass + AgentRuntime (thread-safe registry)
@@ -27,7 +31,7 @@ New modules:
 - `stream.py` — _parse_stream() (extracted from llm.py)
 - `tools/schema.py` — TOOLS list (extracted from tools/__init__.py)
 
-Config: `sub_agent_max_turns` (default 15, absolute max 25) in AgentConfig.
+Config: `sub_agent_max_turns` (default 15, absolute max 35) in AgentConfig.
 Limits: max 5 concurrent sub-agents, depth 1 (no recursive spawns).
 Sub-agents share the same tool registry, safety layer, and workspace as the parent.
 
@@ -41,11 +45,11 @@ Sub-agents share the same tool registry, safety layer, and workspace as the pare
 ├── prompt.py            System prompt (standalone module)
 ├── config.py            AgentConfig: TOML + env vars + CLI flags
 ├── memory.py            SQLite conversation store + pruning/compression
-├── safety.py            ReadSafetyGate + WriteSafetyGate
-├── terminal.py          ANSI colour helpers, format_table()
-├── retry.py             HTTP retry with exponential backoff + cancel support
+├── safety.py            ReadSafetyGate + WriteSafetyGate + shared SafetyResult
+├── terminal.py          ANSI colour helpers (lazy isatty), format_table()
+├── retry.py             HTTP retry with jittered exponential backoff + cancel support
 ├── stream.py            SSE stream parser, tool-call accumulation
-├── agent_runtime.py     SubAgentResult + AgentRuntime (thread-safe registry)
+├── agent_runtime.py     SubAgentResult + AgentRuntime (thread-safe registry + zombie defense)
 ├── sub_agent.py         run_sub_agent() — isolated background agent loop
 ├── tools/
 │   ├── __init__.py      ToolResult, dispatch registry, cache, JSON repair
@@ -54,19 +58,19 @@ Sub-agents share the same tool registry, safety layer, and workspace as the pare
 │   ├── shell_ops.py     run_shell, search_files, run_tests, git, task_status, verify
 │   ├── search_ops.py    find_symbol, find_usages, semantic_search, web_search, recall_turn
 │   └── agent_ops.py     spawn_agent, agent_status, collect_agent, collect_any,
-│                         agent_message, agent_read, agent_extend
+│                        agent_message, agent_read, agent_extend
 ├── setup.sh / setup.bat  Quick-start scripts (venv + pip install)
-└── test_*.py            12 test files, 320 tests
+└── test_*.py            12 test files, 336 tests
 ```
 
 ## Tools (24)
 
 | Tool | Module | Gate | Notes |
 |------|--------|:----:|-------|
-| `find_symbol` | search_ops | read | Indexed at startup, substring matching |
-| `find_usages` | search_ops | read | Reverse symbol index + grep fallback |
+| `find_symbol` | search_ops | read | Indexed at startup, substring matching, persisted to .mini_agent_index.json |
+| `find_usages` | search_ops | read | Reverse symbol index + grep fallback (list-arg form, no shell injection) |
 | `read_file` | file_ops | read | Truncates at ~300 lines, cached within turn |
-| `write_file` | file_ops | write | Triggers symbol reindex for .py files |
+| `write_file` | file_ops | write | Triggers symbol reindex for .py files + disk cache persist |
 | `edit_file` | file_ops | write | Returns unified diff on success |
 | `list_directory` | file_ops | read | — |
 | `file_info` | file_ops | read | Size, permissions, mtime, type |
@@ -97,12 +101,17 @@ Priority: CLI flags > env vars > `.mini_agent.toml` > hard-coded defaults.
 - CLI flags: --workspace, --stream, --quiet, --no-color, --approve, --allow-overwrites, --unrestricted, --help
 
 ### Safety (safety.py)
-- `ReadSafetyGate`: resolves path, checks it's inside workspace root
+- Shared `SafetyResult` dataclass (frozen: allowed, reason, resolved_path) — used by both gates
+- `ReadSafetyGate`: resolves path, checks it's inside workspace root (unrestricted mode bypasses)
 - `WriteSafetyGate`: same + overwrite check (blocked unless `allow_overwrites=True`)
+- `_is_within_workspace()` shared helper
+- Both gates accept `path: str | None` — None returns denied result (never throws)
+- TOCTOU race between overwrite check and actual write is documented and accepted (single-writer assumption)
 - Both return frozen dataclass results — never raw exceptions
 
 ### HTTP Retry (retry.py)
-- `_request_with_retry()` — exponential backoff on 429/5xx and network errors
+- `_request_with_retry()` — jittered exponential backoff on 429/5xx and network errors
+- Jitter: `(2^attempt) * (0.5 + random.random())` — ~0.5-1.5s, ~1-3s, ~2-6s
 - Cancel-aware: accepts `threading.Event`, returns `None` when cancelled
 - Uses `requests.Session` when available, falls back to `requests.post`
 - 3 retries max, retryable statuses: {429, 500, 502, 503, 504}
@@ -113,6 +122,7 @@ Priority: CLI flags > env vars > `.mini_agent.toml` > hard-coded defaults.
 - Resilient to connection drops — returns partial results instead of crashing
 - Name field set once per tool call (API sends atomic names, not fragments)
 - Missing `choices` key gracefully skipped
+- SSE field name assumption documented: expects `data: ` prefix
 
 ### Memory (memory.py)
 SQLite-backed, three-tier management on every save:
@@ -128,10 +138,11 @@ Also: backward/forward orphan detection, transient message stripping, scratchpad
   - Parallel tool execution via ThreadPoolExecutor
   - **Tool piping**: `_pipe` meta-field on tool calls; dependency graph via Kahn's algorithm; independent tools still parallel; cycle detection falls back to sequential
   - Returns `None` on cancel (propagated from retry.py)
-  - Session reuse (one `requests.Session`)
+  - Session reuse: one `requests.Session`; only closed if created by this function (caller-owned sessions preserved)
   - Tool cache clearing, circuit breaker, turn summaries
   - Incremental tool execution (fires `on_tool_ready` during stream)
   - max_turns default 100
+  - Specific exception handling: `(ValueError, AttributeError)` for JSON parse errors instead of bare `Exception`
 
 ### Tool Execution (tools/__init__.py)
 - `ToolResult(success, content, hint)` — structured, never raw exceptions
@@ -145,9 +156,9 @@ Also: backward/forward orphan detection, transient message stripping, scratchpad
 - `_AGENT_RUNTIME` — AgentRuntime singleton for sub-agent management
 
 ### Multi-Agent System
-- **agent_runtime.py**: `SubAgentResult` (success, turns_used, content, tool_calls) + `AgentRuntime` (register, store_result, get_status, get_result, cancel, cancel_all, active_count). Thread-safe via `threading.Lock`. `store_result()` cleans up tasks and cancel events to prevent memory leak.
+- **agent_runtime.py**: `SubAgentResult` (success, turns_used, content, tool_calls) + `AgentRuntime` (register, store_result, get_status, get_result, cancel, cancel_all, active_count, extend_turns, mark_abandoned). Thread-safe via `threading.Lock`. Zombie defense: `abandoned: set[str]` tracks tasks that timed out — their `store_result()` calls are silently discarded. `extend_turns()` caps at absolute max 35. `mark_abandoned()` cleans up all tracking entries.
 - **sub_agent.py**: `run_sub_agent()` — isolated agent loop: init session → prompt → loop: call_deepseek → execute tools → until done or max_turns or cancelled. Handles tool context injection, recursion guard (blocks spawn/agent/collect tools), scratchpad per-agent.
-- **tools/agent_ops.py**: Tool implementations for spawn_agent (max 5 concurrent, 15 default / 25 absolute max turns), agent_status (non-blocking poll), collect_agent (blocking collect with 120s timeout).
+- **tools/agent_ops.py**: Tool implementations for spawn_agent (max 5 concurrent, 15 default / 35 absolute max turns), agent_status (non-blocking poll), collect_agent (blocking collect with 120s timeout; zombie thread detection + mark_abandoned on timeout).
 
 ### Search & Lookup Strategy
 | Need | Tool |
@@ -157,6 +168,12 @@ Also: backward/forward orphan detection, transient message stripping, scratchpad
 | Exact pattern / regex | `search_files` |
 | Code by meaning | `semantic_search` |
 | Documentation, APIs | `web_search` |
+
+### Symbol Index Persistence
+- Symbol and reference indices persisted to `.mini_agent_index.json` in workspace root
+- Written on every `_reindex_file()` call (triggered by write_file/edit_file for .py files)
+- `_get_ref_index()` delegates to `_get_symbol_index()` — single workspace walk builds both indices
+- `_find_usages` grep fallback uses list-arg form (no shell injection vector)
 
 ### Resilience Defenses
 | Defense | Where | What |
@@ -170,6 +187,10 @@ Also: backward/forward orphan detection, transient message stripping, scratchpad
 | Tool cache | tools/__init__.py | Read-only tools cached within a turn |
 | Connection resilience | stream.py | SSE connection drops return partial results, not crashes |
 | Cancel propagation | retry.py | Cancel events stop retry loops, return None cleanly |
+| Jittered retry | retry.py | Random jitter prevents thundering herd on API retries |
+| Zombie thread defense | agent_runtime.py + tui.py | Abandoned task results discarded; stale _Done messages filtered by turn_id |
+| Session ownership | llm.py | Only close sessions we created; caller-owned sessions preserved |
+| Stale message filtering | tui.py | turn_id on AgentWorker/_Done prevents cancelled-turn results from corrupting display |
 
 ### Context Injections (all transient — never persisted)
 | Injection | When | Role |
@@ -200,11 +221,14 @@ Also: backward/forward orphan detection, transient message stripping, scratchpad
 - Worker thread → message queue → drain every 20ms (smooth streaming)
 - Sub-agent streaming: `_SubAgentToken` message type; `_TOOL_CONTEXT._tui_queue` wired in `on_mount`; `_spawn_agent._runner` pushes tokens via plain tuples; `_drain` writes to `#subagent-pane`
 - Multi-line paste support, markup escaping
+- **turn_id tracking**: AgentWorker and _Done carry a turn_id; drain skips _Done messages from cancelled/previous turns
+- Exception handling narrowed to `(requests.RequestException, RuntimeError, ValueError)`
 
 ### Terminal REPL (mini_agent.py)
 - `--workspace`, `--stream`, `--quiet`, `--no-color`, `--allow-overwrites`, `--approve`, `--help`
 - `quit`, `clear`, `/export` commands at prompt
 - Scratchpad display, tool execution logging with ANSI colour
+- `terminal.py` uses lazy `_color_enabled()` (evaluated at call time, not import time) so TUI stderr takeover doesn't break colour detection
 
 ### Flags
 ```
@@ -222,16 +246,16 @@ Also: backward/forward orphan detection, transient message stripping, scratchpad
 15 destructive patterns blocked (rm -rf, fork bomb, dd, mkfs, etc.). `force=True` bypasses.
 
 ### Test Suite
-316 tests across 12 files:
-- test_tools.py (66), test_resilience.py (36), test_safety.py (32), test_memory.py (22)
-- test_config.py (18), test_agent_loop.py (17), test_sub_agent.py (17), test_git.py (16)
-- test_tui.py (15), test_terminal.py (11), test_parse_stream.py (8), test_lint.py (1)
+336 tests across 12 files:
+- test_tools.py (97), test_resilience.py (40), test_tui.py (37), test_safety.py (33)
+- test_memory.py (25), test_config.py (18), test_agent_loop.py (17), test_git.py (16)
+- test_terminal.py (11), test_parse_stream.py (8), test_sub_agent.py (0), test_lint.py (0)
 
 ## Recent git log
 ```
-fd5aca4 -m "TUI: hide scrollbars with scrollbar-size 0 0, remove dead scrollbar theme code"
-c6cbc16 -m "TUI: faster drain 20ms, dimmed thinking, smarter sentence breaks; fix flake8 in verify"
-972713d -m "Mock SentenceTransformer in semantic_search tests, 18s -> 7s suite time"
-4a16b3a -m "G-H-I: semantic_search loading indicator, TUI background task indicator, _TOOL_CONTEXT constants"
-11165f1 -m "A-E: terminal scratchpad, shared init_session, /stats, event-driven TUI drain, search_files cancel"
+020de36 Multi-agent v2: collect_any, agent_message, agent_read, agent_extend tools. TUI: horizontal per-agent panes with unique colors, line-buffered sub-agent streaming, matching backgrounds, border fixes. 320 tests.
+70a6e9c visible=true: inline streaming, config.stream+on_token wiring, SubAgentResult.to_dict, recursion guard +agent_extend
+2158031 Stop tracking .mini_agent.toml to prevent API key leaks
+cdaeec9 Scrub API keys, add README, enable unrestricted by default, add .gitignore for secrets
+92d4453 Multi-agent support: spawn_agent/agent_status/collect_agent, extracted retry/stream/schema modules, bug fixes from parallel sub-agent review
 ```

@@ -6,6 +6,7 @@ Provides ``_request_with_retry()`` with exponential backoff on transient
 failures (429, 5xx).  Used by ``llm.py::call_deepseek()``.
 """
 
+import random
 import sys
 import threading
 
@@ -28,7 +29,8 @@ def _request_with_retry(
 ) -> requests.Response | None:
     """Send an HTTP request with retry on transient errors.
 
-    Retries up to *_MAX_RETRIES* times with exponential backoff (1s, 2s, 4s)
+    Retries up to *_MAX_RETRIES* times with jittered exponential backoff
+    (~0.5-1.5s, ~1-3s, ~2-6s)
     on 429 / 5xx status codes.  Non-retryable errors raise immediately.
 
     *session* is a requests.Session for connection reuse, or the requests
@@ -44,9 +46,9 @@ def _request_with_retry(
                 return r
             # Transient error — retry
             if attempt < _MAX_RETRIES:
-                delay = 2 ** attempt  # 1, 2, 4
+                delay = (2 ** attempt) * (0.5 + random.random())  # jittered: ~0.5-1.5s, 1-3s, 2-6s
                 print(
-                    f"  ⚠ API {r.status_code}, retrying in {delay}s "
+                    f"  ⚠ API {r.status_code}, retrying in {delay:.1f}s "
                     f"(attempt {attempt + 1}/{_MAX_RETRIES})",
                     file=sys.stderr, flush=True,
                 )
@@ -57,9 +59,9 @@ def _request_with_retry(
         except requests.RequestException as exc:
             last_exc = exc
             if attempt < _MAX_RETRIES:
-                delay = 2 ** attempt
+                delay = (2 ** attempt) * (0.5 + random.random())
                 print(
-                    f"  ⚠ network error ({exc}), retrying in {delay}s "
+                    f"  ⚠ network error ({exc}), retrying in {delay:.1f}s "
                     f"(attempt {attempt + 1}/{_MAX_RETRIES})",
                     file=sys.stderr, flush=True,
                 )

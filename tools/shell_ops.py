@@ -122,7 +122,7 @@ def _check_destructive(command: str) -> str | None:
 
 
 @_register("run_shell")
-def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: callable = None, approve_callback: callable = None) -> ToolResult:
+def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: callable = None) -> ToolResult:
     command = args["command"]
     force = args.get("force", False)
     if not force:

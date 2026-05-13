@@ -339,6 +339,15 @@ def _collect_agent(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> Too
             if thread.is_alive():
                 runtime.cancel(task_id)
                 thread.join(timeout=5)
+                if thread.is_alive():
+                    # Zombie thread — it ignored cancellation for >5s.
+                    # Mark abandoned so its eventual store_result() is a no-op.
+                    runtime.mark_abandoned(task_id)
+                    print(
+                        f"[runtime] WARNING: zombie thread detected for task "
+                        f"'{task_id}' — marking abandoned to prevent state corruption",
+                        file=__import__("sys").stderr, flush=True,
+                    )
                 return ToolResult(
                     success=False,
                     content=(

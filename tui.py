@@ -265,6 +265,7 @@ class _ToolOutput:
 class _Done:
     usage: dict | None = None
     turn_count: int = 0
+    turn_id: int = 0
 
 @dataclass
 class _Error:
@@ -278,7 +279,7 @@ class _Error:
 class AgentWorker(threading.Thread):
     """Runs the agent loop in a background thread, pushing messages to a queue."""
 
-    def __init__(self, messages, config, write_gate, read_gate, out: Queue, session, approve_callback=None):
+    def __init__(self, messages, config, write_gate, read_gate, out: Queue, session, approve_callback=None, turn_id: int = 0):
         super().__init__(daemon=True)
         self.messages = messages
         self.config = config
@@ -288,6 +289,7 @@ class AgentWorker(threading.Thread):
         self.cancel = threading.Event()
         self.session = session
         self.approve_callback = approve_callback
+        self.turn_id = turn_id
 
     def run(self):
         config = self.config
@@ -305,15 +307,16 @@ class AgentWorker(threading.Thread):
                 session=self.session,
                 approve_callback=self.approve_callback,
             )
-        except Exception as e:
+        except (requests.RequestException, RuntimeError, ValueError) as e:
             self.out.put(_Error(str(e)))
-            self.out.put(_Done())
+            self.out.put(_Done(turn_id=self.turn_id))
             return
 
         if msg is not None:
             self.out.put(_Done(
                 usage=msg.get("_total_usage"),
                 turn_count=msg.get("_turn_count", 0),
+                turn_id=self.turn_id,
             ))
         # If msg is None, turn was cancelled — app's cancel handler cleans up
 
@@ -463,6 +466,7 @@ class MiniAgentTUI(App):
         self._git_branch: str = ""
         self._git_dirty: bool = False
         self._approval_active: bool = False
+        self._turn_id: int = 0
 
         # Wire TUI queue for sub-agent streaming
         from tools import _TOOL_CONTEXT
@@ -526,6 +530,7 @@ class MiniAgentTUI(App):
     def action_cancel(self) -> None:
         if self.worker is not None and self.worker.is_alive():
             self.worker.cancel.set()
+            self._turn_id += 1
             self.worker = None
             self._turn_finished = True
             self._flush_buf()
@@ -644,12 +649,14 @@ class MiniAgentTUI(App):
         self._turn_finished = False
         self._active_tool = ""
 
+        self._turn_id += 1
         self.worker = AgentWorker(
             self.messages, self.config,
             self.write_gate, self.read_gate,
             self.queue,
             self.session,
             approve_callback=self._approve if self.config.approve_write_ops else None,
+            turn_id=self._turn_id,
         )
         self.worker.start()
 
@@ -786,6 +793,9 @@ class MiniAgentTUI(App):
                     MiniAgentTUI._box_line(chat, _safe(msg.msg), t.red)
                     MiniAgentTUI._box_close(chat, t.red)
                 elif isinstance(msg, _Done):
+                    # Ignore stale _Done from a cancelled/previous turn
+                    if msg.turn_id != self._turn_id:
+                        continue
                     self._finish_turn(usage=msg.usage, turn_count=msg.turn_count)
                     return
 
