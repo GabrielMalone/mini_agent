@@ -18,6 +18,8 @@ from __future__ import annotations
 import threading
 import uuid
 
+import sys
+
 from safety import ReadSafetyGate, WriteSafetyGate
 from agent_runtime import SubAgentResult, AgentRuntime
 
@@ -58,10 +60,11 @@ def run_sub_agent(
     from llm import call_deepseek
     from tools import (
         execute_tool, clear_tool_cache, tool_summary,
-        _TOOL_CACHE, _MODIFIED_FILES, _CACHEABLE,
+        _TOOL_CACHE, _MODIFIED_FILES, _CACHEABLE, _TOOL_CONTEXT,
     )
     from tools.schema import TOOLS
     from prompt import SYSTEM_PROMPT
+    from memory import _total_tokens
 
     # --- build messages for sub-agent ---
     messages: list[dict] = [
@@ -93,7 +96,6 @@ def run_sub_agent(
     while turn_count < max_turns:
         turn_count += 1
         # Re-read max_turns from runtime (parent may have extended it)
-        from tools import _TOOL_CONTEXT
         runtime_ctx = _TOOL_CONTEXT.__dict__.get("_agent_runtime")
         if runtime_ctx is not None and task_id:
             updated = runtime_ctx.get_max_turns(task_id)
@@ -110,7 +112,6 @@ def run_sub_agent(
 
         # Token budget awareness (same as parent loop)
         if turn_count > 1:
-            from memory import _total_tokens
             estimate = _total_tokens(messages)
             budget = 64000
             pct = min(100, estimate * 100 // budget)
@@ -131,10 +132,9 @@ def run_sub_agent(
                     tui_queue.put(("sub_token", tui_task_id, t))
                 on_token = _on_token_sub
             else:
-                import sys as _sys
                 def _on_token_stderr(t: str) -> None:
-                    _sys.stderr.write(t)
-                    _sys.stderr.flush()
+                    sys.stderr.write(t)
+                    sys.stderr.flush()
                 on_token = _on_token_stderr
         msg = call_deepseek(
             messages, config,

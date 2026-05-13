@@ -148,6 +148,9 @@ def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: 
         if background:
             task_id = str(uuid.uuid4())[:8]
             _TASK_REGISTRY[task_id] = proc
+            # Drain stdout/stderr in daemon threads to prevent pipe-buffer deadlock
+            threading.Thread(target=_stream_reader, args=(proc.stdout, []), daemon=True).start()
+            threading.Thread(target=_stream_reader, args=(proc.stderr, []), daemon=True).start()
             return ToolResult(
                 success=True,
                 content=f"Started background task {task_id}. Use task_status to check.",
@@ -392,6 +395,9 @@ def _run_tests(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResu
     if background:
         task_id = str(uuid.uuid4())[:8]
         _TASK_REGISTRY[task_id] = proc
+        # Drain stdout/stderr in daemon threads to prevent pipe-buffer deadlock
+        threading.Thread(target=_stream_reader, args=(proc.stdout, []), daemon=True).start()
+        threading.Thread(target=_stream_reader, args=(proc.stderr, []), daemon=True).start()
         return ToolResult(
             success=True,
             content=f"Started background test run {task_id}. Use task_status to check.",
@@ -654,16 +660,16 @@ def _git(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
     elif sub == "restore":
         if not extra.strip():
             extra = "."
+        restoring = extra.strip()
         rc, changed, _ = _git_run(cwd, "diff", "--name-only", "HEAD")
         if rc != 0:
             return ToolResult(success=False, content=changed or "Unable to list changed files.")
         files = changed.strip()
-        rc, out, err = _git_run(cwd, "restore", *extra.strip().split())
+        rc, out, err = _git_run(cwd, "restore", *restoring.split())
         if rc != 0:
             return ToolResult(success=False, content=err or out)
         if files:
-            return ToolResult(success=True,
-                              content=f"Restored all changes. Files restored:\n{files}")
+            return ToolResult(success=True, content=f"Restored: {files}")
         return ToolResult(success=True, content="Restored (no changes to revert).")
 
 

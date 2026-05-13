@@ -67,7 +67,7 @@ def _read_file(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResu
     lines = content.splitlines(keepends=False)
 
     # Apply offset (0-indexed line number to start from)
-    offset = args.get("offset", 0)
+    offset = int(args.get("offset", 0))
     if offset < 0:
         offset = 0
     if offset > 0:
@@ -76,7 +76,7 @@ def _read_file(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResu
         lines = lines[offset:]
 
     # Apply limit (max lines to return)
-    limit = args.get("limit", _DEFAULT_READ_LINES)
+    limit = int(args.get("limit", _DEFAULT_READ_LINES))
     if limit < 1:
         limit = _DEFAULT_READ_LINES
     limit = min(limit, _ABSOLUTE_MAX_LINES)
@@ -428,7 +428,7 @@ def _restore_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolR
         shutil.copy2(backup_path, resolved)
         del _BACKUPS[resolved]
         from tools import _MODIFIED_FILES
-        _MODIFIED_FILES.discard(path)
+        _MODIFIED_FILES.discard(resolved)
         return ToolResult(
             success=True,
             content=f"Restored '{resolved}' from backup ({os.path.basename(backup_path)}).",

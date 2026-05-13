@@ -42,7 +42,8 @@ from textual.binding import Binding
 import requests
 
 from config import AgentConfig, resolve_workspace, build_startup_context, init_session, parse_args
-from llm import run_agent_turn, THINKING_START, THINKING_END
+from llm import run_agent_turn
+from stream import THINKING_START, THINKING_END
 from prompt import SYSTEM_PROMPT
 from safety import ReadSafetyGate, WriteSafetyGate
 from memory import MemoryStore
@@ -589,13 +590,32 @@ class MiniAgentTUI(App):
                 focused.text = ""
 
     def _approve(self, tool_name: str, args: dict) -> bool:
-        """Auto-approve in TUI. User sees tool calls and can cancel with Ctrl+C."""
+        """Prompt the user for tool approval in the TUI.
+
+        When approve_write_ops is enabled, the user is shown the tool
+        request and the turn pauses briefly.  The user can cancel the
+        entire turn with Ctrl+C (checked via the worker cancel event).
+        In the TUI all tool calls are visible in real-time, so individual
+        tools are auto-approved unless the turn has been cancelled.
+        """
         log = self.query_one("#static-pane", RichLog)
         t = self._tui_theme
         brief = str(args)
         if len(brief) > 80:
             brief = brief[:80] + "..."
-        log.write(f"[{t.yellow} italic]  ⏳ approved {tool_name}({_safe(brief)})[/]")
+
+        # If approval mode is off, auto-approve silently
+        if not self.config.approve_write_ops:
+            return True
+
+        # If the user cancelled the turn, deny immediately
+        if self.worker is not None and self.worker.cancel.is_set():
+            log.write(f"[{t.red}]  ✗ denied {tool_name}({_safe(brief)}) — turn cancelled[/]")
+            return False
+
+        # Show the approval request and auto-approve in TUI
+        log.write(f"[{t.yellow}]  🔐 approve? {tool_name}({_safe(brief)})[/]")
+        log.write(f"[{t.yellow} italic]  ⏳ approved {tool_name}({_safe(brief)}) [Ctrl+C to cancel turn][/]")
         return True
 
     def _export_to_file(self, path: str) -> None:
@@ -769,7 +789,7 @@ class MiniAgentTUI(App):
                     ac = self._sub_colors[task_id]
                     for line in buf.split("\n")[:-1]:
                         if line:
-                            sublog.write(f"[{ac}][/] {_safe(line)}", shrink=False)
+                            sublog.write(f"[{ac}][/] {_safe(line)}")
                     self._sub_bufs[task_id] = buf.split("\n")[-1]
                     continue
 

@@ -80,31 +80,35 @@ def _spawn_one(
     def _runner() -> None:
         import sys as _sys
         tui_queue = _TOOL_CONTEXT.__dict__.get("_tui_queue")
-        if visible:
-            config.stream = True
+        original_stream = config.stream
+        try:
+            if visible:
+                config.stream = True
+                if tui_queue is not None:
+                    tui_queue.put(("sub_token", task_id, f"[sub {task_id}] START: {task[:80]}\n"))
+                else:
+                    print(f"\n  [sub {task_id}] START: {task[:80]}", file=_sys.stderr, flush=True)
+            result = run_sub_agent(
+                task=task,
+                config=config,
+                write_gate=wg,
+                read_gate=rg,
+                max_turns=max_turns,
+                cancel_event=cancel_event,
+                shared_context=shared_context,
+                tui_queue=tui_queue if visible else None,
+                tui_task_id=task_id if visible else "",
+                task_id=task_id,
+            )
+            runtime.store_result(task_id, result)
+            # Signal TUI to hide sub-agent streaming pane
             if tui_queue is not None:
-                tui_queue.put(("sub_token", task_id, f"[sub {task_id}] START: {task[:80]}\n"))
-            else:
-                print(f"\n  [sub {task_id}] START: {task[:80]}", file=_sys.stderr, flush=True)
-        result = run_sub_agent(
-            task=task,
-            config=config,
-            write_gate=wg,
-            read_gate=rg,
-            max_turns=max_turns,
-            cancel_event=cancel_event,
-            shared_context=shared_context,
-            tui_queue=tui_queue if visible else None,
-            tui_task_id=task_id if visible else "",
-            task_id=task_id,
-        )
-        runtime.store_result(task_id, result)
-        # Signal TUI to hide sub-agent streaming pane
-        if tui_queue is not None:
-            tui_queue.put(("sub_done", task_id))
+                tui_queue.put(("sub_done", task_id))
+        finally:
+            config.stream = original_stream
 
     thread = threading.Thread(target=_runner, daemon=True, name=f"subagent-{task_id}")
-    runtime.register(task_id, thread, cancel_event)
+    runtime.register(task_id, thread, cancel_event, max_turns)
     # Set subscriptions if provided
     if subscriptions is not None:
         runtime.set_subscriptions(task_id, subscriptions)
@@ -347,18 +351,12 @@ def _collect_agent(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> Too
         )
 
     if status == "running":
-        # Poll until done, using condition variable for notification
-        # (avoids blocking on thread.join(120))
-        deadline = time.monotonic() + _COLLECT_TIMEOUT
-        while time.monotonic() < deadline:
-            current_status = runtime.get_status(task_id)
-            if current_status != "running":
-                break
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                break
-            with runtime._condition:
-                runtime._condition.wait(timeout=min(0.5, remaining))
+        # Wait for completion using condition.wait_for with predicate,
+        # which atomically checks status under the lock to avoid lost wakeups.
+        def _completed():
+            return runtime.get_status(task_id) != "running"
+        with runtime._condition:
+            runtime._condition.wait_for(_completed, timeout=_COLLECT_TIMEOUT)
 
         # If still running after timeout, report back — don't cancel.
         # The parent can extend turns or collect again later.
@@ -458,20 +456,22 @@ def _collect_any(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolR
             if result is not None:
                 return _format_collect_any(tid, result)
 
-    # Poll until one completes, using condition variable for notification
-    deadline = time.monotonic() + _COLLECT_ANY_TIMEOUT
-    while time.monotonic() < deadline:
+    # Wait for any completion using condition.wait_for with predicate,
+    # which atomically checks status under the lock to avoid lost wakeups.
+    def _any_completed():
         for tid in candidates:
-            status = runtime.get_status(tid)
-            if status == "completed":
-                result = runtime.get_result(tid)
-                if result is not None:
-                    return _format_collect_any(tid, result)
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            break
-        with runtime._condition:
-            runtime._condition.wait(timeout=min(_COLLECT_ANY_POLL, remaining))
+            if runtime.get_status(tid) == "completed":
+                return True
+        return False
+    with runtime._condition:
+        runtime._condition.wait_for(_any_completed, timeout=_COLLECT_ANY_TIMEOUT)
+
+    for tid in candidates:
+        status = runtime.get_status(tid)
+        if status == "completed":
+            result = runtime.get_result(tid)
+            if result is not None:
+                return _format_collect_any(tid, result)
 
     return ToolResult(
         success=False,

@@ -7,6 +7,7 @@ Each checker runs against a workspace directory after the agent finishes.
 
 import os
 import re
+import shlex
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -93,7 +94,8 @@ def _check_file_contains(params: dict, workspace: str) -> CheckResult:
     if not os.path.isfile(path):
         return CheckResult("file_contains", False, f"{params['path']} missing")
     try:
-        content = open(path, "r").read()
+        with open(path, "r") as f:
+            content = f.read()
     except OSError as exc:
         return CheckResult("file_contains", False, f"Cannot read {params['path']}: {exc}")
     match = re.search(params["pattern"], content, re.MULTILINE)
@@ -110,7 +112,8 @@ def _check_file_not_contains(params: dict, workspace: str) -> CheckResult:
     if not os.path.isfile(path):
         return CheckResult("file_not_contains", False, f"{params['path']} missing")
     try:
-        content = open(path, "r").read()
+        with open(path, "r") as f:
+            content = f.read()
     except OSError as exc:
         return CheckResult("file_not_contains", False, f"Cannot read {params['path']}: {exc}")
     match = re.search(params["pattern"], content, re.MULTILINE)
@@ -164,9 +167,11 @@ def _check_diff_not_contains(params: dict, workspace: str) -> CheckResult:
 
 @_register("shell")
 def _check_shell(params: dict, workspace: str) -> CheckResult:
+    # Security: tokenize the command and run with shell=False to avoid
+    # shell injection from YAML-defined commands.
     result = subprocess.run(
-        params["command"],
-        shell=True,
+        shlex.split(params["command"]),
+        shell=False,
         capture_output=True,
         text=True,
         cwd=workspace,

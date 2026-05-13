@@ -223,6 +223,10 @@ def run_task(
     # Initialize git repo in temp workspace (needed for diff)
     _ensure_git_repo(workspace)
 
+    # Pre-assign before try block so except handler can compute elapsed
+    start_time = time.monotonic()
+    metrics = None
+
     try:
         # Initialize agent session
         from config import init_session
@@ -246,8 +250,6 @@ def run_task(
         )
 
         # Instrument with metrics collector
-        metrics = None  # pre-assign for safety in except handler
-        start_time = time.monotonic()  # pre-assign before try block
         metrics = MetricsCollector()
         cancel_event = threading.Event()
 
@@ -297,7 +299,7 @@ def run_task(
 
         return EvalResult(
             task_id=task.id,
-            success=all(c.passed for c in checks),
+            success=len(checks) > 0 and all(c.passed for c in checks),
             checks=checks,
             turns_used=metrics.turn_count,
             tool_calls=dict(metrics.tool_counts),
@@ -388,30 +390,22 @@ def _ensure_git_repo(workspace: str) -> None:
     dot_git = os.path.join(workspace, ".git")
     if os.path.isdir(dot_git):
         return
-    subprocess.run(
-        ["git", "init"], cwd=workspace, capture_output=True, timeout=10
-    )
-    subprocess.run(
-        ["git", "config", "user.email", "eval@mini.agent"],
-        cwd=workspace,
-        capture_output=True,
-        timeout=5,
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "Eval Runner"],
-        cwd=workspace,
-        capture_output=True,
-        timeout=5,
-    )
-    subprocess.run(
-        ["git", "add", "-A"], cwd=workspace, capture_output=True, timeout=10
-    )
-    subprocess.run(
-        ["git", "commit", "-m", "Initial state for eval"],
-        cwd=workspace,
-        capture_output=True,
-        timeout=10,
-    )
+
+    def _run(cmd: list[str], timeout: int = 10) -> None:
+        result = subprocess.run(
+            cmd, cwd=workspace, capture_output=True, text=True, timeout=timeout
+        )
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"git command failed: {' '.join(cmd)!r} "
+                f"(rc={result.returncode}) stderr: {result.stderr.strip()}"
+            )
+
+    _run(["git", "init"])
+    _run(["git", "config", "user.email", "eval@mini.agent"], timeout=5)
+    _run(["git", "config", "user.name", "Eval Runner"], timeout=5)
+    _run(["git", "add", "-A"])
+    _run(["git", "commit", "-m", "Initial state for eval"])
 
 
 # ---------------------------------------------------------------------------
