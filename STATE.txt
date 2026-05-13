@@ -1,9 +1,42 @@
 # mini_agent — Architecture & State
 
 A coding agent powered by DeepSeek V4 Pro. Terminal REPL + Textual TUI.
-466 tests, 28+tools, SQLite memory.
+562 tests, 31 tools, SQLite memory.
 
-## This Session (2025-05-16)
+## This Session (2025-05-17)
+
+### Event-driven TUI (no polling)
+- Removed `set_interval(0.08, self._drain)` — was 12.5 Hz polling
+- `_NotifyQueue.put()` now calls `app.call_from_thread(app._drain)` on every enqueue
+- Drain only fires when messages arrive; zero CPU when idle
+- Token-by-token streaming: `_flush_logs()` after each content chunk in `_handle_token`
+- User input fix: `_flush_logs()` after user message box in `_submit` (was waiting for drain)
+
+### Multi-agent depth > 1
+- Removed hard block on spawn/status/collect in sub-agents
+- Depth tracking: `_agent_depth` + `_agent_max_depth` in `_TOOL_CONTEXT`
+- Max depth default: 3. Tools blocked only at max depth, not depth 1.
+- `_spawn_one`: passes `parent_depth` to `run_sub_agent`, sets context for nested spawns
+- Sub-agents get full orchestrator instructions when depth < max
+- Depth info injected as system message (e.g. "at depth 2/3 — you MAY spawn sub-agents")
+- `_spawn_agent`: reads parent depth from context, passes through
+
+### Sub-agent tree display
+- `#agent-tree` in static-pane (right side of tools-log) — hidden when no sub-agents
+- Shows on first spawn (`display: block`), hides when all done
+- Nested hierarchy: `_agent_task_id` as parent_id → children appear indented under parent
+- Nodes: [RUN] → [OK]/[ERR] on completion
+- No emojis: `⚙` replaced with `[tool]` text labels
+
+### Memory fixes
+- `memory.py`: `set_scratchpad`, `save_test_output`, `clear` — added `conn.commit()`
+- Shared connection (`_get_conn`) + incremental token accumulator
+
+### Bug Fixes (167 total)
+
+## Test Suite: 562 tests across 18 files, 0 failed
+
+## Previous Session (2025-05-16)
 
 ### Bug fixes (2)
 - **eval/scorer.py**: `_check_shell` called `subprocess.run()` without `args` positional —
