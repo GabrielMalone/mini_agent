@@ -10,6 +10,8 @@ import os
 import sys
 from dataclasses import dataclass, field
 
+import requests
+
 try:
     import tomllib
 except ImportError:
@@ -263,12 +265,18 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
     if saved:
         messages.extend(saved)
 
+    session = requests.Session()
+    # Limit connection pool to avoid resource waste on long-running sessions.
+    session.mount("https://", requests.adapters.HTTPAdapter(
+        pool_connections=2, pool_maxsize=4))
+
     return {
         "config": config,
         "write_gate": write_gate,
         "read_gate": read_gate,
         "memory": memory,
         "messages": messages,
+        "session": session,
     }
 
 

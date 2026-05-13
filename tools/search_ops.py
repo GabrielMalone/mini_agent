@@ -36,34 +36,15 @@ def build_symbol_index(root: str) -> dict[str, list[dict]]:
     import json as _json
 
     # --- disk cache: avoid re-scanning on every session ---
+    # Single-pass: check mtimes and build index in the same walk.
     cache_path = os.path.join(root, ".mini_agent_index.json")
+    cache_mtime = 0.0
     try:
         if os.path.exists(cache_path):
             cache_mtime = os.path.getmtime(cache_path)
-            # Check if cache is newer than all .py files
-            needs_rebuild = False
-            for dirpath, dirnames, filenames in os.walk(root):
-                dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS and not d.startswith(".")]
-                for fname in filenames:
-                    if fname.endswith(".py"):
-                        fpath = os.path.join(dirpath, fname)
-                        try:
-                            if os.path.getmtime(fpath) > cache_mtime:
-                                needs_rebuild = True
-                                break
-                        except OSError:
-                            pass
-                if needs_rebuild:
-                    break
-            if not needs_rebuild:
-                cached = _json.loads(open(cache_path).read())
-                sym = {k: v for k, v in cached.get("symbols", {}).items()}
-                ref = {k: v for k, v in cached.get("references", {}).items()}
-                _SYMBOL_INDEX = sym
-                _REF_INDEX = ref
-                return sym
     except Exception:
-        pass  # any failure → fall through to rebuild
+        pass
+
     def_pat = re.compile(r"^\s*(def|class)\s+(\w+)")
     word_pat = re.compile(r"\b(\w+)\b")
 
@@ -84,6 +65,8 @@ def build_symbol_index(root: str) -> dict[str, list[dict]]:
     # Raw word references collected in a single pass (word, path, line, context).
     # Filtered to known symbol names after the walk completes.
     _raw_refs: list[tuple[str, str, int, str]] = []
+    needs_rebuild = cache_mtime == 0.0  # no cache → must build
+    all_fresh = True
 
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS and not d.startswith(".")]
@@ -91,6 +74,16 @@ def build_symbol_index(root: str) -> dict[str, list[dict]]:
             if not fname.endswith(".py"):
                 continue
             fpath = os.path.join(dirpath, fname)
+            # Mtime check for cache freshness (merged into the same walk)
+            if not needs_rebuild and cache_mtime > 0:
+                try:
+                    if os.path.getmtime(fpath) > cache_mtime:
+                        needs_rebuild = True
+                        all_fresh = False
+                except OSError:
+                    pass
+            if not needs_rebuild:
+                continue  # still fresh, skip reading
             try:
                 with open(fpath, "r") as f:
                     for lineno, line in enumerate(f, 1):
@@ -111,6 +104,18 @@ def build_symbol_index(root: str) -> dict[str, list[dict]]:
                                 _raw_refs.append((word, fpath, lineno, stripped[:120]))
             except (OSError, PermissionError):
                 continue
+
+    # If cache was valid and no file was newer, return cached data
+    if not needs_rebuild and all_fresh and cache_mtime > 0:
+        try:
+            cached = _json.loads(open(cache_path).read())
+            sym = {k: v for k, v in cached.get("symbols", {}).items()}
+            ref = {k: v for k, v in cached.get("references", {}).items()}
+            _SYMBOL_INDEX = sym
+            _REF_INDEX = ref
+            return sym
+        except Exception:
+            pass  # any failure → fall through to use just-built index
 
     # Filter raw references to only known symbol names
     known_names = set(symbol_idx.keys())
@@ -314,26 +319,16 @@ def _sem_chunk_py(filepath: str) -> list[tuple[int, int, str]]:
 def _sem_index(root: str) -> None:
     """Build/update in-memory index of .py files.
 
+    Single os.walk pass: checks mtimes and indexes changed files.
     Returns immediately if no .py file mtimes have changed since the last
     build (fast no-op on repeated calls).
     """
-    # Quick check: stat-only walk to see if anything changed
-    new_max = 0.0
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS and not d.startswith(".")]
-        for fname in filenames:
-            if fname.endswith(".py"):
-                try:
-                    mt = os.path.getmtime(os.path.join(dirpath, fname))
-                    if mt > new_max:
-                        new_max = mt
-                except OSError:
-                    pass
-    if _SEMANTIC_STORE.get("_max_mtime", 0.0) == new_max and new_max > 0:
-        return  # nothing changed
-
-    current = set()
     import numpy as np
+
+    old_max = _SEMANTIC_STORE.get("_max_mtime", 0.0)
+    new_max = 0.0
+    current: set[str] = set()
+    any_change = False
 
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS and not d.startswith(".")]
@@ -346,8 +341,12 @@ def _sem_index(root: str) -> None:
                 mtime = os.path.getmtime(fpath)
             except OSError:
                 continue
+            if mtime > new_max:
+                new_max = mtime
+            # Skip if up-to-date
             if fpath in _SEMANTIC_STORE and _SEMANTIC_STORE[fpath][0] == mtime:
                 continue
+            any_change = True
             chunks = _sem_chunk_py(fpath)
             if not chunks:
                 _SEMANTIC_STORE[fpath] = (mtime, [])
@@ -355,6 +354,9 @@ def _sem_index(root: str) -> None:
             texts = [t for _, _, t in chunks]
             model = _sem_get_model()
             embeddings = model.encode(texts, show_progress_bar=False)
+            # Pre-normalize embeddings for fast cosine via dot product later
+            norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+            embeddings = embeddings / (norms + 1e-9)
             _SEMANTIC_STORE[fpath] = (mtime, list(zip(
                 [s for s, e, _ in chunks],
                 [e for s, e, _ in chunks],
@@ -371,10 +373,15 @@ def _sem_index(root: str) -> None:
                 if old in _SEMANTIC_STORE:
                     del _SEMANTIC_STORE[old]
 
+    # Clean stale entries (always, even on no-change short circuit)
     stale = [p for p in _SEMANTIC_STORE if p not in current and p != "_max_mtime"]
     for p in stale:
         del _SEMANTIC_STORE[p]
     _SEMANTIC_STORE["_max_mtime"] = new_max
+
+    # If nothing changed at all, bail out early
+    if not any_change and old_max > 0:
+        return
 
 
 @_register("semantic_search")
@@ -394,20 +401,32 @@ def _semantic_search(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> To
 
     model = _sem_get_model()
     query_emb = model.encode([query], show_progress_bar=False)[0]
+    # Normalize query embedding for cosine via dot product
+    query_emb = query_emb / (np.linalg.norm(query_emb) + 1e-9)
 
-    scored: list[tuple[float, str, int, int, str]] = []
+    # Collect all chunk embeddings (already normalized in _sem_index) and metadata
+    metas: list[tuple[str, int, int, str]] = []
+    embs: list[np.ndarray] = []
     for fpath, value in _SEMANTIC_STORE.items():
         if fpath == "_max_mtime":
             continue
         _, chunks = value
         for start, end, text, emb in chunks:
-            a = np.asarray(query_emb)
-            b = np.asarray(emb)
-            cos = float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-9))
-            scored.append((cos, fpath, start, end, text))
+            metas.append((fpath, start, end, text))
+            embs.append(emb)
 
-    scored.sort(key=lambda x: x[0], reverse=True)
-    top = scored[:10]
+    if not embs:
+        return ToolResult(success=True, content="No matches found.")
+
+    # Batched matmul: all cosine similarities in one call
+    emb_matrix = np.asarray(embs)  # shape (N, D)
+    scores = np.dot(emb_matrix, query_emb)  # shape (N,)
+    top_indices = np.argsort(scores)[-10:][::-1]  # top 10, descending
+
+    top: list[tuple[float, str, int, int, str]] = []
+    for idx in top_indices:
+        fpath, start, end, text = metas[idx]
+        top.append((float(scores[idx]), fpath, start, end, text))
 
     if not top:
         return ToolResult(success=True, content="No matches found.")

@@ -438,7 +438,7 @@ class MiniAgentTUI(App):
         self.read_gate = data["read_gate"]
         self.memory = data["memory"]
         self.messages = data["messages"]
-        self.session = requests.Session()
+        self.session = data["session"]
 
         t = self._tui_theme
         static = self.query_one("#static-pane", RichLog)
@@ -447,6 +447,10 @@ class MiniAgentTUI(App):
         if saved := len(self.messages) - 2:
             static.write(f"[{t.dim}]Restored {saved} messages from previous session[/]")
         static.write(f"[{t.dim}]Theme: {t.name}  (/theme to switch)[/]")
+
+        # Cache widget refs for fast drain-loop access (avoid query_one DOM walks)
+        self._chat = self.query_one("#chat-pane", RichLog)
+        self._static = static
 
 
         self.query_one("#input", TextArea).focus()
@@ -474,7 +478,7 @@ class MiniAgentTUI(App):
 
         self._apply_theme()
         self._refresh_git_status()
-        self.set_interval(0.02, self._drain)
+        self.set_interval(0.04, self._drain)
         self.set_interval(2.0, self._update_status_bar)
 
     # ------------------------------------------------------------------
@@ -732,8 +736,8 @@ class MiniAgentTUI(App):
             return
         self._drain_event.clear()
         t = self._tui_theme
-        chat = self.query_one("#chat-pane", RichLog)
-        static = self.query_one("#static-pane", RichLog)
+        chat = self._chat
+        static = self._static
         try:
             while True:
                 msg = self.queue.get_nowait()
@@ -810,7 +814,7 @@ class MiniAgentTUI(App):
         """Close the agent content box if it's currently open."""
         if getattr(self, "_agent_box_open", False):
             try:
-                chat = self.query_one("#chat-pane", RichLog)
+                chat = self._chat
                 t = self._tui_theme
                 MiniAgentTUI._box_close(chat, t.accent)
             except Exception:

@@ -67,6 +67,7 @@ class AgentRuntime:
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
+        self._condition = threading.Condition()  # notified when a sub-agent completes
         self.tasks: dict[str, threading.Thread] = {}
         self.results: dict[str, SubAgentResult] = {}
         self.cancel_events: dict[str, threading.Event] = {}
@@ -101,6 +102,9 @@ class AgentRuntime:
             self.tasks.pop(task_id, None)
             self.cancel_events.pop(task_id, None)
             self.max_turns.pop(task_id, None)
+            # Wake up any waiting collect_any/collect_agent
+            with self._condition:
+                self._condition.notify_all()
 
     # ---- query ----
 

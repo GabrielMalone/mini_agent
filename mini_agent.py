@@ -117,7 +117,7 @@ def main() -> None:
         _log(config.verbose, "(quiet mode — use --quiet to suppress tool logs)")
     _log(config.verbose)
 
-    session = requests.Session()
+    session = session_data["session"]
     try:
         while True:
             try:

@@ -117,17 +117,20 @@ def _parse_stream(response: requests.Response, on_token: callable = None, on_too
                             if "arguments" in fn_delta:
                                 tc["function"]["arguments"] += fn_delta["arguments"]
 
-                        # Fire on_tool_ready when arguments form valid JSON
+                        # Fire on_tool_ready when arguments form valid JSON.
+                        # Brace-balance pre-check avoids most premature parse
+                        # failures on still-fragmented arguments.
                         if on_tool_ready and idx not in fired_indices:
                             args = tc["function"]["arguments"]
-                            try:
-                                json.loads(args)
-                                fired_indices.add(idx)
-                                ready = dict(tc)
-                                ready["_index"] = idx
-                                on_tool_ready(ready)
-                            except (json.JSONDecodeError, ValueError):
-                                pass  # still fragmentary
+                            if args.count("{") == args.count("}") and args.count("[") == args.count("]"):
+                                try:
+                                    json.loads(args)
+                                    fired_indices.add(idx)
+                                    ready = dict(tc)
+                                    ready["_index"] = idx
+                                    on_tool_ready(ready)
+                                except (json.JSONDecodeError, ValueError):
+                                    pass  # still fragmentary
             except Exception:
                 continue
     except (

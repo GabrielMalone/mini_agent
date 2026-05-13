@@ -49,7 +49,7 @@ def _request_with_retry(
         if cancel_event is not None and cancel_event.is_set():
             return None
         try:
-            r = post(*args, stream=stream, **kwargs)
+            r = post(*args, stream=stream, timeout=(10, 120), **kwargs)
             if r.ok or r.status_code not in _RETRYABLE_STATUSES:
                 return r
             # Transient error — retry

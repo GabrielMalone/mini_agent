@@ -39,6 +39,7 @@ def run_sub_agent(
     stream: bool = False,
     tui_queue=None,       # Queue for TUI subagent pane streaming
     tui_task_id: str = "",  # task_id for TUI streaming prefix
+    task_id: str = "",     # task_id for direct runtime lookup (avoids O(N) scan)
 ) -> SubAgentResult:
     """Run a sub-agent loop in the current thread (called from a background thread).
 
@@ -94,14 +95,10 @@ def run_sub_agent(
         # Re-read max_turns from runtime (parent may have extended it)
         from tools import _TOOL_CONTEXT
         runtime_ctx = _TOOL_CONTEXT.__dict__.get("_agent_runtime")
-        # Find our own task_id by looking up which task we are
-        if runtime_ctx is not None:
-            for tid, t in list(runtime_ctx.tasks.items()):
-                if t.ident == threading.current_thread().ident:
-                    updated = runtime_ctx.get_max_turns(tid)
-                    if updated is not None and updated > max_turns:
-                        max_turns = updated
-                    break
+        if runtime_ctx is not None and task_id:
+            updated = runtime_ctx.get_max_turns(task_id)
+            if updated is not None and updated > max_turns:
+                max_turns = updated
         if cancel_event is not None and cancel_event.is_set():
             return SubAgentResult(
                 success=False,

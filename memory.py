@@ -244,19 +244,27 @@ def _prune_by_tokens(
     else:
         pruned = []
 
-    # 2. Token budget — trim oldest turns until under limit
-    while _total_tokens(messages) > max_tokens and len(messages) > 1:
-        # Find first user message boundary
-        cut = 0
-        for i, m in enumerate(messages):
-            if m.get("role") == "user":
+    # 2. Token budget — trim oldest turns until under limit.
+    #    Precompute per-message token estimates and subtract incrementally
+    #    instead of re-scanning all messages on every iteration.
+    token_counts = [_estimate_tokens(m) for m in messages]
+    total = sum(token_counts)
+    start = 0
+    while total > max_tokens and start < len(messages) - 1:
+        # Find first user message boundary from current start
+        cut = start
+        for i in range(start, len(messages)):
+            if messages[i].get("role") == "user":
                 cut = i
                 break
-        if cut == 0:
-            # No user message found — stop, can't safely prune further
-            break
-        pruned = pruned + messages[:cut]
-        messages = messages[cut:]
+        if cut == start:
+            break  # no user message found — stop, can't safely prune further
+        total -= sum(token_counts[start:cut])
+        pruned.extend(messages[start:cut])
+        start = cut
+
+    if start > 0:
+        messages = messages[start:]
 
     return messages, pruned
 
@@ -294,6 +302,7 @@ class MemoryStore:
         self._db_path = _db_path(filepath)
         self._max_messages = max_messages
         self._max_tokens = max_tokens
+        self._last_saved_count = 0  # for incremental save
 
         # Migrate from old paths if needed
         _migrate_old_paths(filepath, self._db_path)
@@ -372,17 +381,31 @@ class MemoryStore:
         try:
             with sqlite3.connect(self._db_path) as conn:
                 conn.execute("BEGIN IMMEDIATE")
-                conn.execute(_DELETE)
-                conn.executemany(
-                    _INSERT,
-                    [(m["role"], json.dumps(m)) for m in kept],
-                )
+                # Incremental save: if no pruning happened and we only
+                # appended messages, INSERT just the new rows instead of
+                # rewriting everything.
+                need_full_rewrite = bool(pruned) or len(kept) < self._last_saved_count
+                if need_full_rewrite:
+                    conn.execute(_DELETE)
+                    conn.executemany(
+                        _INSERT,
+                        [(m["role"], json.dumps(m)) for m in kept],
+                    )
+                else:
+                    new_msgs = kept[self._last_saved_count:]
+                    if new_msgs:
+                        conn.executemany(
+                            _INSERT,
+                            [(m["role"], json.dumps(m)) for m in new_msgs],
+                        )
                 conn.commit()
+            self._last_saved_count = len(kept)
         except sqlite3.Error:
             pass  # fail gracefully — next save will retry
 
     def clear(self) -> None:
         """Remove all messages and reclaim disk space."""
+        self._last_saved_count = 0
         try:
             with sqlite3.connect(self._db_path) as conn:
                 conn.execute(_DELETE)
@@ -510,21 +533,24 @@ def _clean_messages(messages: list[dict]) -> list[dict]:
             if tcid:
                 valid_ids.add(tcid)
 
-    # ---- forward pass: truncate incomplete tool-call sequences ----
-    result: list[dict] = []
-    for i, m in enumerate(pass1):
-        tool_ids = {tc["id"] for tc in m.get("tool_calls", [])}
-        if tool_ids:
-            remaining = pass1[i + 1:]
-            matched = {
-                r.get("tool_call_id")
-                for r in remaining
-                if r.get("role") == "tool"
-            }
-            if not tool_ids.issubset(matched):
-                break  # incomplete — discard this assistant and everything after
-        result.append(m)
-    return result
+    # ---- forward pass (single reverse scan): truncate incomplete tool-call sequences ----
+    # Scan backward collecting tool_call_ids from tool messages.
+    # When we hit an assistant with tool_calls, its ids must all be in the
+    # set (meaning matching tool results exist *after* it in forward order).
+    # The first incomplete assistant we find going backward is the truncation point.
+    seen_tool_ids: set[str] = set()
+    truncate_at = len(pass1)
+    for i in range(len(pass1) - 1, -1, -1):
+        m = pass1[i]
+        if m.get("role") == "tool":
+            tcid = m.get("tool_call_id", "")
+            if tcid:
+                seen_tool_ids.add(tcid)
+        else:
+            tool_ids = {tc["id"] for tc in m.get("tool_calls", [])}
+            if tool_ids and not tool_ids.issubset(seen_tool_ids):
+                truncate_at = i
+    return pass1[:truncate_at]
 
 
 def _migrate_old_paths(new_filepath: str, db_path: str) -> None:

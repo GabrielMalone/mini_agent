@@ -247,12 +247,11 @@ def _list_directory(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> Too
             content=f"List blocked by safety layer: {safety_result.reason}",
         )
     try:
-        entries = os.listdir(safety_result.resolved_path)
         rows: list[str] = []
-        for name in sorted(entries):
-            full = os.path.join(safety_result.resolved_path, name)
-            prefix = "d" if os.path.isdir(full) else "f"
-            rows.append(f"  [{prefix}] {name}")
+        with os.scandir(safety_result.resolved_path) as entries:
+            for entry in sorted(entries, key=lambda e: e.name):
+                prefix = "d" if entry.is_dir(follow_symlinks=False) else "f"
+                rows.append(f"  [{prefix}] {entry.name}")
         if not rows:
             content = f"{safety_result.resolved_path}  (empty)"
         else:

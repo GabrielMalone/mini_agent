@@ -89,6 +89,7 @@ def _spawn_one(
             shared_context=shared_context,
             tui_queue=tui_queue if visible else None,
             tui_task_id=task_id if visible else "",
+            task_id=task_id,
         )
         runtime.store_result(task_id, result)
 
@@ -329,25 +330,38 @@ def _collect_agent(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> Too
         )
 
     if status == "running":
-        # Block until done
-        thread = None
-        with runtime._lock:
-            thread = runtime.tasks.get(task_id)
+        # Poll until done, using condition variable for notification
+        # (avoids blocking on thread.join(120))
+        deadline = time.monotonic() + _COLLECT_TIMEOUT
+        while time.monotonic() < deadline:
+            current_status = runtime.get_status(task_id)
+            if current_status != "running":
+                break
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            with runtime._condition:
+                runtime._condition.wait(timeout=min(0.5, remaining))
 
-        if thread is not None:
-            thread.join(timeout=_COLLECT_TIMEOUT)
-            if thread.is_alive():
-                runtime.cancel(task_id)
-                thread.join(timeout=5)
-                if thread.is_alive():
-                    # Zombie thread — it ignored cancellation for >5s.
-                    # Mark abandoned so its eventual store_result() is a no-op.
-                    runtime.mark_abandoned(task_id)
-                    print(
-                        f"[runtime] WARNING: zombie thread detected for task "
-                        f"'{task_id}' — marking abandoned to prevent state corruption",
-                        file=__import__("sys").stderr, flush=True,
-                    )
+        # If still running after timeout, cancel and wait briefly
+        final_status = runtime.get_status(task_id)
+        if final_status == "running":
+            runtime.cancel(task_id)
+            # Short wait for cancellation to take effect
+            cancel_deadline = time.monotonic() + 5
+            while time.monotonic() < cancel_deadline:
+                if runtime.get_status(task_id) != "running":
+                    break
+                with runtime._condition:
+                    runtime._condition.wait(timeout=min(0.5, cancel_deadline - time.monotonic()))
+            if runtime.get_status(task_id) == "running":
+                # Still running after cancel+wait — mark abandoned
+                runtime.mark_abandoned(task_id)
+                print(
+                    f"[runtime] WARNING: zombie thread detected for task "
+                    f"'{task_id}' — marking abandoned to prevent state corruption",
+                    file=__import__("sys").stderr, flush=True,
+                )
                 return ToolResult(
                     success=False,
                     content=(
@@ -441,7 +455,7 @@ def _collect_any(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolR
             if result is not None:
                 return _format_collect_any(tid, result)
 
-    # Poll until one completes
+    # Poll until one completes, using condition variable for notification
     deadline = time.monotonic() + _COLLECT_ANY_TIMEOUT
     while time.monotonic() < deadline:
         for tid in candidates:
@@ -450,7 +464,11 @@ def _collect_any(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolR
                 result = runtime.get_result(tid)
                 if result is not None:
                     return _format_collect_any(tid, result)
-        time.sleep(_COLLECT_ANY_POLL)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        with runtime._condition:
+            runtime._condition.wait(timeout=min(_COLLECT_ANY_POLL, remaining))
 
     return ToolResult(
         success=False,
