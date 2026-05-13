@@ -104,6 +104,8 @@ def _spawn_one(
             # Signal TUI to hide sub-agent streaming pane
             if tui_queue is not None:
                 tui_queue.put(("sub_done", task_id))
+                status = "completed" if result.success else "error"
+                tui_queue.put(("sub_tree", "status", task_id, status))
         finally:
             config.stream = original_stream
 
@@ -112,6 +114,12 @@ def _spawn_one(
     # Set subscriptions if provided
     if subscriptions is not None:
         runtime.set_subscriptions(task_id, subscriptions)
+    # Push tree spawn message via the context queue
+    from tools import _TOOL_CONTEXT
+    tui_queue = _TOOL_CONTEXT.__dict__.get("_tui_queue")
+    if tui_queue is not None:
+        label = task[:60].replace("\n", " ")
+        tui_queue.put(("sub_tree", "spawn", task_id, "", label))
     thread.start()
     return task_id
 

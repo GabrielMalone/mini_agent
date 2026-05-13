@@ -568,7 +568,7 @@ class MiniAgentTUI(App):
             dirty = "*" if self._git_dirty else ""
             parts.append(f"⎇ {self._git_branch}{dirty}")
         if self._active_tool:
-            parts.append(f"⚙ {self._active_tool}")
+            parts.append(f"[tool] {self._active_tool}")
         if self._total_turns:
             parts.append(f"↻ turn {self._total_turns}")
         if self._total_tokens:
@@ -903,7 +903,7 @@ class MiniAgentTUI(App):
                     self._in_thinking = False
                     self._close_agent_box()
                     self._active_tool = msg.summary.split("(")[0].strip() if "(" in msg.summary else msg.summary[:20]
-                    self._box_open(tools_log, _safe(f"⚙ {msg.summary}"), t.yellow)
+                    self._box_open(tools_log, _safe(f"[tool] {msg.summary}"), t.yellow)
                 elif isinstance(msg, _ToolEnd):
                     symbol = "✓" if msg.ok else "✗"
                     color = t.green if msg.ok else t.red
