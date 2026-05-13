@@ -44,7 +44,6 @@ def _request_with_retry(
     *timeout* is the (connect, read) timeout tuple passed to requests.post.
     """
     post = session.post if hasattr(session, "post") and callable(session.post) else requests.post
-    kwargs.pop("stream", None)  # avoid duplicate kwarg
     last_exc: Exception | None = None
     for attempt in range(_MAX_RETRIES + 1):
         # Check cancel before making a request (avoids wasted HTTP call on shutdown)

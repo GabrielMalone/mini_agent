@@ -170,28 +170,40 @@ def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: 
                 content=f"Started background task {task_id}. Use task_status to check.",
             )
 
-        t_out = threading.Thread(
-            target=_stream_reader, args=(proc.stdout, stdout_lines, True, on_output, ""), daemon=True,
-        )
-        t_err = threading.Thread(
-            target=_stream_reader, args=(proc.stderr, stderr_lines, True, on_output, "[stderr] "), daemon=True,
-        )
-        t_out.start()
-        t_err.start()
+        if on_output is not None:
+            # Streaming mode: need threads to forward output in real-time
+            t_out = threading.Thread(
+                target=_stream_reader, args=(proc.stdout, stdout_lines, True, on_output, ""), daemon=True,
+            )
+            t_err = threading.Thread(
+                target=_stream_reader, args=(proc.stderr, stderr_lines, True, on_output, "[stderr] "), daemon=True,
+            )
+            t_out.start()
+            t_err.start()
 
-        try:
-            proc.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            proc.kill()
+            try:
+                proc.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                t_out.join(timeout=2)
+                t_err.join(timeout=2)
+                return ToolResult(success=False, content=f"Command timed out after {timeout}s")
+
             t_out.join(timeout=2)
             t_err.join(timeout=2)
-            return ToolResult(success=False, content=f"Command timed out after {timeout}s")
 
-        t_out.join(timeout=2)
-        t_err.join(timeout=2)
-
-        stdout = "\n".join(stdout_lines)
-        stderr = "\n".join(stderr_lines)
+            stdout = "\n".join(stdout_lines)
+            stderr = "\n".join(stderr_lines)
+        else:
+            # No streaming: use communicate() to avoid thread overhead
+            try:
+                out, err = proc.communicate(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                out, err = proc.communicate()
+                return ToolResult(success=False, content=f"Command timed out after {timeout}s")
+            stdout = out
+            stderr = err
 
         parts = [f"exit_code={proc.returncode}"]
         if stdout:
@@ -417,27 +429,15 @@ def _run_tests(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResu
             content=f"Started background test run {task_id}. Use task_status to check.",
         )
 
-    # Foreground: collect output via threads, same pattern as run_shell
-    stdout_lines: list[str] = []
-    stderr_lines: list[str] = []
-
-    t_out = threading.Thread(target=_stream_reader, args=(proc.stdout, stdout_lines), daemon=True)
-    t_err = threading.Thread(target=_stream_reader, args=(proc.stderr, stderr_lines), daemon=True)
-    t_out.start()
-    t_err.start()
-
+    # Foreground: use communicate() to avoid thread overhead
     try:
-        proc.wait(timeout=timeout)
+        out, err = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
         proc.kill()
-        t_out.join(timeout=2)
-        t_err.join(timeout=2)
+        out, err = proc.communicate()
         return ToolResult(success=False, content=f"Tests timed out after {timeout}s")
 
-    t_out.join(timeout=2)
-    t_err.join(timeout=2)
-
-    output = ("\n".join(stdout_lines) + "\n".join(stderr_lines)).strip()
+    output = (out + err).strip()
     # Persist to DB so agent can read failures without re-running
     _persist_test_output(output)
 

@@ -75,22 +75,29 @@ def _estimate_tokens(msg: dict) -> int:
 def _total_tokens(messages: list[dict]) -> int:
     """Sum estimated tokens across all messages.
 
-    Cached by list identity — repeated calls on the same unmodified
-    list return the memoized value.  Any mutation resets the cache.
+    Uses a running accumulator keyed by list length.  When messages are
+    only appended (the common case), only new messages are counted.
+    When the list shrinks (pruning), a full recount is done.
+    This avoids the O(n²) behaviour of recounting every message on
+    every turn as the conversation grows.
     """
-    global _TOKENS_CACHE_ID, _TOKENS_CACHE_COUNT
-    mid = id(messages)
-    if mid == _TOKENS_CACHE_ID:
-        return _TOKENS_CACHE_COUNT
-    count = sum(_estimate_tokens(m) for m in messages)
-    _TOKENS_CACHE_ID = mid
-    _TOKENS_CACHE_COUNT = count
-    return count
+    global _ACCUM_COUNT, _ACCUM_TOTAL
+    n = len(messages)
+    if n >= _ACCUM_COUNT:
+        # Only count new messages appended since last call
+        new_tokens = sum(_estimate_tokens(m) for m in messages[_ACCUM_COUNT:])
+        _ACCUM_TOTAL += new_tokens
+        _ACCUM_COUNT = n
+    else:
+        # List shrank (pruned) — full recount
+        _ACCUM_TOTAL = sum(_estimate_tokens(m) for m in messages)
+        _ACCUM_COUNT = n
+    return _ACCUM_TOTAL
 
 
-# Identity-based cache for _total_tokens
-_TOKENS_CACHE_ID: int = 0
-_TOKENS_CACHE_COUNT: int = 0
+# Running accumulator for _total_tokens (length-based, not identity-based)
+_ACCUM_COUNT: int = 0
+_ACCUM_TOTAL: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -324,6 +331,8 @@ class MemoryStore:
         self._max_messages = max_messages
         self._max_tokens = max_tokens
         self._last_saved_count = 0  # for incremental save
+        self._conn: Optional[sqlite3.Connection] = None
+        self._token_count: int = 0  # running accumulator for saved messages
 
         # Migrate from old paths if needed
         _migrate_old_paths(filepath, self._db_path)
@@ -334,7 +343,7 @@ class MemoryStore:
             os.makedirs(parent, exist_ok=True)
 
         try:
-            conn = sqlite3.connect(self._db_path)
+            conn = self._get_conn()
             conn.execute(_CREATE_TABLE)
             conn.execute(
                 "CREATE TABLE IF NOT EXISTS scratchpad ("
@@ -353,12 +362,38 @@ class MemoryStore:
             )
             conn.execute("INSERT OR IGNORE INTO test_output (id, output) VALUES (1, '')")
             conn.commit()
-        finally:
-            conn.close()
+        except sqlite3.Error:
+            pass  # will retry on next operation
 
     @property
     def filepath(self) -> str:
         return self._filepath
+
+    @property
+    def token_count(self) -> int:
+        """Return the running token estimate for the currently saved messages."""
+        return self._token_count
+
+    def _get_conn(self) -> sqlite3.Connection:
+        """Return a cached SQLite connection with WAL mode enabled.
+
+        Creates the connection on first call.  All internal methods
+        share this single connection instead of opening a new one
+        for every operation.
+        """
+        if self._conn is None:
+            self._conn = sqlite3.connect(self._db_path)
+            self._conn.execute("PRAGMA journal_mode=WAL")
+        return self._conn
+
+    def close(self) -> None:
+        """Close the shared database connection (if open)."""
+        if self._conn is not None:
+            try:
+                self._conn.close()
+            except sqlite3.Error:
+                pass
+            self._conn = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -367,8 +402,8 @@ class MemoryStore:
     def load(self) -> list[dict]:
         """Load saved messages, stripping incomplete tool-call sequences."""
         try:
-            with sqlite3.connect(self._db_path) as conn:
-                rows = conn.execute(_SELECT).fetchall()
+            conn = self._get_conn()
+            rows = conn.execute(_SELECT).fetchall()
         except sqlite3.Error:
             return []
 
@@ -386,40 +421,52 @@ class MemoryStore:
         cleaned = _clean_messages(messages)
         cleaned, compressed = _compress_tool_results(cleaned, keep_recent=6)
 
+        # Incremental token accounting: only count new messages since
+        # last save.  When compression or pruning occurs, adjust below.
+        new_start = min(self._last_saved_count, len(cleaned))
+        new_tokens = sum(_estimate_tokens(m) for m in cleaned[new_start:])
+        self._token_count += new_tokens
+
         kept, pruned = _prune_by_tokens(
             cleaned, self._max_tokens, self._max_messages,
         )
+
+        # Subtract tokens for pruned messages
+        if pruned:
+            self._token_count -= sum(_estimate_tokens(m) for m in pruned)
 
         # Inject summary of pruned context
         if pruned:
             summary = _summarize_pruned(pruned)
             if summary:
-                kept.insert(0, {"role": "user", "content": summary})
+                summary_msg = {"role": "user", "content": summary}
+                kept.insert(0, summary_msg)
+                self._token_count += _estimate_tokens(summary_msg)
 
         self._ensure_parent()
         try:
-            with sqlite3.connect(self._db_path) as conn:
-                conn.execute("BEGIN IMMEDIATE")
-                # Incremental save: if no pruning happened and we only
-                # appended messages, INSERT just the new rows instead of
-                # rewriting everything.
-                need_full_rewrite = (bool(pruned) or compressed
-                                     or len(kept) < self._last_saved_count)
-                if need_full_rewrite:
-                    conn.execute(_DELETE)
+            conn = self._get_conn()
+            conn.execute("BEGIN IMMEDIATE")
+            # Incremental save: if no pruning happened and we only
+            # appended messages, INSERT just the new rows instead of
+            # rewriting everything.
+            need_full_rewrite = (bool(pruned) or compressed
+                                 or len(kept) < self._last_saved_count)
+            if need_full_rewrite:
+                conn.execute(_DELETE)
+                conn.executemany(
+                    _INSERT,
+                    [(m["role"], json.dumps(m)) for m in kept],
+                )
+            else:
+                new_msgs = kept[self._last_saved_count:]
+                if new_msgs:
                     conn.executemany(
                         _INSERT,
-                        [(m["role"], json.dumps(m)) for m in kept],
+                        [(m["role"], json.dumps(m)) for m in new_msgs],
                     )
-                else:
-                    new_msgs = kept[self._last_saved_count:]
-                    if new_msgs:
-                        conn.executemany(
-                            _INSERT,
-                            [(m["role"], json.dumps(m)) for m in new_msgs],
-                        )
-                conn.commit()
-                self._last_saved_count = len(kept)
+            conn.commit()
+            self._last_saved_count = len(kept)
         except sqlite3.Error as exc:
             try:
                 conn.rollback()
@@ -431,10 +478,14 @@ class MemoryStore:
     def clear(self) -> None:
         """Remove all messages and reclaim disk space."""
         self._last_saved_count = 0
+        self._token_count = 0
         try:
-            with sqlite3.connect(self._db_path) as conn:
-                conn.execute(_DELETE)
-                conn.execute(_VACUUM)
+            conn = self._get_conn()
+            conn.execute(_DELETE)
+            conn.execute("DELETE FROM scratchpad")
+            conn.execute("DELETE FROM test_output")
+            conn.commit()
+            conn.execute(_VACUUM)
         except (sqlite3.Error, OSError):
             try:
                 os.remove(self._db_path)
@@ -444,36 +495,37 @@ class MemoryStore:
     def get_scratchpad(self) -> str:
         """Return the current scratchpad content (empty string if none)."""
         try:
-            with sqlite3.connect(self._db_path) as conn:
-                conn.execute(
-                    "CREATE TABLE IF NOT EXISTS scratchpad ("
-                    "id INTEGER PRIMARY KEY CHECK (id = 1),"
-                    "content TEXT NOT NULL DEFAULT ''"
-                    ")"
-                )
-                conn.execute("INSERT OR IGNORE INTO scratchpad (id, content) VALUES (1, '')")
-                row = conn.execute(
-                    "SELECT content FROM scratchpad WHERE id = 1"
-                ).fetchone()
-                return row[0] if row else ""
+            conn = self._get_conn()
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS scratchpad ("
+                "id INTEGER PRIMARY KEY CHECK (id = 1),"
+                "content TEXT NOT NULL DEFAULT ''"
+                ")"
+            )
+            conn.execute("INSERT OR IGNORE INTO scratchpad (id, content) VALUES (1, '')")
+            row = conn.execute(
+                "SELECT content FROM scratchpad WHERE id = 1"
+            ).fetchone()
+            return row[0] if row else ""
         except sqlite3.Error:
             return ""
 
     def set_scratchpad(self, content: str) -> None:
         """Update the scratchpad content."""
         try:
-            with sqlite3.connect(self._db_path) as conn:
-                conn.execute(
-                    "CREATE TABLE IF NOT EXISTS scratchpad ("
-                    "id INTEGER PRIMARY KEY CHECK (id = 1),"
-                    "content TEXT NOT NULL DEFAULT ''"
-                    ")"
-                )
-                conn.execute("INSERT OR IGNORE INTO scratchpad (id, content) VALUES (1, '')")
-                conn.execute(
-                    "INSERT OR REPLACE INTO scratchpad (id, content) VALUES (1, ?)",
-                    (content,),
-                )
+            conn = self._get_conn()
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS scratchpad ("
+                "id INTEGER PRIMARY KEY CHECK (id = 1),"
+                "content TEXT NOT NULL DEFAULT ''"
+                ")"
+            )
+            conn.execute("INSERT OR IGNORE INTO scratchpad (id, content) VALUES (1, '')")
+            conn.execute(
+                "INSERT OR REPLACE INTO scratchpad (id, content) VALUES (1, ?)",
+                (content,),
+            )
+            conn.commit()
         except sqlite3.Error as exc:
             import sys
             print(f"Warning: scratchpad write failed: {exc}", file=sys.stderr)
@@ -481,22 +533,23 @@ class MemoryStore:
     def get_test_output(self) -> str:
         """Return the last saved test output (empty string if none)."""
         try:
-            with sqlite3.connect(self._db_path) as conn:
-                row = conn.execute(
-                    "SELECT output FROM test_output WHERE id = 1"
-                ).fetchone()
-                return row[0] if row else ""
+            conn = self._get_conn()
+            row = conn.execute(
+                "SELECT output FROM test_output WHERE id = 1"
+            ).fetchone()
+            return row[0] if row else ""
         except sqlite3.Error:
             return ""
 
     def save_test_output(self, output: str) -> None:
         """Save the latest test run output."""
         try:
-            with sqlite3.connect(self._db_path) as conn:
-                conn.execute(
-                    "INSERT OR REPLACE INTO test_output (id, output) VALUES (1, ?)",
-                    (output,),
-                )
+            conn = self._get_conn()
+            conn.execute(
+                "INSERT OR REPLACE INTO test_output (id, output) VALUES (1, ?)",
+                (output,),
+            )
+            conn.commit()
         except sqlite3.Error:
             pass  # fail gracefully
 
@@ -514,8 +567,8 @@ class MemoryStore:
         """Create the messages table if it doesn't exist."""
         self._ensure_parent()
         try:
-            with sqlite3.connect(self._db_path) as conn:
-                conn.execute(_CREATE_TABLE)
+            conn = self._get_conn()
+            conn.execute(_CREATE_TABLE)
         except sqlite3.Error:
             pass
 

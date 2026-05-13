@@ -379,32 +379,61 @@ class MiniAgentTUI(App):
     # Box-drawing helpers
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _box_open(log: RichLog, label: str, color: str) -> None:
-        """Write the top border of a message box.
+    def _box_open(self, log: RichLog, label: str, color: str) -> None:
+        """Buffer the top border of a message box (rendered on next flush)."""
+        self._write_to_log(log, f"[{color}]╭── {label} ──[/]")
 
-        Produces:  ╭── Label ──
-        """
-        log.write(f"[{color}]╭── {label} ──[/]")
+    def _box_line(self, log: RichLog, text: str, color: str) -> None:
+        """Buffer a single content line inside a message box."""
+        self._write_to_log(log, f"[{color}]│ {text}[/]")
 
-    @staticmethod
-    def _box_line(log: RichLog, text: str, color: str) -> None:
-        """Write a single content line inside a message box."""
-        log.write(f"[{color}]│ {text}[/]")
+    def _box_empty(self, log: RichLog, color: str) -> None:
+        """Buffer an empty line inside a message box (side border only)."""
+        self._write_to_log(log, f"[{color}]│[/]")
 
-    @staticmethod
-    def _box_empty(log: RichLog, color: str) -> None:
-        """Write an empty line inside a message box (side border only)."""
-        log.write(f"[{color}]│[/]")
-
-    @staticmethod
-    def _box_close(log: RichLog, color: str, label: str = "") -> None:
-        """Write the bottom border of a message box.
-
-        Produces:  ╰── label
-        """
+    def _box_close(self, log: RichLog, color: str, label: str = "") -> None:
+        """Buffer the bottom border of a message box (rendered on next flush)."""
         suffix = f" {label}" if label else ""
-        log.write(f"[{color}]╰──[/]{suffix}")
+        self._write_to_log(log, f"[{color}]╰──[/]{suffix}")
+
+    def _write_to_log(self, log: RichLog, text: str) -> None:
+        """Buffer text for a given RichLog instead of writing immediately.
+
+        During a drain cycle this accumulates text into per-pane buffers.
+        At end of drain, _flush_logs() writes each buffer with a single
+        RichLog.write() call to batch re-renders.
+        """
+        if log is self._chat:
+            self._chat_buf += text + "\n"
+        elif log is self._tools_log:
+            self._tools_buf += text + "\n"
+        else:
+            # Sub-agent panes or other dynamic RichLog widgets — buffer by id.
+            if not hasattr(self, "_log_bufs"):
+                self._log_bufs: dict[int, str] = {}
+            lid = id(log)
+            self._log_bufs[lid] = self._log_bufs.get(lid, "") + text + "\n"
+            if not hasattr(self, "_log_buf_objs"):
+                self._log_buf_objs: dict[int, RichLog] = {}
+            self._log_buf_objs[lid] = log
+
+    def _flush_logs(self) -> None:
+        """Write all buffered text to their RichLog widgets in one batch."""
+        if self._chat_buf:
+            self._chat.write(self._chat_buf.rstrip("\n"))
+            self._chat_buf = ""
+        if self._tools_buf:
+            self._tools_log.write(self._tools_buf.rstrip("\n"))
+            self._tools_buf = ""
+        if hasattr(self, "_log_bufs"):
+            for lid, text in self._log_bufs.items():
+                if text:
+                    log = self._log_buf_objs.get(lid)
+                    if log:
+                        log.write(text.rstrip("\n"))
+            self._log_bufs.clear()
+            if hasattr(self, "_log_buf_objs"):
+                self._log_buf_objs.clear()
 
     # ------------------------------------------------------------------
     # Theme helpers
@@ -483,6 +512,8 @@ class MiniAgentTUI(App):
         self.queue: Queue = _NotifyQueue(self._drain_event)
         self.worker: AgentWorker | None = None
         self._buf = ""
+        self._chat_buf = ""
+        self._tools_buf = ""
         self._thinking_buf = ""
         self._thinking_flush_pos = 0
         self._in_thinking = False
@@ -503,7 +534,7 @@ class MiniAgentTUI(App):
 
         self._apply_theme()
         self._refresh_git_status()
-        self.set_interval(0.04, self._drain)
+        self.set_interval(0.08, self._drain)
         self.set_interval(2.0, self._update_status_bar)
 
     # ------------------------------------------------------------------
@@ -671,9 +702,9 @@ class MiniAgentTUI(App):
         t = self._tui_theme
         chat = self.query_one("#chat-pane", RichLog)
         chat.write("")
-        MiniAgentTUI._box_open(chat, "You", t.accent)
-        MiniAgentTUI._box_line(chat, _safe(text), t.green)
-        MiniAgentTUI._box_close(chat, t.accent)
+        self._box_open(chat, "You", t.accent)
+        self._box_line(chat, _safe(text), t.green)
+        self._box_close(chat, t.accent)
 
         self._buf = ""
         self._thinking_buf = ""
@@ -787,7 +818,7 @@ class MiniAgentTUI(App):
                         if not hasattr(self, "_sub_colors"):
                             self._sub_colors = {}
                         self._sub_colors[task_id] = ac
-                        rlog.write(f"[{ac}]Agent {self._sub_count}  ({task_id})[/]")
+                        self._write_to_log(rlog, f"[{ac}]Agent {self._sub_count}  ({task_id})[/]")
                         sap.mount(rlog)
                         self._sub_panes[task_id] = rlog
                     sublog = self._sub_panes[task_id]
@@ -798,7 +829,7 @@ class MiniAgentTUI(App):
                     ac = self._sub_colors[task_id]
                     for line in buf.split("\n")[:-1]:
                         if line:
-                            sublog.write(f"[{ac}][/] {_safe(line)}", shrink=False)
+                            self._write_to_log(sublog, f"[{ac}][/] {_safe(line)}")
                     self._sub_bufs[task_id] = buf.split("\n")[-1]
                     continue
 
@@ -877,22 +908,22 @@ class MiniAgentTUI(App):
                     self._in_thinking = False
                     self._close_agent_box()
                     self._active_tool = msg.summary.split("(")[0].strip() if "(" in msg.summary else msg.summary[:20]
-                    MiniAgentTUI._box_open(tools_log, _safe(f"⚙ {msg.summary}"), t.yellow)
+                    self._box_open(tools_log, _safe(f"⚙ {msg.summary}"), t.yellow)
                 elif isinstance(msg, _ToolEnd):
                     symbol = "✓" if msg.ok else "✗"
                     color = t.green if msg.ok else t.red
                     detail = _safe(msg.detail)
                     if len(detail) > 120:
                         detail = detail[:120] + "..."
-                    MiniAgentTUI._box_close(tools_log, color, f"{symbol} {detail}")
+                    self._box_close(tools_log, color, f"{symbol} {detail}")
                     self._active_tool = ""
                 elif isinstance(msg, _ToolOutput):
-                    MiniAgentTUI._box_line(tools_log, _safe(msg.text), t.dim)
+                    self._box_line(tools_log, _safe(msg.text), t.dim)
                 elif isinstance(msg, _Error):
                     self._close_agent_box()
-                    MiniAgentTUI._box_open(chat, "✗ Error", t.red)
-                    MiniAgentTUI._box_line(chat, _safe(msg.msg), t.red)
-                    MiniAgentTUI._box_close(chat, t.red)
+                    self._box_open(chat, "✗ Error", t.red)
+                    self._box_line(chat, _safe(msg.msg), t.red)
+                    self._box_close(chat, t.red)
                 elif isinstance(msg, _Done):
                     # Ignore stale _Done from a cancelled/previous turn
                     if msg.turn_id != self._turn_id:
@@ -902,6 +933,8 @@ class MiniAgentTUI(App):
 
         except Empty:
             pass
+
+        self._flush_logs()
 
         # Worker finished without sending Done (cancelled or crashed)
         if not self._turn_finished and (self.worker is None or not self.worker.is_alive()):
@@ -913,7 +946,7 @@ class MiniAgentTUI(App):
             try:
                 chat = self._chat
                 t = self._tui_theme
-                MiniAgentTUI._box_close(chat, t.accent)
+                self._box_close(chat, t.accent)
             except Exception:
                 pass
             self._agent_box_open = False
@@ -934,7 +967,7 @@ class MiniAgentTUI(App):
             self._in_thinking = True
             self._thinking_buf = ""
             self._thinking_flush_pos = 0
-            MiniAgentTUI._box_open(log, "thinking", f"dim {t.thinking}")
+            self._box_open(log, "thinking", f"dim {t.thinking}")
             return
 
         if text == THINKING_END:
@@ -942,10 +975,10 @@ class MiniAgentTUI(App):
             # Flush remaining thinking
             remaining = self._thinking_buf[self._thinking_flush_pos:].strip()
             if remaining:
-                MiniAgentTUI._box_line(log, f"[dim]{_safe(remaining)}[/]", f"dim {t.thinking}")
+                self._box_line(log, f"[dim]{_safe(remaining)}[/]", f"dim {t.thinking}")
             self._thinking_buf = ""
             self._thinking_flush_pos = 0
-            MiniAgentTUI._box_close(log, f"dim {t.thinking}")
+            self._box_close(log, f"dim {t.thinking}")
             return
 
         if self._in_thinking:
@@ -980,7 +1013,7 @@ class MiniAgentTUI(App):
                     chunk = remaining[:best].rstrip()
                     self._thinking_flush_pos = pos + best
                     if chunk:
-                        MiniAgentTUI._box_line(log, _safe(chunk), f"dim {t.thinking}")
+                        self._box_line(log, _safe(chunk), f"dim {t.thinking}")
                     continue
 
                 # No natural break — flush at ~400 chars on a space
@@ -992,7 +1025,7 @@ class MiniAgentTUI(App):
                     chunk = remaining[:cut].rstrip()
                     self._thinking_flush_pos = pos + cut
                     if chunk:
-                        MiniAgentTUI._box_line(log, _safe(chunk), f"dim {t.thinking}")
+                        self._box_line(log, _safe(chunk), f"dim {t.thinking}")
                     continue
 
                 break  # not enough to flush
@@ -1000,7 +1033,7 @@ class MiniAgentTUI(App):
 
         # Content — open agent box if not yet open
         if not getattr(self, "_agent_box_open", False):
-            MiniAgentTUI._box_open(log, "Agent", t.accent)
+            self._box_open(log, "Agent", t.accent)
             self._agent_box_open = True
 
         # Content — accumulate, flush complete lines or ~300-char chunks
@@ -1026,9 +1059,9 @@ class MiniAgentTUI(App):
                     else:
                         # Flush any buffered table first
                         if self._table_buf:
-                            MiniAgentTUI._box_line(log, r"\[code\]\n" + "\n".join(_safe(l) for l in self._table_buf) + r"\n\[/code\]", t.accent)
+                            self._box_line(log, r"\[code\]\n" + "\n".join(_safe(l) for l in self._table_buf) + r"\n\[/code\]", t.accent)
                             self._table_buf = []
-                        MiniAgentTUI._box_line(log, _safe(line), t.accent)
+                        self._box_line(log, _safe(line), t.accent)
                         self._accumulated_content.append(line)
                 continue
 
@@ -1041,7 +1074,7 @@ class MiniAgentTUI(App):
                 chunk = self._buf[:cut].rstrip()
                 self._buf = self._buf[cut:]
                 if chunk:
-                    MiniAgentTUI._box_line(log, _safe(chunk), t.accent)
+                    self._box_line(log, _safe(chunk), t.accent)
                     self._accumulated_content.append(chunk)
                 continue
 
@@ -1050,15 +1083,15 @@ class MiniAgentTUI(App):
     def _finish_turn(self, usage: dict | None = None, turn_count: int = 0) -> None:
         """Commit buffers, close boxes, promote final response to static pane."""
         t = self._tui_theme
-        chat = self.query_one("#chat-pane", RichLog)
-        static = self.query_one("#tools-log", RichLog)
+        chat = self._chat
+        static = self._tools_log
 
         # Flush any remaining table buffer then regular buf
         if hasattr(self, "_table_buf") and self._table_buf:
             if not getattr(self, "_agent_box_open", False):
-                MiniAgentTUI._box_open(chat, "Agent", t.accent)
+                self._box_open(chat, "Agent", t.accent)
                 self._agent_box_open = True
-            MiniAgentTUI._box_line(chat, r"\[code\]\n" + "\n".join(_safe(l) for l in self._table_buf) + r"\n\[/code\]", t.accent)
+            self._box_line(chat, r"\[code\]\n" + "\n".join(_safe(l) for l in self._table_buf) + r"\n\[/code\]", t.accent)
             self._table_buf = []
 
         self._flush_buf()
@@ -1075,10 +1108,10 @@ class MiniAgentTUI(App):
         # Promote final content to static pane in a box
         accumulated = getattr(self, "_accumulated_content", [])
         if accumulated:
-            MiniAgentTUI._box_open(self._tools_log, "Agent", t.accent)
+            self._box_open(self._tools_log, "Agent", t.accent)
             for line in accumulated:
-                MiniAgentTUI._box_line(self._tools_log, _safe(line), t.accent)
-            MiniAgentTUI._box_close(self._tools_log, t.accent)
+                self._box_line(self._tools_log, _safe(line), t.accent)
+            self._box_close(self._tools_log, t.accent)
         self._accumulated_content = []
 
         self.memory.save(self.messages)
@@ -1097,18 +1130,19 @@ class MiniAgentTUI(App):
         if turn_count > 1:
             parts.append(f"turn {turn_count}")
         parts.append(self.config.model)
-        chat.write(f"[{t.dim}]— {' │ '.join(parts)}[/]")
+        self._write_to_log(chat, f"[{t.dim}]— {' │ '.join(parts)}[/]")
+        self._flush_logs()
 
     def _flush_buf(self) -> None:
         if self._buf.strip():
-            chat = self.query_one("#chat-pane", RichLog)
+            chat = self._chat
             t = self._tui_theme
             # Ensure agent box is open
             if not getattr(self, "_agent_box_open", False):
-                MiniAgentTUI._box_open(chat, "Agent", t.accent)
+                self._box_open(chat, "Agent", t.accent)
                 self._agent_box_open = True
             line = self._buf.rstrip()
-            MiniAgentTUI._box_line(chat, _safe(line), t.accent)
+            self._box_line(chat, _safe(line), t.accent)
             # Track for promotion
             if not hasattr(self, "_accumulated_content"):
                 self._accumulated_content: list[str] = []

@@ -56,42 +56,51 @@ def _read_file(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResu
             success=False,
             content=f"Read blocked by safety layer: {safety_result.reason}",
         )
+    # Apply offset and limit
+    offset = args.get("offset", 0)
+    if offset < 0:
+        offset = 0
+    limit = args.get("limit", _DEFAULT_READ_LINES)
+    if limit < 1:
+        limit = _DEFAULT_READ_LINES
+    limit = min(limit, _ABSOLUTE_MAX_LINES)
+
     try:
         with open(safety_result.resolved_path, "r") as f:
-            content = f.read()
+            # Use enumerate + early break to avoid reading the whole file
+            collected: list[str] = []
+            total_lines = 0
+            for lineno, line in enumerate(f):
+                total_lines = lineno + 1
+                if lineno < offset:
+                    continue
+                if len(collected) < limit:
+                    collected.append(line.rstrip("\n"))
+                # Keep iterating to count total lines if we might need truncation message
+                # but stop once we've gone well past what we need (limit + 1 is enough
+                # to know whether we truncated)
+                if len(collected) >= limit and lineno >= offset + limit:
+                    break
     except Exception as e:
         hint = ""
         if isinstance(e, FileNotFoundError) or "No such file" in str(e):
             hint = "\nHint: Check the path spelling. Try list_directory to see available files."
         return ToolResult(success=False, content=f"Error reading '{safety_result.resolved_path}': {e}{hint}")
 
-    lines = content.splitlines(keepends=False)
+    if offset >= total_lines:
+        return ToolResult(success=False, content=f"Offset {offset} exceeds file length ({total_lines} lines).")
 
-    # Apply offset (0-indexed line number to start from)
-    offset = args.get("offset", 0)
-    if offset < 0:
-        offset = 0
-    if offset > 0:
-        if offset >= len(lines):
-            return ToolResult(success=False, content=f"Offset {offset} exceeds file length ({len(lines)} lines).")
-        lines = lines[offset:]
-
-    # Apply limit (max lines to return)
-    limit = args.get("limit", _DEFAULT_READ_LINES)
-    if limit < 1:
-        limit = _DEFAULT_READ_LINES
-    limit = min(limit, _ABSOLUTE_MAX_LINES)
-
-    if len(lines) > limit:
-        truncated = "\n".join(lines[:limit])
+    lines_after_offset = total_lines - offset
+    if lines_after_offset > limit:
+        truncated = "\n".join(collected[:limit])
         msg = (
             f"{truncated}\n"
-            f"… (truncated at {limit} lines — {len(lines)} total in selection. "
+            f"… (truncated at {limit} lines — {lines_after_offset} total in selection. "
             f"Use a higher limit or offset to see more.)"
         )
         return ToolResult(success=True, content=msg)
 
-    return ToolResult(success=True, content="\n".join(lines))
+    return ToolResult(success=True, content="\n".join(collected))
 
 
 @_summarize("read_file")

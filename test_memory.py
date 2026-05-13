@@ -142,6 +142,9 @@ class TestMemoryStore(unittest.TestCase):
 
     def test_corrupt_db_returns_empty(self):
         self.store.save([{"role": "user", "content": "x"}])
+        # Shared connection caches in-memory; close it so the
+        # corruption on disk is actually visible on next open.
+        self.store.close()
         with open(self.store._db_path, "w") as f:
             f.write("not a valid sqlite database!!!!")
         result = self.store.load()

@@ -210,32 +210,40 @@ class TestSafe(unittest.TestCase):
 
 
 class TestBoxHelpers(unittest.TestCase):
-    """Tests for the static _box_* rendering helpers."""
+    """Tests for the instance _box_* rendering helpers (now buffer via _write_to_log)."""
+
+    def setUp(self):
+        self.app = MiniAgentTUI()
+        self.app._chat = MagicMock()
+        self.app._tools_log = MagicMock()
+        self.app._chat_buf = ""
+        self.app._tools_buf = ""
+        self.app._agent_box_open = False
+
+    def _assert_buf_contains(self, text):
+        """Assert text was buffered (in _chat_buf or _tools_buf)."""
+        combined = self.app._chat_buf + self.app._tools_buf
+        self.assertIn(text, combined)
 
     def test_box_open(self):
-        log = MagicMock()
-        MiniAgentTUI._box_open(log, "Label", "green")
-        log.write.assert_called_once_with("[green]╭── Label ──[/]")
+        self.app._box_open(self.app._chat, "Label", "green")
+        self._assert_buf_contains("╭── Label ──")
 
     def test_box_line(self):
-        log = MagicMock()
-        MiniAgentTUI._box_line(log, "hello", "blue")
-        log.write.assert_called_once_with("[blue]│ hello[/]")
+        self.app._box_line(self.app._chat, "hello", "blue")
+        self._assert_buf_contains("│ hello")
 
     def test_box_empty(self):
-        log = MagicMock()
-        MiniAgentTUI._box_empty(log, "red")
-        log.write.assert_called_once_with("[red]│[/]")
+        self.app._box_empty(self.app._chat, "red")
+        self._assert_buf_contains("│")
 
     def test_box_close_no_label(self):
-        log = MagicMock()
-        MiniAgentTUI._box_close(log, "green")
-        log.write.assert_called_once_with("[green]╰──[/]")
+        self.app._box_close(self.app._chat, "green")
+        self._assert_buf_contains("╰──")
 
     def test_box_close_with_label(self):
-        log = MagicMock()
-        MiniAgentTUI._box_close(log, "green", "OK")
-        log.write.assert_called_once_with("[green]╰──[/] OK")
+        self.app._box_close(self.app._chat, "green", "OK")
+        self._assert_buf_contains("OK")
 
 
 class TestHandleToken(unittest.TestCase):
@@ -262,36 +270,41 @@ class TestHandleToken(unittest.TestCase):
         self.app.messages = []
         self.app._table_buf = []
         self.app._accumulated_content = []
+        # Required for buffered _box_* methods via _write_to_log
+        self.app._chat = MagicMock()
+        self.app._tools_log = MagicMock()
+        self.app._chat_buf = ""
+        self.app._tools_buf = ""
 
     def tearDown(self):
         import shutil
         shutil.rmtree(self.workspace, ignore_errors=True)
 
     def test_thinking_start_sets_in_thinking_flag(self):
-        log = MagicMock()
+        log = self.app._chat
         self.app._handle_token(_TokenMsg(THINKING_START), log)
         self.assertTrue(self.app._in_thinking)
 
     def test_thinking_end_clears_flag(self):
-        log = MagicMock()
+        log = self.app._chat
         self.app._in_thinking = True
         self.app._thinking_buf = ""
         self.app._handle_token(_TokenMsg(THINKING_END), log)
         self.assertFalse(self.app._in_thinking)
 
     def test_thinking_buffers_text(self):
-        log = MagicMock()
+        log = self.app._chat
         self.app._in_thinking = True
         self.app._handle_token(_TokenMsg("hello "), log)
         self.assertEqual(self.app._thinking_buf, "hello ")
 
     def test_content_opens_agent_box(self):
-        log = MagicMock()
+        log = self.app._chat
         self.app._handle_token(_TokenMsg("Hello, World!"), log)
         self.assertTrue(self.app._agent_box_open)
 
     def test_content_buffers_text(self):
-        log = MagicMock()
+        log = self.app._chat
         self.app._handle_token(_TokenMsg("Hello"), log)
         self.app._handle_token(_TokenMsg(" World"), log)
         self.assertIn("Hello World", self.app._buf)
@@ -315,25 +328,28 @@ class TestFlushBuf(unittest.TestCase):
         self.app._table_buf = []
         self.app.memory = MemoryStore(os.path.join(self.workspace, ".test_mem.db"))
         self.app.messages = []
+        # Required for buffered _box_* methods via _write_to_log
+        self.app._chat = MagicMock()
+        self.app._tools_log = MagicMock()
+        self.app._chat_buf = ""
+        self.app._tools_buf = ""
 
     def tearDown(self):
         import shutil
         shutil.rmtree(self.workspace, ignore_errors=True)
 
     def test_blank_buf_no_write(self):
-        mock_chat = MagicMock()
-        self.app.query_one = MagicMock(return_value=mock_chat)
+        self.app._chat_buf = ""
         self.app._flush_buf()
-        mock_chat.write.assert_not_called()
+        self.assertEqual(self.app._chat_buf, "")
 
     def test_nonblank_buf_flushes(self):
-        mock_chat = MagicMock()
-        self.app.query_one = MagicMock(return_value=mock_chat)
         self.app._buf = "some text here"
         self.app._flush_buf()
         self.assertEqual(self.app._buf, "")
-        # _box_line should have been called via the mocked chat
-        self.assertTrue(mock_chat.write.called or self.app._agent_box_open)
+        # _box_line should have buffered text via _write_to_log
+        self.assertIn("some text here", self.app._chat_buf)
+        self.assertTrue(self.app._agent_box_open)
 
 
 class TestFinishTurn(unittest.TestCase):
@@ -362,32 +378,25 @@ class TestFinishTurn(unittest.TestCase):
         self.app._total_turns = 0
         self.app.worker = MagicMock()
         self.app._turn_finished = False
+        # _finish_turn now uses direct attributes instead of query_one
+        self.app._chat = MagicMock()
+        self.app._tools_log = MagicMock()
+        self.app._chat_buf = ""
+        self.app._tools_buf = ""
 
     def tearDown(self):
         import shutil
         shutil.rmtree(self.workspace, ignore_errors=True)
 
-    def _mock_query_one(self, chat=None, static=None, textarea=None):
-        """Set up query_one side_effect for _finish_turn call chain:
-        _close_agent_box (chat), chat, static, input."""
-        self.app.query_one = MagicMock(side_effect=[
-            chat or MagicMock(),      # _close_agent_box
-            chat or MagicMock(),      # chat-pane
-            static or MagicMock(),    # static-pane
-            textarea or MagicMock(),  # input
-        ])
-
     def test_finish_turn_clears_state(self):
-        mock_input = MagicMock()
-        self._mock_query_one(textarea=mock_input)
+        self.app.query_one = MagicMock()  # for #input focus
         self.app._finish_turn()
         self.assertFalse(self.app._in_thinking)
         self.assertEqual(self.app._buf, "")
         self.assertTrue(self.app._turn_finished)
 
     def test_finish_turn_updates_token_count(self):
-        mock_input = MagicMock()
-        self._mock_query_one(textarea=mock_input)
+        self.app.query_one = MagicMock()  # for #input focus
         self.app._finish_turn(usage={"total_tokens": 1500}, turn_count=3)
         self.assertEqual(self.app._total_tokens, 1500)
         self.assertEqual(self.app._total_turns, 3)

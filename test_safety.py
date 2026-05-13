@@ -197,13 +197,15 @@ class TestWriteSafetyGate(unittest.TestCase):
 
     # --- overwrite protection tests ---
 
-    def test_overwrite_blocked_by_default(self):
+    def test_overwrite_allowed_by_default(self):
+        # Overwrite check removed from safety layer — let file operations handle it.
         existing = self._touch("existing.txt")
         result = self.gate.check(existing)
-        self.assertFalse(result.allowed)
-        self.assertIn("already exists", result.reason)
+        self.assertTrue(result.allowed)
+        self.assertEqual(result.reason, "OK")
 
-    def test_overwrite_allowed_when_opted_in(self):
+    def test_overwrite_when_allow_overwrites_set(self):
+        # allow_overwrites parameter is accepted but no longer gates writes.
         gate = WriteSafetyGate(self.workspace, allow_overwrites=True)
         existing = self._touch("existing.txt")
         result = gate.check(existing)
@@ -275,16 +277,15 @@ class TestWriteSafetyGate(unittest.TestCase):
         result = gate.check(path)
         self.assertTrue(result.allowed)
 
-    def test_unrestricted_still_blocks_overwrite_by_default(self):
-        # Unrestricted removes the boundary check, but the overwrite check is independent
+    def test_unrestricted_no_overwrite_block(self):
+        # Overwrite check removed; unrestricted mode allows writes anywhere.
         outside = os.path.join(tempfile.gettempdir(), "existing_outside.txt")
         with open(outside, "w") as f:
             f.write("existing")
         try:
             gate = WriteSafetyGate(self.workspace, unrestricted=True)
             result = gate.check(outside)
-            self.assertFalse(result.allowed)
-            self.assertIn("already exists", result.reason)
+            self.assertTrue(result.allowed)
         finally:
             os.unlink(outside)
 

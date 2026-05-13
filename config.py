@@ -97,16 +97,22 @@ class AgentConfig:
         config = cls()
 
         # ---- 1.  TOML config file -------------------------------------------
-        config_path = os.path.join(workspace, CONFIG_FILENAME)
-        if os.path.isfile(config_path):
-            try:
-                with open(config_path, "rb") as f:
-                    data = tomllib.load(f)
-                agent_data = data.get("agent", {})
-                _apply_toml(config, agent_data)
-            except Exception as exc:
-                print(f"Warning: failed to parse {config_path}: {exc}",
-                      file=sys.stderr)
+        cache_key = (workspace, CONFIG_FILENAME)
+        if cache_key in cls._toml_cache:
+            agent_data = cls._toml_cache[cache_key]
+            _apply_toml(config, agent_data)
+        else:
+            config_path = os.path.join(workspace, CONFIG_FILENAME)
+            if os.path.isfile(config_path):
+                try:
+                    with open(config_path, "rb") as f:
+                        data = tomllib.load(f)
+                    agent_data = data.get("agent", {})
+                    cls._toml_cache[cache_key] = agent_data
+                    _apply_toml(config, agent_data)
+                except Exception as exc:
+                    print(f"Warning: failed to parse {config_path}: {exc}",
+                          file=sys.stderr)
 
         # ---- 2.  Environment variables --------------------------------------
         if os.environ.get("DEEPSEEK_API_KEY"):
@@ -144,6 +150,11 @@ class AgentConfig:
         config.workspace = workspace
 
         return config
+
+
+# Class-level TOML parse cache: maps (workspace, CONFIG_FILENAME) to the
+# parsed agent data dict so repeated calls to load() don't re-parse the file.
+AgentConfig._toml_cache = {}
 
 
 # ---------------------------------------------------------------------------

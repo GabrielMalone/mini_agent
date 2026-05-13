@@ -35,6 +35,31 @@ from interject import poll_interjections
 # API call
 # ---------------------------------------------------------------------------
 
+# Incremental message cleaning cache: keyed by id(messages), stores a tuple
+# of (last_cleaned_len, clean_messages) so repeated calls within a turn
+# only clean newly appended messages rather than the entire list.
+_clean_messages_cache: dict[int, tuple[int, list[dict]]] = {}
+
+
+def _clean_message(msg: dict, index: int) -> dict:
+    """Clean a single message dict for sending to the API.
+
+    Strips internal tracking fields (keys starting with '_'), removes the
+    ``index`` field from tool_calls, and marks the first system message
+    with ``cache_control`` for prompt caching.
+    """
+    m2 = {k: v for k, v in msg.items()
+          if not k.startswith("_")}
+    if "tool_calls" in m2:
+        m2["tool_calls"] = [
+            {k: v for k, v in tc.items() if k != "index"}
+            for tc in m2["tool_calls"]
+        ]
+    if index == 0 and m2.get("role") == "system":
+        m2["cache_control"] = {"type": "ephemeral"}
+    return m2
+
+
 def call_deepseek(
     messages: list[dict],
     config: AgentConfig,
@@ -60,20 +85,19 @@ def call_deepseek(
     if session is None:
         session = requests  # use module-level .post (testable via mock)
 
-    clean_messages = []
-    for i, m in enumerate(messages):
-        m2 = {k: v for k, v in m.items()
-              if not k.startswith("_")}  # strip internal tracking fields
-        if "tool_calls" in m2:
-            m2["tool_calls"] = [
-                {k: v for k, v in tc.items() if k != "index"}
-                for tc in m2["tool_calls"]
-            ]
-        # Prompt caching: mark the first system message for server-side caching.
-        # DeepSeek reuses the cached prefix on subsequent calls within a session.
-        if i == 0 and m2.get("role") == "system":
-            m2["cache_control"] = {"type": "ephemeral"}
-        clean_messages.append(m2)
+    # Incremental cleaning: only clean messages appended since last call.
+    # This avoids O(n) deep-copy of the entire message list on every API call.
+    list_id = id(messages)
+    cached_len, clean_messages = _clean_messages_cache.get(list_id, (0, []))
+    current_len = len(messages)
+    if list_id in _clean_messages_cache and cached_len >= current_len:
+        # Same list, no new messages — reuse cache as-is
+        pass
+    else:
+        # Clean any new messages beyond the cached length
+        for i in range(cached_len, current_len):
+            clean_messages.append(_clean_message(messages[i], i))
+        _clean_messages_cache[list_id] = (current_len, clean_messages)
 
     r = _request_with_retry(
         session,

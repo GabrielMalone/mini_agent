@@ -25,6 +25,15 @@ from safety import ReadSafetyGate, WriteSafetyGate
 from tools.schema import TOOLS
 
 # ---------------------------------------------------------------------------
+# TOOL_SCHEMA_MAP — O(1) name→schema lookup for execute_tool() validation
+# ---------------------------------------------------------------------------
+
+TOOL_SCHEMA_MAP: dict[str, dict] = {
+    td["function"]["name"]: td["function"].get("parameters", {})
+    for td in TOOLS
+}
+
+# ---------------------------------------------------------------------------
 # Structured tool result
 # ---------------------------------------------------------------------------
 
@@ -311,11 +320,7 @@ def execute_tool(
 
     # --- schema validation: check parameter names against tool definition ---
     if isinstance(args, dict):
-        tool_schema = None
-        for td in TOOLS:
-            if td["function"]["name"] == name:
-                tool_schema = td["function"].get("parameters", {})
-                break
+        tool_schema = TOOL_SCHEMA_MAP.get(name)
         if tool_schema:
             valid_params = set(tool_schema.get("properties", {}).keys())
             required_params = set(tool_schema.get("required", []))

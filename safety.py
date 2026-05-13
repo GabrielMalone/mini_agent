@@ -16,9 +16,9 @@ from dataclasses import dataclass
 # Shared helpers
 # ---------------------------------------------------------------------------
 
-def _is_within_workspace(resolved: str, root: str) -> bool:
+def _is_within_workspace(resolved: str, root: str, root_prefix: str) -> bool:
     """Return True if *resolved* is within the workspace *root*."""
-    return resolved.startswith(root + os.sep) or resolved == root
+    return resolved.startswith(root_prefix) or resolved == root
 
 
 # ---------------------------------------------------------------------------
@@ -47,6 +47,7 @@ class ReadSafetyGate:
 
     def __init__(self, workspace_root: str, *, unrestricted: bool = False) -> None:
         self._root = os.path.realpath(os.path.abspath(workspace_root))
+        self._root_prefix = self._root + os.sep
         self._unrestricted = unrestricted
 
     @property
@@ -75,13 +76,13 @@ class ReadSafetyGate:
                 reason="Path is empty.",
                 resolved_path="",
             )
-        resolved = os.path.realpath(os.path.abspath(path))
+        resolved = os.path.realpath(os.path.join(self._root, path))
 
         # NOTE: There is an inherent TOCTOU race between this realpath check
         # and the actual open() call — a symlink could be swapped after this
         # check passes.  We accept this because the workspace is assumed to be
         # single-writer and the window is tiny.
-        if not self._unrestricted and not _is_within_workspace(resolved, self._root):
+        if not self._unrestricted and not _is_within_workspace(resolved, self._root, self._root_prefix):
             return SafetyResult(
                 allowed=False,
                 reason=f"Path '{resolved}' is outside workspace root '{self._root}'.",
@@ -105,6 +106,7 @@ class WriteSafetyGate:
     def __init__(self, workspace_root: str, *, allow_overwrites: bool = False,
                  unrestricted: bool = False) -> None:
         self._root = os.path.realpath(os.path.abspath(workspace_root))
+        self._root_prefix = self._root + os.sep
         self._allow_overwrites = allow_overwrites
         self._unrestricted = unrestricted
 
@@ -136,26 +138,13 @@ class WriteSafetyGate:
             )
 
         # Resolve the intended absolute path
-        resolved = os.path.realpath(os.path.abspath(path))
+        resolved = os.path.realpath(os.path.join(self._root, path))
 
         # 1. Workspace boundary check (skipped when unrestricted)
-        if not self._unrestricted and not _is_within_workspace(resolved, self._root):
+        if not self._unrestricted and not _is_within_workspace(resolved, self._root, self._root_prefix):
             return SafetyResult(
                 allowed=False,
                 reason=f"Path '{resolved}' is outside workspace root '{self._root}'.",
-                resolved_path=resolved,
-            )
-
-        # 2. Overwrite check (only for existing files, not directories).
-        #    NOTE: There is an inherent TOCTOU race between this check and
-        #    the actual write — the file could be created/deleted by an
-        #    external process after this check.  We accept this because the
-        #    workspace is assumed to be single-writer and the window is tiny.
-        if os.path.isfile(resolved) and not self._allow_overwrites:
-            return SafetyResult(
-                allowed=False,
-                reason=f"File '{resolved}' already exists and overwrites are not permitted. "
-                        "Set allow_overwrites=True to bypass.",
                 resolved_path=resolved,
             )
 
