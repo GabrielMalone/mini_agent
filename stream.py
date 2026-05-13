@@ -131,7 +131,7 @@ def _parse_stream(response: requests.Response, on_token: callable = None, on_too
                                     on_tool_ready(ready)
                                 except (json.JSONDecodeError, ValueError):
                                     pass  # still fragmentary
-            except Exception:
+            except (json.JSONDecodeError, KeyError, ValueError):
                 continue
     except (
         requests.exceptions.ChunkedEncodingError,
@@ -164,5 +164,24 @@ def _parse_stream(response: requests.Response, on_token: callable = None, on_too
         # Tag which ones were already incrementally executed
         if fired_indices:
             msg["_fired_indices"] = list(fired_indices)
+        # Force-flush any completed but unfired tool calls at stream end.
+        # Brace-balance check may have false negatives when args contain
+        # literal braces (e.g., code snippets, JSON strings), so fire any
+        # remaining complete tools here.
+        if on_tool_ready:
+            for idx in sorted(tool_calls_by_index):
+                if idx not in fired_indices:
+                    tc = tool_calls_by_index[idx]
+                    args = tc["function"]["arguments"]
+                    try:
+                        json.loads(args)
+                        fired_indices.add(idx)
+                        ready = dict(tc)
+                        ready["_index"] = idx
+                        on_tool_ready(ready)
+                    except (json.JSONDecodeError, ValueError):
+                        pass  # genuinely incomplete
+            if fired_indices:
+                msg["_fired_indices"] = list(fired_indices)
 
     return msg

@@ -94,9 +94,9 @@ def _check_file_contains(params: dict, workspace: str) -> CheckResult:
     if not os.path.isfile(path):
         return CheckResult("file_contains", False, f"{params['path']} missing")
     try:
-        with open(path, "r") as f:
+        with open(path, "r", encoding="utf-8") as f:
             content = f.read()
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError) as exc:
         return CheckResult("file_contains", False, f"Cannot read {params['path']}: {exc}")
     match = re.search(params["pattern"], content, re.MULTILINE)
     return CheckResult(
@@ -112,9 +112,9 @@ def _check_file_not_contains(params: dict, workspace: str) -> CheckResult:
     if not os.path.isfile(path):
         return CheckResult("file_not_contains", False, f"{params['path']} missing")
     try:
-        with open(path, "r") as f:
+        with open(path, "r", encoding="utf-8") as f:
             content = f.read()
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError) as exc:
         return CheckResult("file_not_contains", False, f"Cannot read {params['path']}: {exc}")
     match = re.search(params["pattern"], content, re.MULTILINE)
     ok = not match
@@ -169,8 +169,11 @@ def _check_diff_not_contains(params: dict, workspace: str) -> CheckResult:
 def _check_shell(params: dict, workspace: str) -> CheckResult:
     # Security: tokenize the command and run with shell=False to avoid
     # shell injection from YAML-defined commands.
+    try:
+        cmd = shlex.split(params["command"])
+    except ValueError as exc:
+        return CheckResult("shell", False, f"Invalid shell command syntax: {exc}")
     result = subprocess.run(
-        shlex.split(params["command"]),
         shell=False,
         capture_output=True,
         text=True,

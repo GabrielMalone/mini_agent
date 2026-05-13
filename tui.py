@@ -48,6 +48,7 @@ from prompt import SYSTEM_PROMPT
 from safety import ReadSafetyGate, WriteSafetyGate
 from memory import MemoryStore
 from tools import set_context, build_symbol_index
+from interject import push_interjection
 
 
 # ---------------------------------------------------------------------------
@@ -68,6 +69,7 @@ class TuiTheme:
     red: str      # errors
     thinking: str # thinking block dim
     pulse: str    # attention/approval glow
+    purple: str   # queued interjections
 
 THEMES: dict[str, TuiTheme] = {
     "dawn": TuiTheme(
@@ -75,56 +77,56 @@ THEMES: dict[str, TuiTheme] = {
         bg="#faf8f5", surface="#f0ede8", border="#d4cfc8",
         accent="#b8956a", text="#3d3a35", dim="#8a857d",
         green="#5a8a4a", yellow="#b89540", red="#c06050",
-        thinking="#b0aaa0", pulse="#f0c060",
+        thinking="#b0aaa0", pulse="#f0c060", purple="#9a6aba",
     ),
     "sepia": TuiTheme(
         name="Sepia",
         bg="#f4f0e6", surface="#e8e0d0", border="#c8b898",
         accent="#b8893a", text="#4a3f30", dim="#8a7a60",
         green="#6a8a4a", yellow="#c0a040", red="#b85840",
-        thinking="#b0a080", pulse="#e0b040",
+        thinking="#b0a080", pulse="#e0b040", purple="#9a6a9a",
     ),
     "ember": TuiTheme(
         name="Ember",
         bg="#1e1814", surface="#2a221c", border="#3a3028",
         accent="#d4985a", text="#d0c8be", dim="#7a7064",
         green="#7ab860", yellow="#d4a040", red="#d47050",
-        thinking="#5a5040", pulse="#e89840",
+        thinking="#5a5040", pulse="#e89840", purple="#c090d0",
     ),
     "slate": TuiTheme(
         name="Slate",
         bg="#111111", surface="#1b1b1b", border="#2a2a2a",
         accent="#8f8f8f", text="#b8b8b8", dim="#5a5a5a",
         green="#4f9f6f", yellow="#b89a4a", red="#a85a5a",
-        thinking="#3a3a3a", pulse="#c0c040",
+        thinking="#3a3a3a", pulse="#c0c040", purple="#9060c0",
     ),
     "midnight": TuiTheme(
         name="Midnight",
         bg="#090b0d", surface="#131619", border="#1e2226",
         accent="#8899aa", text="#b0c0d0", dim="#4a5560",
         green="#4a8a6a", yellow="#9a8a4a", red="#9a6060",
-        thinking="#2a3040", pulse="#6a8acc",
+        thinking="#2a3040", pulse="#6a8acc", purple="#7a80c0",
     ),
     "cobalt": TuiTheme(
         name="Cobalt",
         bg="#0a1220", surface="#101830", border="#1e2850",
         accent="#6090d0", text="#a0b8d8", dim="#4a6090",
         green="#5a9a6a", yellow="#a0a040", red="#b06060",
-        thinking="#203050", pulse="#5090e0",
+        thinking="#203050", pulse="#5090e0", purple="#80a0d8",
     ),
     "neon": TuiTheme(
         name="Neon",
         bg="#0c0c0c", surface="#16161a", border="#303030",
         accent="#e040e0", text="#c0e0c0", dim="#506050",
         green="#00e060", yellow="#e0c000", red="#ff4060",
-        thinking="#302040", pulse="#e040ff",
+        thinking="#302040", pulse="#e040ff", purple="#d040d0",
     ),
     "forest": TuiTheme(
         name="Forest",
         bg="#0e1410", surface="#141c16", border="#1e2e22",
         accent="#60a870", text="#a0c0a8", dim="#4a6a50",
         green="#60d070", yellow="#b0b040", red="#c06050",
-        thinking="#203028", pulse="#50d060",
+        thinking="#203028", pulse="#50d060", purple="#90a870",
     ),
 }
 
@@ -627,8 +629,19 @@ class MiniAgentTUI(App):
 
     def _submit(self) -> None:
         """Send user message to the agent."""
-        # Guard against double-submit while agent is working
+        # If agent is working, queue as interjection instead of blocking
         if self.worker is not None and self.worker.is_alive():
+            input_widget = self.query_one("#input", TextArea)
+            text = input_widget.text.strip()
+            if text:
+                input_widget.clear()
+                push_interjection(text)
+                t = self._tui_theme
+                chat = self.query_one("#chat-pane", RichLog)
+                chat.write("")
+                MiniAgentTUI._box_open(chat, "You (queued)", t.purple)
+                MiniAgentTUI._box_line(chat, f"[dim italic]{_safe(text)}[/]", t.purple)
+                MiniAgentTUI._box_close(chat, t.purple)
             return
 
         # Defensive: clear any stale table buffer from a previous turn
@@ -699,6 +712,10 @@ class MiniAgentTUI(App):
             self._total_tokens = 0
             log.write("")
             log.write(f"[{t.dim}]— conversation cleared —[/]")
+            return
+
+        if cmd == "/cancel":
+            self.action_cancel()
             return
 
         if cmd == "/help":

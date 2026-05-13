@@ -1,15 +1,17 @@
 id: "bash-hello"
 name: "Print hello from bash"
 description: |
-  Run the shell command `echo "hello, world"` and confirm the output.
+  Use run_shell to write "hello, world" to a file called hello_output.txt,
+  then verify the file was created and contains the expected text.
 category: "feature"
 difficulty: "easy"
 workspace_fixture: null
 checks:
-  - type: "shell"
-    command: "echo 'hello, world'"
-    expected_stdout: "hello, world"
-    expected_returncode: 0
+  - type: "file_exists"
+    path: "hello_output.txt"
+  - type: "file_contains"
+    path: "hello_output.txt"
+    pattern: "hello, world"
 expected_tools:
   - "run_shell"
 expected_turns_max: 3

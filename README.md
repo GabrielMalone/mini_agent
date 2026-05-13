@@ -7,12 +7,14 @@ A coding agent powered by DeepSeek V4 Pro with 28+ tools. Runs as a terminal REP
 - **28+ tools**: file operations, shell commands, search, git, web search, semantic search, symbol lookup, multi-agent delegation with 9 message types, fan-out/fan-in/pipeline/barrier/scatter-gather patterns, MCP client for external tool servers, test running, and more
 - **MCP support**: discover tools from external MCP servers at startup (stdio JSON-RPC), configured via `[[mcp_server]]` TOML blocks
 - **Eval harness**: YAML task format, 8 checker types, binary scoring, temp workspace copies — zero core changes
+- **User interjection**: type while agent works — messages queued and surfaced at tool boundaries. Purple indicator in TUI. `/cancel` command to abort in-progress work.
 - **Streaming**: token-by-token responses with live tool output
 - **Two interfaces**: terminal REPL (`python mini_agent.py`) or rich TUI (`python tui.py`)
-- **Safety layer**: workspace isolation, destructive command guard, overwrite protection
-- **Multi-agent**: spawn sub-agents for parallel task execution; structured inter-agent messages with validation and routing
-- **Memory**: SQLite-backed conversation store with token-aware pruning
-- **466 tests**, all passing
+- **Safety layer**: workspace isolation, destructive command guard, overwrite protection (opt-in per config)
+- **Multi-agent**: spawn sub-agents for parallel task execution; structured inter-agent messages with validation and routing; 5 patterns (fan_out, fan_in, pipeline, barrier, scatter_gather)
+- **Memory**: SQLite-backed conversation store with token-aware pruning and incremental saves
+- **~167 bugs fixed** across 20+ files in a single session via parallel multi-agent code review and remediation
+- **466 tests**
 
 ## Quick Start
 

@@ -272,12 +272,13 @@ def run_task(
                 on_tool_start=metrics.on_tool_start,
                 on_tool_end=metrics.on_tool_end,
                 cancel_event=cancel_event,
-                max_turns=task.expected_turns_max or 100,
+                max_turns=task.expected_turns_max if task.expected_turns_max is not None else 100,
                 session=session["session"],
                 memory_store=session["memory"],
             )
-            # Count the turn — run_agent_turn completes one full agent loop
-            metrics.mark_turn()
+            # run_agent_turn stores _turn_count on the result message;
+            # we use that for the actual turn count (metrics.mark_turn is a
+            # coarse single increment for the top-level loop).
         finally:
             timer.cancel()
 
@@ -301,7 +302,7 @@ def run_task(
             task_id=task.id,
             success=len(checks) > 0 and all(c.passed for c in checks),
             checks=checks,
-            turns_used=metrics.turn_count,
+            turns_used=result_msg.get("_turn_count", 1) if result_msg else 0,
             tool_calls=dict(metrics.tool_counts),
             tokens_consumed=tokens,
             wall_time_seconds=elapsed,
@@ -405,7 +406,7 @@ def _ensure_git_repo(workspace: str) -> None:
     _run(["git", "config", "user.email", "eval@mini.agent"], timeout=5)
     _run(["git", "config", "user.name", "Eval Runner"], timeout=5)
     _run(["git", "add", "-A"])
-    _run(["git", "commit", "-m", "Initial state for eval"])
+    _run(["git", "commit", "--allow-empty", "-m", "Initial state for eval"])
 
 
 # ---------------------------------------------------------------------------

@@ -340,8 +340,6 @@ class MemoryStore:
         finally:
             conn.close()
 
-        self._ensure_table()
-
     @property
     def filepath(self) -> str:
         return self._filepath
@@ -405,8 +403,12 @@ class MemoryStore:
                             [(m["role"], json.dumps(m)) for m in new_msgs],
                         )
                 conn.commit()
-            self._last_saved_count = len(kept)
+                self._last_saved_count = len(kept)
         except sqlite3.Error as exc:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
             import sys
             print(f"Warning: memory save failed: {exc}", file=sys.stderr)
 
@@ -417,7 +419,7 @@ class MemoryStore:
             with sqlite3.connect(self._db_path) as conn:
                 conn.execute(_DELETE)
                 conn.execute(_VACUUM)
-        except sqlite3.Error:
+        except (sqlite3.Error, OSError):
             try:
                 os.remove(self._db_path)
             except FileNotFoundError:

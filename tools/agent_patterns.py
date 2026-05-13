@@ -74,9 +74,8 @@ def fan_out(
             desc, config, runtime, wg, rg, max_turns,
             cancel_event=None, visible=visible,
             shared_context=shared_ctx,
+            subscriptions=subscriptions,
         )
-        if subscriptions:
-            runtime.set_subscriptions(tid, subscriptions)
         task_ids.append(tid)
 
     return task_ids
@@ -99,27 +98,26 @@ def fan_in(
             raise RuntimeError("Agent runtime not initialized.")
 
     results: list[SubAgentResult | None] = [None] * len(task_ids)
-    pending = set(range(len(task_ids)))
 
     deadline = time.monotonic() + timeout
-    while pending and time.monotonic() < deadline:
-        for i in list(pending):
-            tid = task_ids[i]
+    for i, tid in enumerate(task_ids):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+
+        # Use wait_for with predicate to avoid lost-wakeup race.
+        def _ready(tid=tid):
             status = runtime.get_status(tid)
-            if status == "completed":
-                results[i] = runtime.get_result(tid)
-                pending.discard(i)
-                continue
-            if status == "not_found":
-                # Task was never found — treat as timed out
-                results[i] = None
-                pending.discard(i)
-        if pending:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                break
-            with runtime._condition:
-                runtime._condition.wait(timeout=min(0.5, remaining))
+            return status != "running"
+
+        with runtime._condition:
+            runtime._condition.wait_for(_ready, timeout=remaining)
+
+        status = runtime.get_status(tid)
+        if status == "completed":
+            results[i] = runtime.get_result(tid)
+        elif status == "not_found":
+            results[i] = None
 
     return results
 
@@ -178,23 +176,21 @@ def pipeline(
         )
         runtime.set_subscriptions(tid, subs)
 
-        # Wait for this stage to complete
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            status = runtime.get_status(tid)
-            if status == "completed":
-                prev_result = runtime.get_result(tid)
-                break
-            if status == "not_found":
-                prev_result = None
-                break
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                runtime.cancel(tid)
-                prev_result = None
-                break
-            with runtime._condition:
-                runtime._condition.wait(timeout=min(0.5, remaining))
+        # Wait for this stage to complete using wait_for to avoid lost wakeups
+        def _stage_ready(tid=tid):
+            return runtime.get_status(tid) != "running"
+
+        with runtime._condition:
+            runtime._condition.wait_for(_stage_ready, timeout=timeout)
+
+        status = runtime.get_status(tid)
+        if status == "completed":
+            prev_result = runtime.get_result(tid)
+        elif status == "not_found":
+            prev_result = None
+        else:
+            runtime.cancel(tid)
+            prev_result = None
 
         if prev_result is None or not prev_result.success:
             return prev_result
@@ -211,6 +207,7 @@ def barrier(
     """Block until all task_ids have sent a coord.sync message for *name*.
 
     Returns True if all agents reached the barrier, False on timeout.
+    Uses condition.wait for event-driven wakeup instead of pure polling.
     """
     from tools import _TOOL_CONTEXT
 
@@ -232,10 +229,16 @@ def barrier(
                 if msg.type == "coord.sync" and msg.payload.get("barrier") == name:
                     arrived.add(tid)
                     break
+        if len(arrived) >= total:
+            break
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             break
-        time.sleep(min(0.2, remaining))
+        # Use condition.wait for event-driven wakeup instead of pure sleep.
+        # store_result() notifies _condition when any agent completes, so
+        # we wake on any change rather than polling blindly.
+        with runtime._condition:
+            runtime._condition.wait(timeout=min(0.2, remaining))
 
     return len(arrived) >= total
 
@@ -249,6 +252,7 @@ def scatter_gather(
     rg=None,
     max_turns: int = 15,
     timeout: float = 120.0,
+    subscriptions: list[str] | None = None,
 ) -> list[SubAgentResult | None]:
     """Fan-out with per-worker input slices.
 
@@ -258,6 +262,7 @@ def scatter_gather(
     Args:
         items: List of items to distribute (one per worker).
         worker_task_template: Task description with "{item}" placeholder.
+        subscriptions: Message types each worker subscribes to.
     """
     descriptions = [
         worker_task_template.replace("{item}", str(item))
@@ -272,6 +277,7 @@ def scatter_gather(
         wg=wg,
         rg=rg,
         max_turns=max_turns,
+        subscriptions=subscriptions,
     )
 
     if not task_ids:

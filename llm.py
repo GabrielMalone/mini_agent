@@ -28,6 +28,7 @@ from terminal import c, _DIM
 from tools import TOOLS, execute_tool, tool_summary, clear_tool_cache, _TOOL_CONTEXT, _MODIFIED_FILES
 from memory import _total_tokens
 from safety import ReadSafetyGate, WriteSafetyGate
+from interject import poll_interjections
 
 # Thinking-mode delimiters sent through the on_token stream
 # ---------------------------------------------------------------------------
@@ -172,12 +173,20 @@ def _save_turn_summary(
     for tc, result in deferred_results:
         ok = "✓" if result.success else "✗"
         summary = result.content[:150].replace("\n", " ")
+        if len(result.content) > 150:
+            summary += "\u2026"
         parts.append(f"  Result: {ok} {summary}")
     _TOOL_CONTEXT._turn_history[turn] = "\n".join(parts)
     # Cap to last 200 entries to prevent unbounded memory growth
+    # Track _min_turn with an incrementing counter (O(1)) instead of sorted(keys)[0]
+    if not hasattr(_TOOL_CONTEXT, '_min_turn'):
+        _TOOL_CONTEXT._min_turn = 0
     if len(_TOOL_CONTEXT._turn_history) > 200:
-        oldest = sorted(_TOOL_CONTEXT._turn_history.keys())[0]
+        oldest = _TOOL_CONTEXT._min_turn
+        while oldest not in _TOOL_CONTEXT._turn_history:
+            oldest += 1
         del _TOOL_CONTEXT._turn_history[oldest]
+        _TOOL_CONTEXT._min_turn = oldest + 1
 
 
 def run_agent_turn(
@@ -236,7 +245,8 @@ def run_agent_turn(
     tool_keys_lock = threading.Lock()  # guards recent_tool_keys in parallel path
 
     # --- inject recent git changes (first turn only) ---
-    if turn_count == 0 and memory_store is not None:
+    _git_diff_injected = False
+    if memory_store is not None:
         try:
             result = _sp.run(
                 ["git", "diff", "--stat", "HEAD~1"],
@@ -253,8 +263,9 @@ def run_agent_turn(
                     ),
                     "_transient": True,
                 })
-        except Exception:
-            pass
+            _git_diff_injected = True
+        except Exception as exc:
+            print(f"  \u26a0 git diff failed: {exc}", file=sys.stderr, flush=True)
     _original_session = session  # track whether we own the session for cleanup
     if session is None:
         session = requests  # test-friendly: mockable via patch("llm.requests.post")
@@ -265,11 +276,22 @@ def run_agent_turn(
             if cancel_event is not None and cancel_event.is_set():
                 return None
 
+            # --- poll user interjections ---
+            interjections = poll_interjections()
+            for msg_text in interjections:
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "[User interjection while you were working] " + msg_text
+                    ),
+                })
+
             # Token budget awareness — inject context usage at turn start
             if turn_count > 1:
                 estimate = _total_tokens(messages)
                 # Rough max: model's context window minus headroom
-                budget = 64000
+                CONTEXT_BUDGET = 64000
+                budget = CONTEXT_BUDGET
                 pct = min(100, estimate * 100 // budget)
                 messages.append({
                     "role": "user",
@@ -430,9 +452,10 @@ def run_agent_turn(
                         "tool_call_id": tc["id"],
                         "content": result.to_json(),
                     })
-                    recent_tool_keys.append(_tool_call_key(tc))
-                    while len(recent_tool_keys) > _CIRCUIT_WINDOW:
-                        recent_tool_keys.pop(0)
+                    with tool_keys_lock:
+                        recent_tool_keys.append(_tool_call_key(tc))
+                        while len(recent_tool_keys) > _CIRCUIT_WINDOW:
+                            recent_tool_keys.pop(0)
                 _save_turn_summary(turn_count, msg, deferred_stream_results, messages)
                 continue
 
@@ -446,9 +469,10 @@ def run_agent_turn(
                     "tool_call_id": tc["id"],
                     "content": result.to_json(),
                 })
-                recent_tool_keys.append(_tool_call_key(tc))
-                while len(recent_tool_keys) > _CIRCUIT_WINDOW:
-                    recent_tool_keys.pop(0)
+                with tool_keys_lock:
+                    recent_tool_keys.append(_tool_call_key(tc))
+                    while len(recent_tool_keys) > _CIRCUIT_WINDOW:
+                        recent_tool_keys.pop(0)
 
             # --- Tool piping: extract _pipe deps from remaining tools ---
             # _pipe format: {"from": <source_index_in_remaining>, "into": "<param_name>"}
@@ -479,7 +503,8 @@ def run_agent_turn(
                                           on_output=on_tool_output,
                                           approve_callback=approve_callback)
                     _append_tool_result(messages, tc, result, on_tool_end,
-                                        recent_keys=recent_tool_keys)
+                                        recent_keys=recent_tool_keys,
+                                        lock=tool_keys_lock)
                     _save_turn_summary(turn_count, msg, [(tc, result)], messages)
                     continue
 
@@ -622,6 +647,8 @@ def run_agent_turn(
             _save_turn_summary(turn_count, msg, all_results, messages)
 
         # Exceeded max_turns — return last assistant message (still has tool_calls)
+        if 'msg' not in locals():
+            return None  # max_turns was 0, no API call made
         if total_usage:
             msg["_total_usage"] = total_usage
         if turn_count > 1:

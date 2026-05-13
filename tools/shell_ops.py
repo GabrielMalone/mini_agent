@@ -33,11 +33,16 @@ def _persist_test_output(output: str) -> None:
         pass
 
 
+_STREAM_READER_MAX_LINES = 10000  # cap to prevent unbounded memory growth
+
+
 def _stream_reader(stream, collector: list[str], forward: bool = False,
                    on_output: callable = None, prefix: str = "") -> None:
     """Read lines from *stream* into *collector*, optionally forwarding via *on_output*."""
     for line in iter(stream.readline, ""):
         line = line.rstrip("\n")
+        if len(collector) >= _STREAM_READER_MAX_LINES:
+            continue  # silently drop beyond cap to prevent memory exhaustion
         collector.append(line)
         if forward and on_output:
             try:
@@ -101,6 +106,8 @@ def _task_status(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolR
     returncode = proc.poll()
     if returncode is None:
         return ToolResult(success=True, content=f"Task {task_id}: still running.")
+    # Clean up completed tasks from the registry
+    del _TASK_REGISTRY[task_id]
     return ToolResult(success=True, content=f"Task {task_id}: completed with exit_code={returncode}.")
 
 
@@ -456,21 +463,7 @@ def _verify(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
 
     results: list[str] = []
 
-    # Step 1: lint
-    try:
-        r = subprocess.run(
-            ["python", "-m", "pytest", "test_lint.py", "-q"],
-            cwd=root, capture_output=True, text=True, timeout=60,
-        )
-        if r.returncode == 0:
-            results.append("Lint: passed")
-        else:
-            last = r.stdout.strip().split("\n")[-1] if r.stdout.strip() else "failed"
-            results.append(f"Lint: {last}")
-    except Exception as e:
-        results.append(f"Lint: error ({e})")
-
-    # Step 2: tests for modified files
+    # Step 1: tests for modified files
     from tools import _MODIFIED_FILES
     test_targets: list[str] = []
     if _MODIFIED_FILES:

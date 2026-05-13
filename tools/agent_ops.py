@@ -323,7 +323,9 @@ def _agent_status_summary(args: dict) -> str:
 # collect_agent
 # ---------------------------------------------------------------------------
 
-_COLLECT_TIMEOUT = 120  # seconds to wait for sub-agent completion
+_COLLECT_TIMEOUT = 30  # seconds to wait for sub-agent completion (kept moderate
+                       # so parent agent can check for user interjections between
+                       # polls — use agent_extend + collect_agent again if needed)
 
 
 @_register("collect_agent")
@@ -405,8 +407,10 @@ def _collect_agent_summary(args: dict) -> str:
 # collect_any
 # ---------------------------------------------------------------------------
 
-_COLLECT_ANY_POLL = 0.2     # seconds between polls
-_COLLECT_ANY_TIMEOUT = 120  # seconds to wait for any sub-agent
+_COLLECT_ANY_POLL = 0.2     # seconds between polls (unused, kept for reference)
+_COLLECT_ANY_TIMEOUT = 10   # seconds to wait for any sub-agent (kept short so
+                            # parent agent can check for user interjections between
+                            # polls — the parent's natural turn cycle handles this)
 
 
 @_register("collect_any")
@@ -473,9 +477,15 @@ def _collect_any(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolR
             if result is not None:
                 return _format_collect_any(tid, result)
 
+    # Report which sub-agents are still running so the parent can retry
+    still_running = [tid for tid in candidates if runtime.get_status(tid) == "running"]
     return ToolResult(
         success=False,
-        content=f"No sub-agent completed within {_COLLECT_ANY_TIMEOUT}s.",
+        content=(
+            f"No sub-agent completed within {_COLLECT_ANY_TIMEOUT}s. "
+            f"Still running: {still_running if still_running else 'none'}. "
+            "Use collect_any again to retry."
+        ),
     )
 
 

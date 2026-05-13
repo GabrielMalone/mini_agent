@@ -20,6 +20,7 @@ import re as _re
 # ---------------------------------------------------------------------------
 
 _SYMBOL_INDEX: dict[str, list[dict]] | None = None  # name → [{"path","line","kind"}, ...]
+_INDEX_MAX_MTIME: float = 0.0  # max mtime across all .py files from last build
 
 
 def build_symbol_index(root: str) -> dict[str, list[dict]]:
@@ -31,12 +32,11 @@ def build_symbol_index(root: str) -> dict[str, list[dict]]:
     Returns {name: [{"path":..., "line":..., "kind":"def"|"class"}, ...]}.
     The index is cached and reused until rebuild_symbol_index is called.
     """
-    global _SYMBOL_INDEX, _REF_INDEX
+    global _SYMBOL_INDEX, _REF_INDEX, _INDEX_MAX_MTIME
     import re
     import json as _json
 
     # --- disk cache: avoid re-scanning on every session ---
-    # Single-pass: check mtimes and build index in the same walk.
     cache_path = os.path.join(root, ".mini_agent_index.json")
     cache_mtime = 0.0
     try:
@@ -44,6 +44,18 @@ def build_symbol_index(root: str) -> dict[str, list[dict]]:
             cache_mtime = os.path.getmtime(cache_path)
     except Exception:
         pass
+
+    # Fast path: if cache exists and we know no .py file is newer, return cached data
+    if cache_mtime > 0.0 and _INDEX_MAX_MTIME > 0.0 and cache_mtime >= _INDEX_MAX_MTIME:
+        try:
+            cached = _json.loads(open(cache_path).read())
+            sym = {k: v for k, v in cached.get("symbols", {}).items()}
+            ref = {k: v for k, v in cached.get("references", {}).items()}
+            _SYMBOL_INDEX = sym
+            _REF_INDEX = ref
+            return sym
+        except Exception:
+            pass  # fall through to full rebuild
 
     def_pat = re.compile(r"^\s*(def|class)\s+(\w+)")
     word_pat = re.compile(r"\b(\w+)\b")
@@ -65,8 +77,7 @@ def build_symbol_index(root: str) -> dict[str, list[dict]]:
     # Raw word references collected in a single pass (word, path, line, context).
     # Filtered to known symbol names after the walk completes.
     _raw_refs: list[tuple[str, str, int, str]] = []
-    needs_rebuild = cache_mtime == 0.0  # no cache → must build
-    all_fresh = True
+    new_max_mtime = 0.0
 
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS and not d.startswith(".")]
@@ -74,16 +85,12 @@ def build_symbol_index(root: str) -> dict[str, list[dict]]:
             if not fname.endswith(".py"):
                 continue
             fpath = os.path.join(dirpath, fname)
-            # Mtime check for cache freshness (merged into the same walk)
-            if not needs_rebuild and cache_mtime > 0:
-                try:
-                    if os.path.getmtime(fpath) > cache_mtime:
-                        needs_rebuild = True
-                        all_fresh = False
-                except OSError:
-                    pass
-            if not needs_rebuild:
-                continue  # still fresh, skip reading
+            try:
+                mtime = os.path.getmtime(fpath)
+                if mtime > new_max_mtime:
+                    new_max_mtime = mtime
+            except OSError:
+                pass
             try:
                 with open(fpath, "r") as f:
                     for lineno, line in enumerate(f, 1):
@@ -105,17 +112,11 @@ def build_symbol_index(root: str) -> dict[str, list[dict]]:
             except (OSError, PermissionError):
                 continue
 
-    # If cache was valid and no file was newer, return cached data
-    if not needs_rebuild and all_fresh and cache_mtime > 0:
-        try:
-            cached = _json.loads(open(cache_path).read())
-            sym = {k: v for k, v in cached.get("symbols", {}).items()}
-            ref = {k: v for k, v in cached.get("references", {}).items()}
-            _SYMBOL_INDEX = sym
-            _REF_INDEX = ref
-            return sym
-        except Exception:
-            pass  # any failure → fall through to use just-built index
+    # If cache was valid and no file was newer, return cached data — already handled
+    # by the fast path at the top.  Fall through to use the freshly built index.
+
+    # Track max mtime so next call can short-circuit the walk
+    _INDEX_MAX_MTIME = new_max_mtime
 
     # Filter raw references to only known symbol names
     known_names = set(symbol_idx.keys())
@@ -417,6 +418,12 @@ def _semantic_search(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> To
 
     if not embs:
         return ToolResult(success=True, content="No matches found.")
+
+    # Touch LRU: files accessed during search should be moved to end (most-recently-used)
+    for fpath in _SEMANTIC_STORE:
+        if fpath in _SEMANTIC_LRU:
+            _SEMANTIC_LRU.remove(fpath)
+            _SEMANTIC_LRU.append(fpath)
 
     # Batched matmul: all cosine similarities in one call
     emb_matrix = np.asarray(embs)  # shape (N, D)

@@ -47,6 +47,8 @@ class SubAgentResult:
             "content": self.content,
             "turns_used": self.turns_used,
             "tool_calls_made": self.tool_calls_made,
+            "scratchpad": self.scratchpad,
+            "error": self.error,
         })
 
 
@@ -105,9 +107,13 @@ class AgentRuntime:
             self.tasks.pop(task_id, None)
             self.cancel_events.pop(task_id, None)
             self.max_turns.pop(task_id, None)
-            # Wake up any waiting collect_any/collect_agent
-            with self._condition:
-                self._condition.notify_all()
+            # Clean up inbox/subscriptions to prevent memory leak
+            self.clear_inbox(task_id)
+        # Notify condition OUTSIDE _lock to avoid deadlock:
+        # collect_agent's wait_for predicate acquires _condition then _lock,
+        # so we must never hold _lock while acquiring _condition.
+        with self._condition:
+            self._condition.notify_all()
 
     # ---- query ----
 

@@ -1,0 +1,99 @@
+FIXES_config.txt — Summary of changes made to config.py, memory.py, mini_agent.py
+==================================================================================
+Date: 2026-05-13
+
+All fixes per improvements.txt for the three assigned files. Tests pass: 43/43.
+
+--------------------------------------------------------------------------------
+memory.py (4 fixes)
+--------------------------------------------------------------------------------
+
+1. [REMOVED] Redundant _ensure_table() call in __init__
+   - Line ~343: Removed `self._ensure_table()` called after the try/finally block.
+     The tables are already created inside the try block above (CREATE TABLE IF NOT EXISTS
+     for messages, scratchpad, and test_output). The _ensure_table method itself is
+     retained (no external callers) but the redundant call is removed.
+
+2. [FIXED] _last_saved_count moved inside try block
+   - `save()` method: Moved `self._last_saved_count = len(kept)` from after the
+     except block to right after `conn.commit()` inside the try block. Previously,
+     a failed save would still update the counter, causing the next incremental
+     save to skip messages that were never actually persisted.
+
+3. [ADDED] Explicit rollback on exception
+   - `save()` method: Added `conn.rollback()` inside the except block (wrapped in
+     its own try/except to avoid masking the original error). This ensures the
+     database isn't left in a dirty transaction state after a save failure.
+
+4. [FIXED] Wider except in clear()
+   - Changed `except sqlite3.Error:` to `except (sqlite3.Error, OSError):`.
+     OSError can be raised by VACUUM on certain filesystems (e.g., disk full,
+     permission errors after the DB was already opened). The fallback os.remove
+     path now also catches these cases.
+
+--------------------------------------------------------------------------------
+config.py (6 fixes)
+--------------------------------------------------------------------------------
+
+5. [ADDED] Session cleanup on shutdown
+   - `init_session()`: Registered `atexit.register(session.close)` after creating
+     the requests.Session. This ensures the HTTP connection pool is properly closed
+     even if the caller doesn't explicitly close the session.
+
+6. [FIXED] Lazy-import requests
+   - Removed top-level `import requests`. Now `import requests as _requests` is
+     done inside `init_session()` where the Session is created. This avoids
+     importing requests at module load time (useful when config.py is imported
+     for constants only, e.g., in tests).
+
+7. [FIXED] parse_known_args now warns on unknown arguments
+   - `parse_args()`: Changed from `return parser.parse_known_args(argv)[0]` to
+     capturing both namespace and unknown args. If unknown args are present,
+     a warning is printed to stderr. This prevents silent ignoring of mistyped
+     flags while still allowing forward compatibility.
+
+8. [FIXED] --unrestricted substring check in AgentConfig.load()
+   - The fallback sys.argv checks in `AgentConfig.load()` used `"--flag" in sys.argv`.
+     While `in` on a list does exact matching (not substring), the logic didn't
+     exclude the program name (sys.argv[0]). Now uses `sys.argv[1:]` and explicit
+     `any(a == "--flag" for a in _argv)` for clarity and correctness. This guards
+     against false matches if a flag name happens to be a substring of another arg.
+
+9. [FIXED] os.walk wrapped in try/except OSError
+   - `build_startup_context()`: The `for dirpath, dirnames, filenames in os.walk(workspace)`
+     loop is now wrapped: `walk = list(os.walk(workspace))` inside try/except OSError.
+     If the workspace directory is unreadable (permissions, deleted mid-session),
+     walk falls back to an empty list instead of crashing.
+
+10. [FIXED] Guard empty workspace in memory_path
+    - `init_session()`: Changed `os.path.join(workspace, config.memory_filename)` to
+      `os.path.join(workspace or os.getcwd(), config.memory_filename)`. If workspace
+      is an empty string, os.path.join produces a relative path; now it falls back
+      to cwd to ensure the database is always in a valid location.
+
+--------------------------------------------------------------------------------
+mini_agent.py (3 fixes)
+--------------------------------------------------------------------------------
+
+11. [REMOVED] Dead first _stats_lock
+    - Line ~116: Removed the first `_stats_lock = threading.Lock()` assignment.
+      The lock was immediately shadowed by a second `_stats_lock = threading.Lock()`
+      at line ~125 that is the one actually used by the threaded tool callbacks.
+      The first lock was a dead object.
+
+12. [FIXED] session.close() wrapped in try/except
+    - Two locations (sync finally block ~229, threaded finally block ~387):
+      Wrapped `session.close()` in try/except Exception: pass. If the session
+      close raises (unlikely but possible with requests connection pool issues),
+      the exception no longer propagates unhandled.
+
+13. [FIXED] _approve function-level imports moved to module level
+    - Removed `from terminal import c, _YELLOW, _RED` from inside _approve().
+      These symbols are already imported at module level (line 50). The
+      function-level import was entirely redundant.
+
+--------------------------------------------------------------------------------
+Test results
+--------------------------------------------------------------------------------
+$ python -m pytest test_memory.py test_config.py -v
+43 passed in 0.15s

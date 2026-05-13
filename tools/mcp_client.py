@@ -124,16 +124,25 @@ class McpConnection:
             return False
 
     def disconnect(self) -> None:
-        """Terminate the subprocess gracefully, then forcefully."""
+        """Terminate the subprocess gracefully, then forcefully.
+
+        Acquires the I/O lock to prevent races with in-flight _send_request
+        calls.  Closes stdin, then waits briefly; if the process doesn't
+        exit, kills it.
+        """
         self._connected = False
         self._tools.clear()
         proc = self.process
         if proc is None:
             return
         self.process = None
+        with self._lock:
+            try:
+                if proc.stdin:
+                    proc.stdin.close()
+            except OSError:
+                pass
         try:
-            if proc.stdin:
-                proc.stdin.close()
             proc.wait(timeout=3)
         except (OSError, subprocess.TimeoutExpired):
             try:
@@ -172,6 +181,19 @@ class McpConnection:
             cwd=cwd,
             text=True,
         )
+        # Drain stderr in a daemon thread to prevent pipe-buffer deadlock
+        threading.Thread(
+            target=self._drain_stderr, daemon=True, name=f"mcp-stderr-{self.config.name}"
+        ).start()
+
+    def _drain_stderr(self) -> None:
+        """Read and discard stderr lines to prevent pipe buffer from filling."""
+        try:
+            if self.process and self.process.stderr:
+                for _line in self.process.stderr:
+                    pass
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # JSON-RPC
@@ -459,8 +481,21 @@ class McpClientManager:
     def _register_server_tools(self, server_name: str, conn: McpConnection) -> None:
         """Register one server's discovered tools into the global dispatch
         table and TOOLS schema list.
+
+        Removes any previously-registered entries for this server first
+        to prevent duplicates on re-registration.
         """
         from tools.schema import TOOLS
+
+        # 0. Remove old registrations for this server
+        prefix = f"mcp/{server_name}/"
+        TOOLS[:] = [td for td in TOOLS if not td["function"]["name"].startswith(prefix)]
+        for key in list(_TOOL_DISPATCH.keys()):
+            if key.startswith(prefix):
+                del _TOOL_DISPATCH[key]
+        for key in list(_TOOL_SUMMARIES.keys()):
+            if key.startswith(prefix):
+                del _TOOL_SUMMARIES[key]
 
         for tool_name, tool_schema in conn.tool_schemas.items():
             full_name = f"mcp/{server_name}/{tool_name}"

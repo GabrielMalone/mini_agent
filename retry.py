@@ -30,6 +30,7 @@ def _request_with_retry(
     *args,
     stream: bool = False,
     cancel_event: threading.Event | None = None,
+    timeout: tuple[float, float] = (10, 120),
     **kwargs,
 ) -> requests.Response | None:
     """Send an HTTP request with retry on transient errors.
@@ -40,6 +41,7 @@ def _request_with_retry(
 
     *session* is a requests.Session for connection reuse, or the requests
     module itself (for testability — tests patch requests.post).
+    *timeout* is the (connect, read) timeout tuple passed to requests.post.
     """
     post = session.post if hasattr(session, "post") and callable(session.post) else requests.post
     kwargs.pop("stream", None)  # avoid duplicate kwarg
@@ -49,7 +51,7 @@ def _request_with_retry(
         if cancel_event is not None and cancel_event.is_set():
             return None
         try:
-            r = post(*args, stream=stream, timeout=(10, 120), **kwargs)
+            r = post(*args, stream=stream, timeout=timeout, **kwargs)
             if r.ok or r.status_code not in _RETRYABLE_STATUSES:
                 return r
             # Transient error — retry
@@ -64,7 +66,10 @@ def _request_with_retry(
                 if cancel_event is not None and cancel_event.wait(delay):
                     return None  # cancelled during wait
             else:
-                return r  # exhausted retries, let caller handle
+                raise RuntimeError(
+                    f"Exhausted {_MAX_RETRIES + 1} retries on {r.status_code}. "
+                    f"Last response: {r.text[:500]}"
+                ) from None
         except requests.RequestException as exc:
             last_exc = exc
             if attempt < _MAX_RETRIES:

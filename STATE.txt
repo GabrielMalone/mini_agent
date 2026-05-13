@@ -3,25 +3,31 @@
 A coding agent powered by DeepSeek V4 Pro. Terminal REPL + Textual TUI.
 466 tests, 28+tools, SQLite memory.
 
-## This Session (2025-05-12)
+## This Session (2025-05-13)
 
-### New Features
-- **MCP Support**: tools/mcp_client.py — McpConnection + McpClientManager, stdio JSON-RPC, tools discovered at startup as mcp/<server>/<tool>, registered into dispatch. Config via [[mcp_server]] TOML blocks. Echo server fixture for testing.
-- **Agent Eval Harness**: eval/ module — YAML task format, 8 checker types, run_task/run_suite/load_tasks, temp workspace copies, binary scoring. Zero core changes.
-- **Richer Inter-Agent Comms**: tools/agent_messages.py (AgentMessage, 9 types, MSG_TYPE_REGISTRY), tools/agent_patterns.py (fan_out, fan_in, pipeline, barrier, scatter_gather). Old agent_message/agent_read backward compatible.
-- **run_shell --timeout param**: configurable timeout (default 60s, max 300s).
+### Massive Bug-Squash (from improvements.txt audit)
+- Spawned 5 sub-agents to review entire codebase → wrote ~150 findings to improvements.txt
+- Spawned 4 fix agents to address all findings in parallel across ~20 files
 
-### Bug Fixes (17 total)
-- llm.py: session close dead code, race on recent_tool_keys (lock), parallel results lost from turn summary, unbounded _turn_history (cap 200)
-- config.py + memory.py: max_messages default mismatch (300→500), incremental save compression, Session timeout, save error logging
-- agent_ops/patterns: MSG_TYPE_REGISTRY import, agent_inbox None crash, scatter_gather dead loop
-- file_ops + eval: edit_file count restriction, read_file line miscount, write_file raw path, eval/metrics NameError
-- search_ops: build_ref_index dead code removed
+### Subsystem Fixes
+| Subsystem | HIGH | MED | LOW | Key changes |
+|-----------|------|-----|-----|-------------|
+| Core runtime | 4 | 6 | 5 | lock for _MODIFIED_FILES, UnboundLocalError on msg, ellipsis truncation, _min_turn counter, _git_diff_injected, force-flush stream end, configurable retry timeouts |
+| Agent runtime + comms | 4 | 10 | 6 | DEADLOCK FIX (notify outside _lock), lost-wakeup fix (wait_for), garbled handoff fix, inbox memory leak cleanup, fan_out/scatter_gather subscriptions, barrier condition.wait |
+| Tools | 7 | 8 | 5 | JSON repair string-safe, cache key mismatch, backup timestamp collisions, reindex on edit, scratchpad safety, task registry cleanup, stream cap, LRU ordering, MCP stderr drain, TOOLS dedup |
+| Memory + Config | 3 | 7 | 9 | redundant _ensure_table removed, _last_saved_count in try, explicit rollback, lazy requests import, atexit session close, unknown arg warn, os.walk guard, empty workspace guard |
+| Eval | 3 | 5 | — | turns_used from _turn_count, max_turns or→if None, on_tool_end tracking, binary file crash, shlex crash, --allow-empty git commit, bash_hello→file check |
 
-### Critical Fix: collect_agent no longer cancels on timeout
-- Before: 120s timeout → cancel agent thread → kill work in progress
-- After: reports "still running" — agent keeps working, parent can extend/re-collect
-- Prompt updated: check disk before redoing work when error=="Turn budget exhausted"
+### collect_any blocking fix
+- _COLLECT_ANY_TIMEOUT: 120s → 10s
+- _COLLECT_TIMEOUT: 120s → 30s
+- Timeout message now lists still-running task IDs for retry
+
+### TUI: Queued messages now purple
+- TuiTheme gained `purple` field across all 8 themes
+- Queued interjections display with purple box chrome instead of dim
+
+### Bug Fixes (17 + ~150 = ~167 total)
 
 ## Test Suite: 466 tests across 18 files
 - test_tools.py (99), test_mcp.py (47), test_resilience.py (40), test_tui.py (37)
@@ -44,7 +50,8 @@ A coding agent powered by DeepSeek V4 Pro. Terminal REPL + Textual TUI.
   stream.py            SSE stream parser
   agent_runtime.py     SubAgentResult + AgentRuntime
   sub_agent.py         run_sub_agent()
-  improvements.txt     Audit findings (18 items, 17 fixed)
+  interject.py         Thread-safe user interjection queue
+  improvements.txt     Audit findings (~150 items, all fixed)
   tools/
     __init__.py        ToolResult, dispatch, cache, JSON repair
     schema.py          TOOLS list

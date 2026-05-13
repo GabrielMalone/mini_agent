@@ -22,6 +22,8 @@ class MetricsCollector:
     def __init__(self) -> None:
         self.tool_counts: Counter[str] = Counter()
         self.turn_count: int = 0
+        self.tool_successes: int = 0
+        self.tool_failures: int = 0
         self._current_batch_size: int = 0
 
     def on_tool_start(self, summary: str, parallel: bool = False) -> None:
@@ -35,7 +37,10 @@ class MetricsCollector:
 
     def on_tool_end(self, success: bool, detail: str) -> None:
         """Called after each tool completes."""
-        pass  # Turn counting is managed by the runner
+        if success:
+            self.tool_successes += 1
+        else:
+            self.tool_failures += 1
 
     def mark_turn(self) -> None:
         """Mark the start of a new agent turn (LLM → tools → LLM cycle)."""
@@ -48,4 +53,6 @@ class MetricsCollector:
             "turns": self.turn_count,
             "tool_calls": dict(self.tool_counts),
             "total_tool_calls": sum(self.tool_counts.values()),
+            "tool_successes": self.tool_successes,
+            "tool_failures": self.tool_failures,
         }

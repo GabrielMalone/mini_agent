@@ -30,6 +30,9 @@ def _backup_before_write(resolved_path: str) -> None:
     backup_dir = os.path.join(os.path.dirname(resolved_path), ".mini_agent_backups")
     os.makedirs(backup_dir, exist_ok=True)
     timestamp = time.strftime("%Y%m%d_%H%M%S")
+    # Add microsecond + random suffix to avoid collisions under high concurrency
+    import random as _random
+    timestamp += f"_{time.time_ns() % 1_000_000_000:09d}_{_random.randint(0, 9999):04d}"
     fname = os.path.basename(resolved_path)
     backup_path = os.path.join(backup_dir, f"{fname}.{timestamp}.bak")
     shutil.copy2(resolved_path, backup_path)
@@ -205,6 +208,11 @@ def _edit_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResu
         from tools import _MODIFIED_FILES
         _MODIFIED_FILES.add(safety_result.resolved_path)
 
+        # Keep symbol index fresh for edited .py files
+        if path.endswith(".py"):
+            from tools.search_ops import _reindex_file
+            _reindex_file(safety_result.resolved_path, wg.workspace_root)
+
         # Short summary: no full diff on success (saves context tokens)
         added = updated.count("\n") - original.count("\n")
         label = f"{replaced} occurrence(s)" if replaced > 1 else "1 occurrence"
@@ -337,12 +345,20 @@ def _write_scratchpad(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> 
                 content=f"Failed to update scratchpad: {e}",
             )
 
-    # Fallback: store in a file
-    fallback = _os.path.join(
+    # Fallback: store in a file — route through the write safety gate
+    fallback_path = _os.path.join(
         _TOOL_CONTEXT.workspace or ".", ".mini_agent_scratchpad.md"
     )
     try:
-        with open(fallback, "w") as f:
+        from safety import WriteSafetyGate
+        _fallback_gate = WriteSafetyGate(_TOOL_CONTEXT.workspace or ".", allow_overwrites=True)
+        fallback_safety = _fallback_gate.check(fallback_path)
+        if not fallback_safety.allowed:
+            return ToolResult(
+                success=False,
+                content=f"Scratchpad write blocked by safety layer: {fallback_safety.reason}",
+            )
+        with open(fallback_safety.resolved_path, "w") as f:
             f.write(content_text)
         return ToolResult(
             success=True,

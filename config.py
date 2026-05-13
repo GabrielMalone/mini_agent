@@ -10,8 +10,6 @@ import os
 import sys
 from dataclasses import dataclass, field
 
-import requests
-
 try:
     import tomllib
 except ImportError:
@@ -131,15 +129,16 @@ class AgentConfig:
             if cli_args.unrestricted is not None:
                 config.unrestricted = cli_args.unrestricted
         else:
-            if "--stream" in sys.argv:
+            _argv = sys.argv[1:]  # skip program name
+            if any(a == "--stream" for a in _argv):
                 config.stream = True
-            if "--quiet" in sys.argv:
+            if any(a == "--quiet" for a in _argv):
                 config.verbose = False
-            if "--allow-overwrites" in sys.argv:
+            if any(a == "--allow-overwrites" for a in _argv):
                 config.allow_overwrites = True
-            if "--approve" in sys.argv:
+            if any(a == "--approve" for a in _argv):
                 config.approve_write_ops = True
-            if "--unrestricted" in sys.argv:
+            if any(a == "--unrestricted" for a in _argv):
                 config.unrestricted = True
         # --workspace is resolved before we get here; store it
         config.workspace = workspace
@@ -226,7 +225,11 @@ def build_startup_context(workspace: str) -> str:
     SKIP = {".git", "__pycache__", ".venv", "venv", "node_modules", ".mypy_cache",
             ".pytest_cache", ".ruff_cache", "dist", "build", ".tox"}
     tree_lines: list[str] = []
-    for dirpath, dirnames, filenames in os.walk(workspace):
+    try:
+        walk = list(os.walk(workspace))
+    except OSError:
+        walk = []
+    for dirpath, dirnames, filenames in walk:
         dirnames[:] = sorted(d for d in dirnames if d not in SKIP and not d.startswith("."))
         depth = dirpath[len(workspace):].count(os.sep)
         indent = "  " * depth
@@ -287,7 +290,7 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
     write_gate = WriteSafetyGate(workspace, allow_overwrites=config.allow_overwrites,
                                  unrestricted=config.unrestricted)
     read_gate = ReadSafetyGate(workspace, unrestricted=config.unrestricted)
-    memory_path = os.path.join(workspace, config.memory_filename)
+    memory_path = os.path.join(workspace or os.getcwd(), config.memory_filename)
     memory = MemoryStore(memory_path, max_messages=config.max_messages,
                         max_tokens=config.max_tokens)
     set_context(exa_api_key=config.exa_api_key, scratchpad_path=memory._db_path)
@@ -324,13 +327,18 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
     if saved:
         messages.extend(saved)
 
-    session = requests.Session()
+    import requests as _requests
+    session = _requests.Session()
     # Set default timeout (connect, read) for every request.
     import functools
     session.request = functools.partial(session.request, timeout=(30, 120))
     # Limit connection pool to avoid resource waste on long-running sessions.
-    session.mount("https://", requests.adapters.HTTPAdapter(
+    session.mount("https://", _requests.adapters.HTTPAdapter(
         pool_connections=2, pool_maxsize=4))
+
+    # Ensure the session is closed on normal interpreter shutdown.
+    import atexit
+    atexit.register(session.close)
 
     return {
         "config": config,
@@ -383,7 +391,11 @@ def parse_args(argv: list[str] | None = None) -> object:
         "--unrestricted", action="store_true", default=None,
         help="Remove workspace boundary checks (allows read/write anywhere)",
     )
-    return parser.parse_known_args(argv)[0]
+    ns, unknown = parser.parse_known_args(argv)
+    if unknown:
+        print(f"Warning: unknown CLI arguments ignored: {' '.join(unknown)}",
+              file=sys.stderr)
+    return ns
 
 
 def resolve_workspace(override: str | None = None) -> str:

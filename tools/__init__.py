@@ -162,6 +162,33 @@ def _repair_json(raw: str) -> tuple[object, bool]:
     """
     import re
 
+    # Helper: apply unquoted-key fix only outside strings
+    def _fix_unquoted_keys(text: str) -> str:
+        """Quote bare keys but skip content inside double-quoted strings."""
+        result: list[str] = []
+        i = 0
+        while i < len(text):
+            if text[i] == '"':
+                # Find end of string (handle backslash escapes)
+                j = i + 1
+                while j < len(text):
+                    if text[j] == '\\' and j + 1 < len(text):
+                        j += 2
+                        continue
+                    if text[j] == '"':
+                        j += 1
+                        break
+                    j += 1
+                result.append(text[i:j])
+                i = j
+            else:
+                result.append(text[i])
+                i += 1
+        # Only apply regex to segments at even indices (outside strings)
+        for idx in range(0, len(result), 2):
+            result[idx] = re.sub(r'(\w+)(\s*:)', r'"\1"\2', result[idx])
+        return ''.join(result)
+
     # Individual fixes
     fix1 = re.sub(r',\s*([}\]])', r'\1', raw)
 
@@ -171,7 +198,7 @@ def _repair_json(raw: str) -> tuple[object, bool]:
 
     fix3 = raw
     if not raw.strip().startswith('['):
-        fix3 = re.sub(r'(\w+)(\s*:)', r'"\1"\2', raw)
+        fix3 = _fix_unquoted_keys(raw)
 
     # Combinations — apply fixes in sequence on copies
     def _apply_combo(base: str, *indices: int) -> str:
@@ -183,7 +210,7 @@ def _repair_json(raw: str) -> tuple[object, bool]:
                 s = s.replace("'", '"')
             elif i == 3:
                 if not s.strip().startswith('['):
-                    s = re.sub(r'(\w+)(\s*:)', r'"\1"\2', s)
+                    s = _fix_unquoted_keys(s)
         return s
 
     attempts: list[str] = [
@@ -265,6 +292,7 @@ def execute_tool(
         )
 
     # Check cache for read-only tools (skip if on_output is streaming)
+    cache_key = ""
     if on_output is None and name in _CACHEABLE:
         cache_key = json.dumps([name, args], sort_keys=True)
         if cache_key in _TOOL_CACHE:
@@ -331,8 +359,7 @@ def execute_tool(
         result = dispatch(args, write_gate, read_gate)
 
     # Cache successful read-only results (only when not streaming)
-    if on_output is None and name in _CACHEABLE and result.success:
-        cache_key = json.dumps([name, args], sort_keys=True)
+    if cache_key and result.success:
         _TOOL_CACHE[cache_key] = result
 
     return result
