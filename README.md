@@ -1,16 +1,18 @@
 # mini_agent
 
-A coding agent powered by DeepSeek V4 Pro with 24 tools. Runs as a terminal REPL or a Textual TUI.
+A coding agent powered by DeepSeek V4 Pro with 28+ tools. Runs as a terminal REPL or a Textual TUI.
 
 ## Features
 
-- **24 tools**: file operations, shell commands, search, git, web search, semantic search, symbol lookup, multi-agent delegation, test running, and more
+- **28+ tools**: file operations, shell commands, search, git, web search, semantic search, symbol lookup, multi-agent delegation with 9 message types, fan-out/fan-in/pipeline/barrier/scatter-gather patterns, MCP client for external tool servers, test running, and more
+- **MCP support**: discover tools from external MCP servers at startup (stdio JSON-RPC), configured via `[[mcp_server]]` TOML blocks
+- **Eval harness**: YAML task format, 8 checker types, binary scoring, temp workspace copies — zero core changes
 - **Streaming**: token-by-token responses with live tool output
 - **Two interfaces**: terminal REPL (`python mini_agent.py`) or rich TUI (`python tui.py`)
 - **Safety layer**: workspace isolation, destructive command guard, overwrite protection
-- **Multi-agent**: spawn sub-agents for parallel task execution
+- **Multi-agent**: spawn sub-agents for parallel task execution; structured inter-agent messages with validation and routing
 - **Memory**: SQLite-backed conversation store with token-aware pruning
-- **316 tests**, all passing
+- **466 tests**, all passing
 
 ## Quick Start
 
@@ -31,7 +33,7 @@ pip install -r requirements.txt
 export DEEPSEEK_API_KEY="sk-your-key-here"
 # or copy and edit the config file:
 cp .mini_agent.toml.example .mini_agent.toml
-# then edit .mini_agent.toml with your keys
+# then edit .mini_agent.toml with your keys and MCP servers
 
 # 5. Run
 python tui.py          # Textual TUI (recommended)
@@ -48,6 +50,19 @@ Settings are loaded from (in priority order):
 
 Copy `.mini_agent.toml.example` to `.mini_agent.toml` for local configuration.
 
+### MCP Servers
+
+Define external MCP servers in `.mini_agent.toml`:
+
+```toml
+[[mcp_server]]
+name = "my-server"
+command = "python"
+args = ["-m", "my_mcp_server"]
+```
+
+Tools from each server are registered as `mcp/<server>/<tool>` and are available automatically at startup.
+
 ### CLI Flags
 
 | Flag | Description |
@@ -59,38 +74,50 @@ Copy `.mini_agent.toml.example` to `.mini_agent.toml` for local configuration.
 | `--approve` | Ask confirmation before write/destructive tools |
 | `--allow-overwrites` | Allow overwriting existing files |
 | `--unrestricted` | Remove workspace boundary checks |
+| `--timeout SECONDS` | Max seconds for shell commands (default 60, max 300) |
 | `--help, -h` | Show help |
 
 ## Running Tests
 
 ```bash
 python -m pytest
-# 316 tests in ~6 seconds
+# 466 tests in ~6 seconds
 ```
 
 ## Architecture
 
 ```
 mini_agent/
-  mini_agent.py     Terminal REPL entry point
-  tui.py            Textual TUI interface
-  config.py         Configuration loading (TOML, env, CLI)
-  llm.py            API calls, agent loop, circuit breaker
-  safety.py         File read/write safety gates
-  memory.py         SQLite-backed conversation store
-  prompt.py         System prompt template
-  stream.py         SSE stream parser
-  retry.py          API retry with exponential backoff
-  sub_agent.py      Sub-agent spawning
-  agent_runtime.py  Sub-agent registry
-  terminal.py       ANSI colour helpers
+  mini_agent.py       Terminal REPL entry point
+  tui.py              Textual TUI interface
+  config.py           Configuration loading (TOML, env, CLI)
+  llm.py              API calls, agent loop, circuit breaker
+  safety.py           File read/write safety gates
+  memory.py           SQLite-backed conversation store
+  prompt.py           System prompt template
+  stream.py           SSE stream parser
+  retry.py            HTTP retry with jitter and exponential backoff
+  sub_agent.py        Sub-agent execution
+  agent_runtime.py    Sub-agent registry and lifecycle
+  terminal.py         ANSI colour helpers
   tools/
-    __init__.py     Tool dispatch, registration
-    file_ops.py     read/write/edit/list/diff/restore
-    shell_ops.py    run_shell, search_files, run_tests, git
-    search_ops.py   find_symbol, find_usages, semantic_search, web_search
-    agent_ops.py    spawn_agent, agent_status, collect_agent
-    schema.py       Tool JSON schemas
+    __init__.py       Tool dispatch, registration, JSON repair
+    schema.py         Tool JSON schemas
+    file_ops.py       read/write/edit/list/info/scratchpad/diff/restore/plan
+    shell_ops.py      run_shell, search_files, run_tests, git, task_status, verify
+    search_ops.py     find_symbol, find_usages, semantic_search, web_search, recall_turn
+    agent_ops.py      spawn/status/collect/collect_any/message/read/extend/handoff/inbox/subscribe
+    agent_messages.py AgentMessage, 9 message types, validation, routing
+    agent_patterns.py fan_out, fan_in, pipeline, barrier, scatter_gather
+    mcp_client.py     MCP client — JSON-RPC over stdio, tool discovery at startup
+  eval/
+    __init__.py       Eval package
+    runner.py         Task runner with temp workspace copies
+    scorer.py         Binary scoring with 8 checker types
+    metrics.py        Aggregate metrics
+    tasks/            YAML task definitions
+    fixtures/         Test fixtures for eval tasks
+    reports/          Eval run output
 ```
 
 ## License
