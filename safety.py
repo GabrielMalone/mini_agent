@@ -68,8 +68,19 @@ class ReadSafetyGate:
                 reason="Path is None.",
                 resolved_path="",
             )
+        # Guard against empty-string "" which silently resolves to CWD via abspath.
+        if not path:
+            return SafetyResult(
+                allowed=False,
+                reason="Path is empty.",
+                resolved_path="",
+            )
         resolved = os.path.realpath(os.path.abspath(path))
 
+        # NOTE: There is an inherent TOCTOU race between this realpath check
+        # and the actual open() call — a symlink could be swapped after this
+        # check passes.  We accept this because the workspace is assumed to be
+        # single-writer and the window is tiny.
         if not self._unrestricted and not _is_within_workspace(resolved, self._root):
             return SafetyResult(
                 allowed=False,
@@ -114,6 +125,13 @@ class WriteSafetyGate:
             return SafetyResult(
                 allowed=False,
                 reason="Path is None.",
+                resolved_path="",
+            )
+        # Guard against empty-string "" which silently resolves to CWD via abspath.
+        if not path:
+            return SafetyResult(
+                allowed=False,
+                reason="Path is empty.",
                 resolved_path="",
             )
 

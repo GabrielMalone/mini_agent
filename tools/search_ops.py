@@ -5,6 +5,7 @@ search_ops.py — semantic search and web search tools for mini_agent.
 Tools: semantic_search, web_search
 """
 
+import json
 import os
 
 from safety import ReadSafetyGate, WriteSafetyGate
@@ -139,8 +140,10 @@ def build_symbol_index(root: str) -> dict[str, list[dict]]:
     # Persist to disk cache
     try:
         cache_path = os.path.join(root, ".mini_agent_index.json")
-        with open(cache_path, "w") as f:
+        tmp = cache_path + ".tmp"
+        with open(tmp, "w") as f:
             _json.dump({"symbols": symbol_idx, "references": ref_idx}, f)
+        os.replace(tmp, cache_path)  # atomic rename
     except Exception:
         pass
 
@@ -206,9 +209,11 @@ def _reindex_file(filepath: str, root: str) -> None:
 
     # Persist updated indices to disk cache so next session picks them up
     try:
-        cache_path = _os.path.join(root, ".mini_agent_index.json")
-        with open(cache_path, "w") as f:
-            _json.dump({"symbols": _SYMBOL_INDEX, "references": _REF_INDEX or {}}, f)
+        cache_path = os.path.join(root, ".mini_agent_index.json")
+        tmp = cache_path + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump({"symbols": _SYMBOL_INDEX, "references": _REF_INDEX or {}}, f)
+        os.replace(tmp, cache_path)  # atomic rename
     except Exception:
         pass
 

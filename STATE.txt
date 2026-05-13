@@ -253,6 +253,7 @@ Also: backward/forward orphan detection, transient message stripping, scratchpad
 
 ## Recent git log
 ```
+674f93a Robustness pass: zombie thread defense, jittered retry, unified SafetyResult, index persistence, stale message filtering, session ownership, lazy terminal color
 020de36 Multi-agent v2: collect_any, agent_message, agent_read, agent_extend tools. TUI: horizontal per-agent panes with unique colors, line-buffered sub-agent streaming, matching backgrounds, border fixes. 320 tests.
 70a6e9c visible=true: inline streaming, config.stream+on_token wiring, SubAgentResult.to_dict, recursion guard +agent_extend
 2158031 Stop tracking .mini_agent.toml to prevent API key leaks

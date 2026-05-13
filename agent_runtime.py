@@ -63,6 +63,8 @@ class AgentRuntime:
         - keep_alive: set[str]         (persistent agents)
     """
 
+    _ABSOLUTE_MAX_TURNS: int = 35  # hard cap for extend_turns()
+
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self.tasks: dict[str, threading.Thread] = {}
@@ -93,6 +95,8 @@ class AgentRuntime:
                 )
                 self.abandoned.discard(task_id)
                 return
+            if task_id in self.results:
+                return  # idempotent: result already stored
             self.results[task_id] = result
             self.tasks.pop(task_id, None)
             self.cancel_events.pop(task_id, None)
@@ -117,8 +121,9 @@ class AgentRuntime:
         """Bump the max_turns budget for a running sub-agent. Returns True if found."""
         with self._lock:
             if task_id in self.max_turns:
-                _ABSOLUTE_MAX = 35
-                self.max_turns[task_id] = min(self.max_turns[task_id] + additional, _ABSOLUTE_MAX)
+                self.max_turns[task_id] = min(
+                    self.max_turns[task_id] + additional, self._ABSOLUTE_MAX_TURNS
+                )
                 return True
             return False
 

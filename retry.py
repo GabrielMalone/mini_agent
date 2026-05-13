@@ -20,6 +20,11 @@ _MAX_RETRIES = 3
 _RETRYABLE_STATUSES: set[int] = {429, 500, 502, 503, 504}
 
 
+def _jittered_delay(attempt: int) -> float:
+    """Return jittered exponential backoff delay: ~0.5-1.5s, ~1-3s, ~2-6s."""
+    return (2 ** attempt) * (0.5 + random.random())
+
+
 def _request_with_retry(
     session,  # requests.Session or the requests module itself
     *args,
@@ -40,26 +45,30 @@ def _request_with_retry(
     kwargs.pop("stream", None)  # avoid duplicate kwarg
     last_exc: Exception | None = None
     for attempt in range(_MAX_RETRIES + 1):
+        # Check cancel before making a request (avoids wasted HTTP call on shutdown)
+        if cancel_event is not None and cancel_event.is_set():
+            return None
         try:
             r = post(*args, stream=stream, **kwargs)
             if r.ok or r.status_code not in _RETRYABLE_STATUSES:
                 return r
             # Transient error — retry
             if attempt < _MAX_RETRIES:
-                delay = (2 ** attempt) * (0.5 + random.random())  # jittered: ~0.5-1.5s, 1-3s, 2-6s
+                r.close()  # close connection before retry
+                delay = _jittered_delay(attempt)
                 print(
                     f"  ⚠ API {r.status_code}, retrying in {delay:.1f}s "
                     f"(attempt {attempt + 1}/{_MAX_RETRIES})",
                     file=sys.stderr, flush=True,
                 )
                 if cancel_event is not None and cancel_event.wait(delay):
-                    return r  # cancelled during wait
+                    return None  # cancelled during wait
             else:
                 return r  # exhausted retries, let caller handle
         except requests.RequestException as exc:
             last_exc = exc
             if attempt < _MAX_RETRIES:
-                delay = (2 ** attempt) * (0.5 + random.random())
+                delay = _jittered_delay(attempt)
                 print(
                     f"  ⚠ network error ({exc}), retrying in {delay:.1f}s "
                     f"(attempt {attempt + 1}/{_MAX_RETRIES})",
