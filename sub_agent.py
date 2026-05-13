@@ -84,8 +84,22 @@ def run_sub_agent(
             "role": "system",
             "content": (
                 f"You are at depth {current_depth}/{max_depth}. "
-                "You MAY spawn sub-agents for independent subtasks. "
-                "Your sub-agents will be at depth {current_depth + 1}."
+                "You MAY spawn sub-agents (spawn_agent) for independent subtasks. "
+                "Your sub-agents will be at depth {current_depth + 1}.\n"
+                "\n"
+                "Orchestrator rules (same as the parent):\n"
+                "- Once you spawn sub-agents, you are an orchestrator for THOSE tasks. "
+                "Do NOT duplicate, pre-empt, or race the work you delegated.\n"
+                "- After spawning, your job is to monitor (agent_status), collect "
+                "(collect_agent/collect_any), and extend (agent_extend). You may also "
+                "work on independent tasks you did NOT delegate.\n"
+                "- Poll sub-agents every turn. If all are running, report status and wait.\n"
+                "- Extend proactively: after ~10 turns of work, grant +10 more with "
+                "agent_extend (max 35 total).\n"
+                "- Use collect_any to grab the first ready result and keep the pipeline moving.\n"
+                "- Only cancel if an agent repeats the same error 3+ times or exhausts 35 turns.\n"
+                "- Track task IDs, what each agent is doing, and collection status "
+                "in your scratchpad (write_scratchpad)."
             ),
         })
     if shared_context:
