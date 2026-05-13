@@ -776,7 +776,7 @@ class MiniAgentTUI(App):
                     self._in_thinking = False
                     self._close_agent_box()
                     self._active_tool = msg.summary.split("(")[0].strip() if "(" in msg.summary else msg.summary[:20]
-                    MiniAgentTUI._box_open(static, f"⚙ {msg.summary}", t.yellow)
+                    MiniAgentTUI._box_open(static, _safe(f"⚙ {msg.summary}"), t.yellow)
                 elif isinstance(msg, _ToolEnd):
                     symbol = "✓" if msg.ok else "✗"
                     color = t.green if msg.ok else t.red

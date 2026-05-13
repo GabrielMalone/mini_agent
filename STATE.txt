@@ -260,3 +260,8 @@ Also: backward/forward orphan detection, transient message stripping, scratchpad
 cdaeec9 Scrub API keys, add README, enable unrestricted by default, add .gitignore for secrets
 92d4453 Multi-agent support: spawn_agent/agent_status/collect_agent, extracted retry/stream/schema modules, bug fixes from parallel sub-agent review
 ```
+
+### Table formatting rule (from prompt.py)
+- Keep every cell on a single line — no embedded newlines
+- Align columns with consistent spacing
+- Truncate wide cells rather than wrapping
