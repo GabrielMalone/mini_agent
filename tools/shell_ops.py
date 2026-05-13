@@ -24,6 +24,13 @@ def _persist_test_output(output: str) -> None:
         import sqlite3
         conn = sqlite3.connect(db_path)
         conn.execute(
+            "CREATE TABLE IF NOT EXISTS test_output ("
+            "id INTEGER PRIMARY KEY CHECK (id = 1),"
+            "output TEXT NOT NULL DEFAULT ''"
+            ")"
+        )
+        conn.execute("INSERT OR IGNORE INTO test_output (id, output) VALUES (1, '')")
+        conn.execute(
             "INSERT OR REPLACE INTO test_output (id, output) VALUES (1, ?)",
             (output,),
         )

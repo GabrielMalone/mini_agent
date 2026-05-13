@@ -182,8 +182,12 @@ def _repair_json(raw: str) -> tuple[object, bool]:
                 result.append(text[i:j])
                 i = j
             else:
-                result.append(text[i])
-                i += 1
+                # Accumulate consecutive non-quoted chars into one segment
+                j = i
+                while j < len(text) and text[j] != '"':
+                    j += 1
+                result.append(text[i:j])
+                i = j
         # Only apply regex to segments at even indices (outside strings)
         for idx in range(0, len(result), 2):
             result[idx] = re.sub(r'(\w+)(\s*:)', r'"\1"\2', result[idx])

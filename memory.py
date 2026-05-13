@@ -445,6 +445,13 @@ class MemoryStore:
         """Return the current scratchpad content (empty string if none)."""
         try:
             with sqlite3.connect(self._db_path) as conn:
+                conn.execute(
+                    "CREATE TABLE IF NOT EXISTS scratchpad ("
+                    "id INTEGER PRIMARY KEY CHECK (id = 1),"
+                    "content TEXT NOT NULL DEFAULT ''"
+                    ")"
+                )
+                conn.execute("INSERT OR IGNORE INTO scratchpad (id, content) VALUES (1, '')")
                 row = conn.execute(
                     "SELECT content FROM scratchpad WHERE id = 1"
                 ).fetchone()
@@ -457,11 +464,19 @@ class MemoryStore:
         try:
             with sqlite3.connect(self._db_path) as conn:
                 conn.execute(
+                    "CREATE TABLE IF NOT EXISTS scratchpad ("
+                    "id INTEGER PRIMARY KEY CHECK (id = 1),"
+                    "content TEXT NOT NULL DEFAULT ''"
+                    ")"
+                )
+                conn.execute("INSERT OR IGNORE INTO scratchpad (id, content) VALUES (1, '')")
+                conn.execute(
                     "INSERT OR REPLACE INTO scratchpad (id, content) VALUES (1, ?)",
                     (content,),
                 )
-        except sqlite3.Error:
-            pass
+        except sqlite3.Error as exc:
+            import sys
+            print(f"Warning: scratchpad write failed: {exc}", file=sys.stderr)
 
     def get_test_output(self) -> str:
         """Return the last saved test output (empty string if none)."""

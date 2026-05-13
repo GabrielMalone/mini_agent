@@ -114,6 +114,69 @@ class TestAgentRuntime:
         for ev in events:
             assert ev.is_set()
 
+    def test_get_pending_results_new_completions(self, runtime):
+        """get_pending_results returns newly-completed results, then nothing."""
+        # Register and complete a task
+        cancel = threading.Event()
+        t = threading.Thread(target=lambda: time.sleep(0.1), daemon=True)
+        runtime.register("task_a", t, cancel)
+        t.start()
+        t.join()
+        runtime.store_result("task_a", SubAgentResult(True, "first done", turns_used=2))
+
+        pending = runtime.get_pending_results()
+        assert len(pending) == 1
+        assert pending[0][0] == "task_a"
+        assert pending[0][1].content == "first done"
+
+        # Second call returns empty — already seen
+        assert runtime.get_pending_results() == []
+
+    def test_get_pending_results_multiple(self, runtime):
+        """Multiple completions all returned in one call."""
+        cancel = threading.Event()
+        t1 = threading.Thread(target=lambda: time.sleep(0.1), daemon=True)
+        t2 = threading.Thread(target=lambda: time.sleep(0.1), daemon=True)
+        runtime.register("task_1", t1, cancel)
+        runtime.register("task_2", t2, cancel)
+        t1.start(); t2.start()
+        t1.join(); t2.join()
+        runtime.store_result("task_1", SubAgentResult(True, "ok", turns_used=1))
+        runtime.store_result("task_2", SubAgentResult(False, "fail", error="e"))
+
+        pending = runtime.get_pending_results()
+        assert len(pending) == 2
+        ids = {tid for tid, _ in pending}
+        assert ids == {"task_1", "task_2"}
+
+    def test_get_running_ids(self, runtime):
+        """get_running_ids returns active task IDs."""
+        assert runtime.get_running_ids() == []
+
+        cancel = threading.Event()
+        t = threading.Thread(target=lambda: time.sleep(0.5), daemon=True)
+        runtime.register("active_1", t, cancel)
+        t.start()
+
+        running = runtime.get_running_ids()
+        assert running == ["active_1"]
+        t.join()
+
+    def test_seen_completions_cleanup_on_abandon(self, runtime):
+        """mark_abandoned cleans up _seen_completions entry."""
+        cancel = threading.Event()
+        t = threading.Thread(target=lambda: time.sleep(0.1), daemon=True)
+        runtime.register("to_abandon", t, cancel)
+        t.start()
+        t.join()
+        runtime.store_result("to_abandon", SubAgentResult(True, "done"))
+        pending = runtime.get_pending_results()
+        assert len(pending) == 1
+
+        runtime.mark_abandoned("to_abandon")
+        # _seen_completions is cleaned, so get_pending_results won't re-return it
+        assert "to_abandon" not in runtime._seen_completions
+
 
 # ---------------------------------------------------------------------------
 # SubAgentResult tests

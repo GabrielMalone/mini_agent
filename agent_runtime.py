@@ -75,6 +75,7 @@ class AgentRuntime:
         self.cancel_events: dict[str, threading.Event] = {}
         self.max_turns: dict[str, int] = {}  # mutable per-task turn budgets
         self.abandoned: set[str] = set()     # zombie tasks whose store_result() is a no-op
+        self._seen_completions: set[str] = set()  # task_ids already surfaced to parent
         # Inter-agent communication
         self.inboxes: dict[str, list] = {}          # task_id → list of AgentMessage
         self.subscriptions: dict[str, set[str]] = {} # task_id → set of message types
@@ -108,7 +109,8 @@ class AgentRuntime:
             self.cancel_events.pop(task_id, None)
             self.max_turns.pop(task_id, None)
             # Clean up inbox/subscriptions to prevent memory leak
-            self.clear_inbox(task_id)
+            self.inboxes.pop(task_id, None)
+            self.subscriptions.pop(task_id, None)
         # Notify condition OUTSIDE _lock to avoid deadlock:
         # collect_agent's wait_for predicate acquires _condition then _lock,
         # so we must never hold _lock while acquiring _condition.
@@ -145,6 +147,25 @@ class AgentRuntime:
         with self._lock:
             return self.max_turns.get(task_id)
 
+    def get_pending_results(self) -> list[tuple[str, "SubAgentResult"]]:
+        """Return results for sub-agents that completed since last call.
+
+        Each call returns newly-completed results and marks them as seen.
+        Subsequent calls return only completions that happened after this call.
+        """
+        with self._lock:
+            pending: list[tuple[str, "SubAgentResult"]] = []
+            for tid, result in self.results.items():
+                if tid not in self._seen_completions:
+                    self._seen_completions.add(tid)
+                    pending.append((tid, result))
+            return pending
+
+    def get_running_ids(self) -> list[str]:
+        """Return task_ids of all currently running sub-agents."""
+        with self._lock:
+            return list(self.tasks.keys())
+
     def mark_abandoned(self, task_id: str) -> None:
         """Mark a task as abandoned so its store_result() is a no-op.
 
@@ -158,6 +179,7 @@ class AgentRuntime:
             self.tasks.pop(task_id, None)
             self.cancel_events.pop(task_id, None)
             self.max_turns.pop(task_id, None)
+            self._seen_completions.discard(task_id)
 
     def cancel(self, task_id: str) -> bool:
         """Request cancellation of a running sub-agent. Returns True if found."""

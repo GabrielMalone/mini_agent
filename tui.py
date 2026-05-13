@@ -125,6 +125,13 @@ THEMES: dict[str, TuiTheme] = {
         green="#60d070", yellow="#b0b040", red="#c06050",
         thinking="#203028", pulse="#50d060",
     ),
+    "dracula": TuiTheme(
+        name="Dracula",
+        bg="#282a36", surface="#1e1f29", border="#44475a",
+        accent="#bd93f9", text="#f8f8f2", dim="#6272a4",
+        green="#50fa7b", yellow="#f1fa8c", red="#ff5555",
+        thinking="#44475a", pulse="#ff79c6",
+    ),
 }
 
 DEFAULT_THEME = "slate"

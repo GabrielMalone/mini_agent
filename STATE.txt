@@ -3,7 +3,51 @@
 A coding agent powered by DeepSeek V4 Pro. Terminal REPL + Textual TUI.
 466 tests, 28+tools, SQLite memory.
 
-## This Session (2025-05-13)
+## This Session (2025-05-16)
+
+### Bug fixes (2)
+- **eval/scorer.py**: `_check_shell` called `subprocess.run()` without `args` positional —
+  `cmd` was parsed via `shlex.split()` but never passed to the call. All shell checks
+  crashed with `Popen.__init__() missing 1 required positional argument: 'args'`.
+- **tools/__init__.py**: `_fix_unquoted_keys` split non-quoted text character-by-character
+  (one list element per char), so the regex `(\w+)(\s*:)` could never match across multiple
+  characters. Changed to accumulate consecutive non-quoted chars into segments, matching the
+  same segment-level logic used for quoted strings. Fixes `test_unquoted_keys` and
+  `test_combined_malformations` in test_resilience.py.
+
+### Test suite: 562 passed, 0 failed
+
+### Scratchpad SQLite table bug fix
+- `_write_scratchpad` (file_ops.py), `set_scratchpad` / `get_scratchpad` (memory.py),
+  and `_persist_test_output` (shell_ops.py) all opened raw SQLite connections and
+  executed INSERT/REPLACE without ensuring the target table existed.
+- The scratchpad table is created in `MemoryStore.__init__`, but in test scenarios
+  `_TOOL_CONTEXT.scratchpad_path` could point at a fresh DB never initialized that way.
+- Fix: Added `CREATE TABLE IF NOT EXISTS` + `INSERT OR IGNORE` (seed row) before every
+  DML statement in all four locations. Also changed `set_scratchpad` from silently
+  swallowing errors to printing a warning to stderr.
+
+### Sub-agent completion signals (orchestration awareness)
+- AgentRuntime: added `_seen_completions` set to track which results have been surfaced
+- Added `get_pending_results()` — returns newly-completed results since last call
+- Added `get_running_ids()` — returns task_ids of all currently running sub-agents
+- `run_agent_turn()` now injects orchestration context at turn start:
+  - Shows newly-completed sub-agent results with status
+  - Lists still-running sub-agents with reminder to poll
+  - Transient message (not persisted to memory)
+- Fixed pre-existing deadlock: `store_result` called `clear_inbox` while holding
+  `self._lock`; `clear_inbox` also acquires `self._lock` (plain Lock, not re-entrant).
+  Inlined the inbox cleanup directly in `store_result`.
+
+### Orchestrator mode prompt (prompt.py)
+- Added explicit "Orchestrator mode" section to system prompt
+- After spawning sub-agents, parent must act as orchestrator only
+- Rules: poll with agent_status, extend proactively, never duplicate delegated work
+- collect_agent timeout is NOT failure — extend and retry
+- Cancel only when: 35 turns exhausted OR 3+ consecutive error loops
+- Scratchpad must track task IDs, extensions, and collected results
+
+## Previous Session (2025-05-13)
 
 ### Massive Bug-Squash (from improvements.txt audit)
 - Spawned 5 sub-agents to review entire codebase → wrote ~150 findings to improvements.txt

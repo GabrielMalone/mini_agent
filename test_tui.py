@@ -170,6 +170,28 @@ class TestAgentWorker(unittest.TestCase):
         w.join(timeout=5)
         self.assertTrue(config.stream)
 
+    def test_worker_exception_pushes_error_to_queue(self):
+        """Worker exception sends _Error + _Done instead of crashing."""
+        import requests
+        out = Queue()
+        w = AgentWorker(
+            [{"role": "user", "content": "test"}],
+            self.config, self.write_gate, self.read_gate,
+            out, requests.Session(),
+        )
+        # Make run_agent_turn raise
+        with patch("tui.run_agent_turn", side_effect=RuntimeError("boom")):
+            w.run()
+        # Should have pushed _Error + _Done
+        items = []
+        while not out.empty():
+            items.append(out.get_nowait())
+        errors = [i for i in items if isinstance(i, _Error)]
+        dons = [i for i in items if isinstance(i, _Done)]
+        self.assertEqual(len(errors), 1, f'Expected 1 _Error, got: {errors}')
+        self.assertIn('boom', errors[0].msg)
+        self.assertTrue(any(isinstance(i, _Done) for i in items))
+
 
 class TestSafe(unittest.TestCase):
     """Tests for the _safe() helper that escapes Textual markup."""
@@ -440,30 +462,213 @@ class _TestTUIIntegration(unittest.TestCase):
         self.assertNotIn("Error", stderr,
             f"TUI had error during startup:\n{stderr[:500]}")
 
+class TestHandleCommand(unittest.TestCase):
+    """Tests for _handle_command covering all 6 slash commands."""
+
+    def setUp(self):
+        self.workspace = tempfile.mkdtemp()
+        from memory import MemoryStore
+        self.config = AgentConfig.load(self.workspace)
+        self.config.api_key = DEFAULT_API_KEY
+        self.app = MiniAgentTUI()
+        self.app._tui_theme = MagicMock()
+        self.app._tui_theme.name = "Slate"
+        self.app._tui_theme.dim = "#666"
+        self.app._tui_theme.green = "#4f9f6f"
+        self.app._tui_theme.yellow = "#b89a4a"
+        self.app._tui_theme.accent = "#8f8f8f"
+        self.app.config = self.config
+        self.app.messages = [{"role": "system", "content": "base"}]
+        self.app._history = []
+        self.app._history_pos = 0
+        self.app._total_turns = 5
+        self.app._total_tokens = 2500
+        self.app.memory = MagicMock()
+        self.app.write_gate = MagicMock()
+        self.app.write_gate.check.return_value = (True, "")
+        self.app.notify = MagicMock()
+        self.app._apply_theme = MagicMock()
+        self.app._export_to_file = MagicMock()
+        self.app.query_one = MagicMock()
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.workspace, ignore_errors=True)
+
+    def _get_log_mock(self):
+        """Return the RichLog mock used for #tools-log writes."""
+        return self.app.query_one.return_value
+
+    def test_handle_clear(self):
+        """/clear resets messages, memory, history, and counters."""
+        self.app._handle_command("/clear")
+        self.assertEqual(len(self.app.messages), 1)
+        self.assertEqual(self.app.messages[0]["role"], "system")
+        self.app.memory.clear.assert_called_once()
+        self.assertEqual(self.app._history, [])
+        self.assertEqual(self.app._history_pos, 0)
+        self.assertEqual(self.app._total_turns, 0)
+        self.assertEqual(self.app._total_tokens, 0)
+
+    def test_handle_help(self):
+        """/help writes command list to tools-log."""
+        self.app._handle_command("/help")
+        log = self._get_log_mock()
+        # Should write multiple lines including command descriptions
+        calls = [c[0][0] for c in log.write.call_args_list if c[0]]
+        joined = " ".join(calls)
+        self.assertIn("Commands", joined)
+        self.assertIn("/clear", joined)
+        self.assertIn("/help", joined)
+        self.assertIn("/export", joined)
+        self.assertIn("/theme", joined)
+        self.assertIn("/stats", joined)
+
+    def test_handle_help_case_insensitive(self):
+        """/HELP should work case-insensitively."""
+        self.app._handle_command("/HELP")
+        log = self._get_log_mock()
+        calls = [c[0][0] for c in log.write.call_args_list if c[0]]
+        joined = " ".join(calls)
+        self.assertIn("Commands", joined)
+
+    def test_handle_stats(self):
+        """/stats shows session tokens, turns, messages, model."""
+        self.app._handle_command("/stats")
+        log = self._get_log_mock()
+        calls = [c[0][0] for c in log.write.call_args_list if c[0]]
+        joined = " ".join(calls)
+        self.assertIn("2500", joined)
+        self.assertIn("5", joined)
+        self.assertIn("1 msgs", joined)  # 1 system message
+
+    def test_handle_export(self):
+        """/export calls _export_to_file with a timestamped path."""
+        self.app._handle_command("/export")
+        self.app._export_to_file.assert_called_once()
+        path_arg = self.app._export_to_file.call_args[0][0]
+        self.assertIn("conversation_", path_arg)
+        self.assertTrue(path_arg.endswith(".md"))
+        log = self._get_log_mock()
+        calls = [c[0][0] for c in log.write.call_args_list if c[0]]
+        joined = " ".join(calls)
+        self.assertIn("Exported to", joined)
+
+    def test_handle_theme_valid(self):
+        """'/theme dawn' switches theme and applies it."""
+        self.app._handle_command("/theme dawn")
+        # Check theme was set
+        self.assertEqual(self.app._tui_theme.name, "Dawn")
+        self.app._apply_theme.assert_called_once()
+        log = self._get_log_mock()
+        calls = [c[0][0] for c in log.write.call_args_list if c[0]]
+        joined = " ".join(calls)
+        self.assertIn("Theme switched", joined)
+        self.assertIn("Dawn", joined)
+
+    def test_handle_theme_invalid(self):
+        """'/theme bogus' lists available themes."""
+        self.app._handle_command("/theme bogus")
+        log = self._get_log_mock()
+        calls = [c[0][0] for c in log.write.call_args_list if c[0]]
+        joined = " ".join(calls)
+        self.assertIn("Available themes", joined)
+        self.assertIn("dawn", joined)
+        self.assertIn("slate", joined)
+        # Also shows usage hint
+        self.assertIn("Usage", joined)
+
+    def test_handle_theme_no_name(self):
+        """'/theme' with no argument lists available themes."""
+        self.app._handle_command("/theme")
+        log = self._get_log_mock()
+        calls = [c[0][0] for c in log.write.call_args_list if c[0]]
+        joined = " ".join(calls)
+        self.assertIn("Available themes", joined)
+
+    def test_handle_unknown_command(self):
+        """Unknown /command writes error message."""
+        self.app._handle_command("/foobar")
+        log = self._get_log_mock()
+        log.write.assert_called()
+        calls = [c[0][0] for c in log.write.call_args_list if c[0]]
+        joined = " ".join(calls)
+        self.assertIn("Unknown command", joined)
+        self.assertIn("/foobar", joined)
+
+
+class TestBuildCSS(unittest.TestCase):
+    """Tests for _build_css covering all themes and expected selectors."""
+
+    @classmethod
+    def setUpClass(cls):
+        from tui import THEMES
+        cls.THEMES = THEMES
+
+    @staticmethod
+    def _css(theme):
+        from tui import _build_css
+        return _build_css(theme)
+
+    def test_all_nine_themes_return_non_empty_css(self):
+        """_build_css returns a non-empty string for every theme."""
+        for key, theme in self.THEMES.items():
+            with self.subTest(theme=key):
+                css = self._css(theme)
+                self.assertIsInstance(css, str)
+                self.assertGreater(len(css.strip()), 0,
+                                   f"CSS for theme '{key}' is empty")
+
+    def test_css_contains_expected_selectors(self):
+        """CSS output contains basic selectors for layout widgets."""
+        css = self._css(self.THEMES["slate"])
+        expected_selectors = [
+            "Screen {",
+            "Header {",
+            "Footer {",
+            "#static-pane {",
+            "#tools-log {",
+            "#agent-tree {",
+            "#subagent-pane {",
+            "#chat-pane {",
+            "#input-area {",
+            "#input {",
+            "#status-bar {",
+        ]
+        for selector in expected_selectors:
+            with self.subTest(selector=selector):
+                self.assertIn(selector, css,
+                              f"CSS missing selector: {selector}")
+
+    def test_dawn_theme_has_light_colors(self):
+        """Dawn (light) theme uses light background hex."""
+        css = self._css(self.THEMES["dawn"])
+        self.assertIn("#faf8f5", css)
+
+    def test_dracula_theme_has_classic_colors(self):
+        """Dracula theme uses its iconic purple accent."""
+        css = self._css(self.THEMES["dracula"])
+        self.assertIn("#bd93f9", css)
+        self.assertIn("#282a36", css)
+
+    def test_all_themes_inject_background_on_screen(self):
+        """Every theme places a background on Screen."""
+        for key, theme in self.THEMES.items():
+            with self.subTest(theme=key):
+                css = self._css(theme)
+                self.assertIn(f"background: {theme.bg};", css)
+
+    def test_all_themes_inject_accent_in_header(self):
+        """Every theme places its accent color in Header."""
+        for key, theme in self.THEMES.items():
+            with self.subTest(theme=key):
+                css = self._css(theme)
+                # Header block contains accent color
+                header_start = css.index("Header {")
+                header_end = css.index("}", header_start)
+                header_block = css[header_start:header_end]
+                self.assertIn(f"color: {theme.accent};", header_block)
+
+
 if __name__ == "__main__":
     unittest.main()
-
-
-    def _skip_test_worker_exception_pushes_error_to_queue(self):
-        """Worker exception sends _Done with error instead of crashing."""
-        import threading, requests
-        from unittest.mock import patch
-        out = Queue()
-        config = self.config
-        config.stream = True
-        w = AgentWorker(
-            [{"role": "user", "content": "test"}],
-            config, self.write_gate, self.read_gate,
-            out, requests.Session(),
-        )
-        # Make run_agent_turn raise
-        with patch("tui.run_agent_turn", side_effect=RuntimeError("boom")):
-            w.run()
-        # Should have pushed at least a _Done with error
-        items = []
-        while not out.empty():
-            items.append(out.get_nowait())
-        errors = [i for i in items if isinstance(i, _Error)]
-        dons = [i for i in items if isinstance(i, _Done)]
-        self.assertEqual(len(errors), 1, f'Expected 1 _Error, got: {errors}')
-        self.assertIn('boom', errors[0].msg)

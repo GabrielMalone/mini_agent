@@ -174,6 +174,7 @@ def _check_shell(params: dict, workspace: str) -> CheckResult:
     except ValueError as exc:
         return CheckResult("shell", False, f"Invalid shell command syntax: {exc}")
     result = subprocess.run(
+        cmd,
         shell=False,
         capture_output=True,
         text=True,

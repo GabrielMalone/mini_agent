@@ -266,6 +266,45 @@ def run_agent_turn(
             _git_diff_injected = True
         except Exception as exc:
             print(f"  \u26a0 git diff failed: {exc}", file=sys.stderr, flush=True)
+
+    # --- inject sub-agent orchestration context ---
+    # At turn start, surface running agents and newly-completed results
+    # so the parent agent knows to check on its sub-agents.
+    try:
+        from tools import _TOOL_CONTEXT
+        runtime = _TOOL_CONTEXT.__dict__.get("_agent_runtime")
+        if runtime is not None:
+            running_ids = runtime.get_running_ids()
+            pending = runtime.get_pending_results()
+            if running_ids or pending:
+                parts: list[str] = []
+                if pending:
+                    parts.append("Sub-agent(s) COMPLETED since your last turn:")
+                    for tid, result in pending:
+                        status = "OK" if result.success else "FAILED"
+                        parts.append(
+                            f"  - {tid}: [{status}] {result.content[:120]}"
+                            f"{'...' if len(result.content) > 120 else ''}"
+                        )
+                    parts.append("")
+                if running_ids:
+                    parts.append(
+                        f"{len(running_ids)} sub-agent(s) still RUNNING: "
+                        f"{', '.join(running_ids)}"
+                    )
+                    parts.append(
+                        "Use agent_status() to check each or collect_any() to grab "
+                        "the first result. Do NOT redo their work."
+                    )
+                if parts:
+                    messages.append({
+                        "role": "user",
+                        "content": "\n".join(parts),
+                        "_transient": True,
+                    })
+    except Exception as exc:
+        print(f"  \u26a0 orchestration context failed: {exc}", file=sys.stderr, flush=True)
+
     _original_session = session  # track whether we own the session for cleanup
     if session is None:
         session = requests  # test-friendly: mockable via patch("llm.requests.post")

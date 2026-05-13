@@ -323,6 +323,14 @@ def _write_scratchpad(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> 
         try:
             import sqlite3
             conn = sqlite3.connect(scratchpad_path)
+            # Ensure the table exists (DB may not have been through MemoryStore.__init__)
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS scratchpad ("
+                "id INTEGER PRIMARY KEY CHECK (id = 1),"
+                "content TEXT NOT NULL DEFAULT ''"
+                ")"
+            )
+            conn.execute("INSERT OR IGNORE INTO scratchpad (id, content) VALUES (1, '')")
             conn.execute(
                 "INSERT OR REPLACE INTO scratchpad (id, content) VALUES (1, ?)",
                 (content_text,),
