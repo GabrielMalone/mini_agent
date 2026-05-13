@@ -174,6 +174,10 @@ def _save_turn_summary(
         summary = result.content[:150].replace("\n", " ")
         parts.append(f"  Result: {ok} {summary}")
     _TOOL_CONTEXT._turn_history[turn] = "\n".join(parts)
+    # Cap to last 200 entries to prevent unbounded memory growth
+    if len(_TOOL_CONTEXT._turn_history) > 200:
+        oldest = sorted(_TOOL_CONTEXT._turn_history.keys())[0]
+        del _TOOL_CONTEXT._turn_history[oldest]
 
 
 def run_agent_turn(
@@ -229,6 +233,7 @@ def run_agent_turn(
     total_usage: dict[str, int] = {}
     turn_count = 0
     recent_tool_keys: list[str] = []  # circuit breaker tracking
+    tool_keys_lock = threading.Lock()  # guards recent_tool_keys in parallel path
 
     # --- inject recent git changes (first turn only) ---
     if turn_count == 0 and memory_store is not None:
@@ -250,9 +255,9 @@ def run_agent_turn(
                 })
         except Exception:
             pass
+    _original_session = session  # track whether we own the session for cleanup
     if session is None:
         session = requests  # test-friendly: mockable via patch("llm.requests.post")
-    _original_session = session  # track whether we own the session for cleanup
     clear_tool_cache()
     try:
         for _ in range(max_turns):
@@ -487,6 +492,7 @@ def run_agent_turn(
                                             on_output=on_tool_output,
                                             approve_callback=approve_callback)
 
+                parallel_results: list[tuple] = []
                 with ThreadPoolExecutor(max_workers=len(remaining)) as pool:
                     futures = {pool.submit(_run_tool, tc): tc for tc in remaining}
                     for future in as_completed(futures):
@@ -495,9 +501,11 @@ def run_agent_turn(
                             return None
                         tc, result = future.result()
                         _append_tool_result(messages, tc, result, on_tool_end,
-                                            recent_keys=recent_tool_keys)
+                                            recent_keys=recent_tool_keys,
+                                            lock=tool_keys_lock)
+                        parallel_results.append((tc, result))
 
-                _save_turn_summary(turn_count, msg, [], messages)
+                _save_turn_summary(turn_count, msg, parallel_results, messages)
                 continue
 
             # --- Piping: topological sort into execution groups ---
@@ -632,6 +640,7 @@ def _append_tool_result(
     result,
     on_tool_end: callable = None,
     recent_keys: list[str] | None = None,
+    lock: threading.Lock | None = None,
 ) -> None:
     """Append a tool result message and fire the on_tool_end callback."""
     detail = result.content[:300]
@@ -646,6 +655,12 @@ def _append_tool_result(
     })
     # Track for circuit breaker
     if recent_keys is not None:
-        recent_keys.append(_tool_call_key(tc))
-        while len(recent_keys) > _CIRCUIT_WINDOW:
-            recent_keys.pop(0)
+        if lock is not None:
+            with lock:
+                recent_keys.append(_tool_call_key(tc))
+                while len(recent_keys) > _CIRCUIT_WINDOW:
+                    recent_keys.pop(0)
+        else:
+            recent_keys.append(_tool_call_key(tc))
+            while len(recent_keys) > _CIRCUIT_WINDOW:
+                recent_keys.pop(0)

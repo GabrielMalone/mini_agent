@@ -233,7 +233,7 @@ def run_sub_agent(
     # Exhausted turns
     return SubAgentResult(
         success=False,
-        content="Sub-agent exceeded turn budget without producing a final answer.",
+        content="Sub-agent exceeded turn budget.",
         turns_used=turn_count,
         tool_calls_made=tool_calls_made,
         error="Turn budget exhausted",

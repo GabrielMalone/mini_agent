@@ -102,6 +102,7 @@ _TASK_REGISTRY: dict[str, subprocess.Popen] = {}  # background shell task regist
 
 # Sub-agent runtime registry (lazy init in config.init_session)
 _AGENT_RUNTIME = None  # AgentRuntime — set by init_session
+_MCP_MANAGER = None    # McpClientManager — set by init_session
 _CACHEABLE = frozenset({
     "read_file", "file_info", "list_directory",
     "search_files", "semantic_search", "web_search",
@@ -118,6 +119,9 @@ def set_context(**kwargs) -> None:
             ctx.exa_api_key = value
         elif key == "workspace":
             ctx.workspace = value
+        elif key == "_mcp_manager":
+            global _MCP_MANAGER
+            _MCP_MANAGER = value
         else:
             setattr(ctx, key, value)
 

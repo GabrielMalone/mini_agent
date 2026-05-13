@@ -64,7 +64,7 @@ def _read_file(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResu
             hint = "\nHint: Check the path spelling. Try list_directory to see available files."
         return ToolResult(success=False, content=f"Error reading '{safety_result.resolved_path}': {e}{hint}")
 
-    lines = content.split("\n")
+    lines = content.splitlines(keepends=False)
 
     # Apply offset (0-indexed line number to start from)
     offset = args.get("offset", 0)
@@ -123,7 +123,7 @@ def _write_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolRes
         with open(safety_result.resolved_path, "w") as f:
             f.write(content)
         from tools import _MODIFIED_FILES
-        _MODIFIED_FILES.add(args["path"])
+        _MODIFIED_FILES.add(safety_result.resolved_path)
         # Keep symbol index fresh for newly written .py files
         if path.endswith(".py"):
             from tools.search_ops import _reindex_file
@@ -192,19 +192,18 @@ def _edit_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResu
             occurrences = original.count(old)
             updated = original.replace(old, new)
             replaced = occurrences
-        elif count == 1:
-            updated = original.replace(old, new, 1)
-            replaced = 1
-        elif count < 1:
-            return ToolResult(success=False, content=f"Invalid count: {count}. Use 1 (first) or -1 (all).")
+        elif count >= 1:
+            # Replace first N occurrences
+            updated = original.replace(old, new, count)
+            replaced = min(count, original.count(old))
         else:
-            return ToolResult(success=False, content=f"Invalid count: {count}. Use 1 (first) or -1 (all).")
+            return ToolResult(success=False, content=f"Invalid count: {count}. Use a positive integer or -1 (all).")
 
         with open(safety_result.resolved_path, "w") as f:
             f.write(updated)
 
         from tools import _MODIFIED_FILES
-        _MODIFIED_FILES.add(args["path"])
+        _MODIFIED_FILES.add(safety_result.resolved_path)
 
         # Short summary: no full diff on success (saves context tokens)
         added = updated.count("\n") - original.count("\n")

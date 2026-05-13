@@ -73,6 +73,9 @@ class AgentRuntime:
         self.cancel_events: dict[str, threading.Event] = {}
         self.max_turns: dict[str, int] = {}  # mutable per-task turn budgets
         self.abandoned: set[str] = set()     # zombie tasks whose store_result() is a no-op
+        # Inter-agent communication
+        self.inboxes: dict[str, list] = {}          # task_id → list of AgentMessage
+        self.subscriptions: dict[str, set[str]] = {} # task_id → set of message types
 
     # ---- spawn ----
 
@@ -168,6 +171,36 @@ class AgentRuntime:
                     event.set()
                     count += 1
             return count
+
+    # ---- inter-agent messaging ----
+
+    def set_subscriptions(self, task_id: str, types: list[str]) -> None:
+        """Declare which message types a task_id wants to receive.
+
+        An empty list means the agent receives ALL message types
+        (backward-compatible default behavior).
+        """
+        with self._lock:
+            self.subscriptions[task_id] = set(types)
+            if task_id not in self.inboxes:
+                self.inboxes[task_id] = []
+
+    def get_inbox(self, task_id: str) -> list:
+        """Return the list of AgentMessages for a task_id (or empty list)."""
+        with self._lock:
+            return list(self.inboxes.get(task_id, []))
+
+    def append_inbox(self, task_id: str, msg) -> None:
+        """Append a message to a task_id's inbox. Creates inbox if missing."""
+        with self._lock:
+            inbox = self.inboxes.setdefault(task_id, [])
+            inbox.append(msg)
+
+    def clear_inbox(self, task_id: str) -> None:
+        """Remove inbox and subscriptions for a task_id (cleanup on completion)."""
+        with self._lock:
+            self.inboxes.pop(task_id, None)
+            self.subscriptions.pop(task_id, None)
 
     @property
     def active_count(self) -> int:

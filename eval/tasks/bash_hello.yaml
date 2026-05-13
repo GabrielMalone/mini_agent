@@ -1,0 +1,16 @@
+id: "bash-hello"
+name: "Print hello from bash"
+description: |
+  Run the shell command `echo "hello, world"` and confirm the output.
+category: "feature"
+difficulty: "easy"
+workspace_fixture: null
+checks:
+  - type: "shell"
+    command: "echo 'hello, world'"
+    expected_stdout: "hello, world"
+    expected_returncode: 0
+expected_tools:
+  - "run_shell"
+expected_turns_max: 3
+tags: ["shell", "trivial"]

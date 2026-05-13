@@ -125,6 +125,7 @@ def _check_destructive(command: str) -> str | None:
 def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: callable = None) -> ToolResult:
     command = args["command"]
     force = args.get("force", False)
+    timeout = min(int(args.get("timeout", 60)), 300)
     if not force:
         block = _check_destructive(command)
         if block is not None:
@@ -162,12 +163,12 @@ def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: 
         t_err.start()
 
         try:
-            proc.wait(timeout=60)
+            proc.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
             proc.kill()
             t_out.join(timeout=2)
             t_err.join(timeout=2)
-            return ToolResult(success=False, content="Command timed out after 60s")
+            return ToolResult(success=False, content=f"Command timed out after {timeout}s")
 
         t_out.join(timeout=2)
         t_err.join(timeout=2)

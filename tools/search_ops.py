@@ -280,6 +280,7 @@ def _find_symbol_summary(args: dict) -> str:
 _SEMANTIC_STORE: dict[str, tuple[float, list[tuple[int, int, str, "numpy.ndarray"]]]] = {}
 _SEMANTIC_LRU: list[str] = []  # tracks access order for eviction
 _SEMANTIC_MAX_ENTRIES = 500    # per-file entries before eviction kicks in
+_SEMANTIC_MAX_MTIME: float = 0.0  # max mtime across all indexed files (separate from store)
 _SEM_MODEL = None
 
 
@@ -325,7 +326,8 @@ def _sem_index(root: str) -> None:
     """
     import numpy as np
 
-    old_max = _SEMANTIC_STORE.get("_max_mtime", 0.0)
+    global _SEMANTIC_MAX_MTIME
+    old_max = _SEMANTIC_MAX_MTIME
     new_max = 0.0
     current: set[str] = set()
     any_change = False
@@ -374,10 +376,10 @@ def _sem_index(root: str) -> None:
                     del _SEMANTIC_STORE[old]
 
     # Clean stale entries (always, even on no-change short circuit)
-    stale = [p for p in _SEMANTIC_STORE if p not in current and p != "_max_mtime"]
+    stale = [p for p in _SEMANTIC_STORE if p not in current]
     for p in stale:
         del _SEMANTIC_STORE[p]
-    _SEMANTIC_STORE["_max_mtime"] = new_max
+    _SEMANTIC_MAX_MTIME = new_max
 
     # If nothing changed at all, bail out early
     if not any_change and old_max > 0:
@@ -408,8 +410,6 @@ def _semantic_search(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> To
     metas: list[tuple[str, int, int, str]] = []
     embs: list[np.ndarray] = []
     for fpath, value in _SEMANTIC_STORE.items():
-        if fpath == "_max_mtime":
-            continue
         _, chunks = value
         for start, end, text, emb in chunks:
             metas.append((fpath, start, end, text))
@@ -569,82 +569,6 @@ def _web_search_summary(args: dict) -> str:
 # (as a bare word in Python source).  Built lazily.
 _REF_INDEX: dict[str, list[dict]] | None = None
 
-
-def build_ref_index(root: str) -> dict[str, list[dict]]:
-    """Scan .py files for symbol references. Reuses the forward index keys."""
-    global _REF_INDEX
-    import re
-
-    # Get the forward index to know which symbols to look for
-    from tools.search_ops import _get_symbol_index
-    fwd = _get_symbol_index(root)
-    if not fwd:
-        _REF_INDEX = {}
-        return {}
-
-    # Build a set of all known symbol names
-    known_names = set(fwd.keys())
-    # Also include common builtins we don't need to track
-    skip_names = {
-        "self", "cls", "True", "False", "None", "int", "str", "list", "dict",
-        "set", "tuple", "bool", "float", "bytes", "type", "object", "super",
-        "range", "len", "print", "isinstance", "hasattr", "getattr", "setattr",
-        "enumerate", "zip", "map", "filter", "iter", "next", "any", "all",
-        "sorted", "reversed", "min", "max", "sum", "abs", "round", "ord", "chr",
-        "open", "Exception", "ValueError", "TypeError", "KeyError", "OSError",
-        "RuntimeError", "ImportError", "AttributeError", "StopIteration",
-        "__init__", "__name__", "__main__", "__file__", "__doc__",
-        "unittest", "TestCase", "json", "os", "sys", "re", "time",
-    }
-    ref_idx: dict[str, list[dict]] = {}
-
-    word_pat = re.compile(r"\b(\w+)\b")
-
-    for dirpath, dirnames, filenames in os.walk(root):
-        from tools.shell_ops import _SKIP_DIRS
-        dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS and not d.startswith(".")]
-        for fname in filenames:
-            if not fname.endswith(".py"):
-                continue
-            fpath = os.path.join(dirpath, fname)
-            try:
-                with open(fpath, "r") as f:
-                    lines = f.readlines()
-            except (OSError, PermissionError):
-                continue
-
-            for lineno, line in enumerate(lines, 1):
-                # Skip def/class lines (those are definitions, not usages)
-                stripped = line.strip()
-                if stripped.startswith(("def ", "class ", "import ", "from ")):
-                    # Still check for inline usages like: from x import Foo
-                    # Simple approach: skip pure def/class declarations
-                    pass
-
-                for match in word_pat.finditer(line):
-                    word = match.group(1)
-                    if word in skip_names:
-                        continue
-                    if word in known_names:
-                        ref_idx.setdefault(word, []).append({
-                            "path": fpath,
-                            "line": lineno,
-                            "context": stripped[:120],
-                        })
-
-    # Deduplicate per path+line (a word might appear twice on same line)
-    for name in ref_idx:
-        seen = set()
-        unique = []
-        for ref in ref_idx[name]:
-            key = (ref["path"], ref["line"])
-            if key not in seen:
-                seen.add(key)
-                unique.append(ref)
-        ref_idx[name] = unique
-
-    _REF_INDEX = ref_idx
-    return ref_idx
 
 
 def _get_ref_index(root: str) -> dict[str, list[dict]]:

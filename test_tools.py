@@ -110,6 +110,20 @@ class TestRunShell(unittest.TestCase):
         self.assertTrue(result.success)
         self.assertIn("hello", result.content)
 
+    def test_custom_timeout(self):
+        """Custom timeout is accepted and used."""
+        tc = _make_tool_call("run_shell", command="echo done", timeout=10)
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertTrue(result.success)
+        self.assertIn("done", result.content)
+
+    def test_timeout_clamped_at_300(self):
+        """Timeout > 300 is clamped to 300."""
+        tc = _make_tool_call("run_shell", command="echo done", timeout=999)
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertTrue(result.success)
+        self.assertIn("done", result.content)
+
 
 # ---------------------------------------------------------------------------
 # search_files tests
@@ -306,7 +320,7 @@ class TestEditFile(unittest.TestCase):
         path = os.path.join(self.workspace, "new_file.txt")
         tc = _make_tool_call("write_file", path=path, content="hello")
         execute_tool(tc, self.write_gate, self.read_gate)
-        self.assertIn(path, _MODIFIED_FILES)
+        self.assertIn(os.path.realpath(path), _MODIFIED_FILES)
 
 
 # ---------------------------------------------------------------------------

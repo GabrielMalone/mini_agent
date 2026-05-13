@@ -133,7 +133,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "run_shell",
-            "description": "Run a shell command inside the workspace directory. Returns exit code, stdout, and stderr. Commands time out after 60 seconds. Use this to run tests, check syntax, invoke build tools, etc.",
+            "description": "Run a shell command inside the workspace directory. Returns exit code, stdout, and stderr. Commands time out after 60 seconds (configurable via timeout param, max 300s). Use this to run tests, check syntax, invoke build tools, etc.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -148,6 +148,10 @@ TOOLS = [
                     "force": {
                         "type": "boolean",
                         "description": "Bypass the destructive-command guard. Default: false. Required for rm, mkfs, etc."
+                    },
+                    "timeout": {
+                        "type": "integer",
+                        "description": "Optional: max seconds before timing out (default 60, max 300)."
                     }
                 },
                 "required": [
@@ -491,6 +495,11 @@ TOOLS = [
                     "visible": {
                         "type": "boolean",
                         "description": "If true, stream the sub-agent's thinking and tool output to stderr so the user can watch progress inline."
+                    },
+                    "subscriptions": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional: list of message types this sub-agent subscribes to. Empty = all types (default)."
                     }
                 },
                 "required": []
@@ -602,6 +611,82 @@ TOOLS = [
                     "additional": {
                         "type": "integer",
                         "description": "Additional turns to grant (default 10)."
+                    }
+                },
+                "required": ["task_id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "agent_handoff",
+            "description": "Produce a typed structured result and route it to subscribed agents. Use this for handoffs between agents — one agent finishes work and hands structured output to another. If 'target' is set, delivers only to that task_id (bypassing subscriptions).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "description": "Message type (default 'handoff.result'). Use 'handoff.result', 'handoff.request', 'handoff.ack', 'status.heartbeat', 'status.error', 'coord.fan_out', 'coord.fan_in', or 'coord.sync'."
+                    },
+                    "result": {
+                        "type": "object",
+                        "description": "Structured result payload dict."
+                    },
+                    "correlation_id": {
+                        "type": "string",
+                        "description": "Optional correlation ID to link related messages."
+                    },
+                    "target": {
+                        "type": "string",
+                        "description": "Optional: if set, deliver only to this task_id."
+                    },
+                    "from": {
+                        "type": "string",
+                        "description": "Optional label identifying the sender."
+                    }
+                },
+                "required": ["result"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "agent_inbox",
+            "description": "Read the typed inbox for a specific agent (task_id). Returns structured messages in chronological order. Use 'since' for polling new messages only.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "string",
+                        "description": "Task ID of the agent whose inbox to read."
+                    },
+                    "since": {
+                        "type": "integer",
+                        "description": "Optional: only return messages with index >= this value (for polling)."
+                    }
+                },
+                "required": ["task_id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "agent_subscribe",
+            "description": "Declare or update message type subscriptions for an agent at runtime. An empty types list means the agent receives all message types.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "string",
+                        "description": "Task ID of the agent to configure."
+                    },
+                    "types": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Message types to subscribe to (e.g. ['handoff.result', 'coord.sync']). Omit to reset to receive all types."
                     }
                 },
                 "required": ["task_id"]

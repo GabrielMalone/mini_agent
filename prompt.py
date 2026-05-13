@@ -125,6 +125,8 @@ SYSTEM_PROMPT = (
     "  further sub-agents (depth 1 only).\n"
     "- Best practice: spawn multiple agents in ONE tool call batch for true parallelism,\n"
     "  then collect results on subsequent turns. Max 5 concurrent sub-agents.\n"
+    "- If a sub-agent result has ``error == \"Turn budget exhausted\"``, the agent\n"
+    "  may have completed its work on disk. Check the filesystem before redoing anything.\n"
     "- Example: 'spawn_agent(\"refactor auth.py\") + spawn_agent(\"write tests for auth\")'\n"
     "  then next turn: 'collect_agent(task_1)' and 'collect_agent(task_2)'.\n"
 )

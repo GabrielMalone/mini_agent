@@ -470,3 +470,338 @@ class TestAgentExtend:
         result = dispatch({"task_id": "nope", "additional": 5}, wg, rg)
         assert result.success is False
         assert "not found" in result.content
+
+
+# ---------------------------------------------------------------------------
+# agent_handoff tests
+# ---------------------------------------------------------------------------
+
+class TestAgentHandoff:
+    def setup_method(self):
+        from tools.agent_ops import _AGENT_MSGS, _AGENT_MSGS_LOCK
+        with _AGENT_MSGS_LOCK:
+            _AGENT_MSGS.clear()
+
+    def test_handoff_result_sends_message(self, configured_context, gates):
+        """agent_handoff with handoff.result should send to global list."""
+        wg, rg = gates
+        dispatch = _TOOL_DISPATCH.get("agent_handoff")
+        result = dispatch({
+            "type": "handoff.result",
+            "result": {"count": 42, "task": "count items"},
+            "from": "worker-1",
+        }, wg, rg)
+        assert result.success is True
+        assert "handoff.result" in result.content
+        assert "1 total messages" in result.content
+
+        # Verify the message ended up in _AGENT_MSGS
+        from tools.agent_ops import _AGENT_MSGS, _AGENT_MSGS_LOCK
+        with _AGENT_MSGS_LOCK:
+            assert len(_AGENT_MSGS) == 1
+            assert "handoff.result" in _AGENT_MSGS[0]["text"]
+
+    def test_handoff_heartbeat_sends_message(self, configured_context, gates):
+        """agent_handoff with status.heartbeat should work."""
+        wg, rg = gates
+        dispatch = _TOOL_DISPATCH.get("agent_handoff")
+        result = dispatch({
+            "type": "status.heartbeat",
+            "result": {"progress": "50% done", "pct": 50},
+            "from": "worker-2",
+        }, wg, rg)
+        assert result.success is True
+        assert "status.heartbeat" in result.content
+
+    def test_handoff_unknown_type_fails(self, configured_context, gates):
+        """Unknown handoff type should return failure."""
+        wg, rg = gates
+        dispatch = _TOOL_DISPATCH.get("agent_handoff")
+        result = dispatch({
+            "type": "made.up.type",
+            "result": {"x": 1},
+        }, wg, rg)
+        assert result.success is False
+        assert "Unknown handoff" in result.content
+
+    def test_handoff_missing_result_fails(self, configured_context, gates):
+        """Missing 'result' should return failure."""
+        wg, rg = gates
+        dispatch = _TOOL_DISPATCH.get("agent_handoff")
+        result = dispatch({
+            "type": "handoff.result",
+        }, wg, rg)
+        assert result.success is False
+
+    def test_handoff_non_dict_result_fails(self, configured_context, gates):
+        """Non-dict 'result' should return failure."""
+        wg, rg = gates
+        dispatch = _TOOL_DISPATCH.get("agent_handoff")
+        result = dispatch({
+            "type": "handoff.result",
+            "result": "not a dict",
+        }, wg, rg)
+        assert result.success is False
+        assert "must be a dict" in result.content
+
+    def test_handoff_with_target(self, configured_context, gates):
+        """Handoff with 'target' should route to specific inbox."""
+        wg, rg = gates
+        runtime = _TOOL_CONTEXT.__dict__.get("_agent_runtime")
+
+        # Set up a target agent with an inbox
+        runtime.set_subscriptions("target-agent", [])
+
+        dispatch = _TOOL_DISPATCH.get("agent_handoff")
+        result = dispatch({
+            "type": "handoff.result",
+            "result": {"data": "direct"},
+            "target": "target-agent",
+            "from": "source",
+        }, wg, rg)
+        assert result.success is True
+        assert "to 'target-agent'" in result.content
+
+        # Check the target's inbox
+        inbox = runtime.get_inbox("target-agent")
+        assert len(inbox) == 1
+        assert inbox[0].type == "handoff.result"
+        assert inbox[0].payload["result"] == {"data": "direct"}
+
+    def test_handoff_ack_sends_message(self, configured_context, gates):
+        """handoff.ack type should work correctly."""
+        wg, rg = gates
+        dispatch = _TOOL_DISPATCH.get("agent_handoff")
+        result = dispatch({
+            "type": "handoff.ack",
+            "result": {"accepted": True, "reason": "all good"},
+            "from": "receiver",
+        }, wg, rg)
+        assert result.success is True
+        assert "handoff.ack" in result.content
+
+
+# ---------------------------------------------------------------------------
+# agent_inbox tests
+# ---------------------------------------------------------------------------
+
+class TestAgentInbox:
+    def test_inbox_missing_task_id(self, gates):
+        """agent_inbox without task_id should fail."""
+        wg, rg = gates
+        dispatch = _TOOL_DISPATCH.get("agent_inbox")
+        result = dispatch({}, wg, rg)
+        assert result.success is False
+        assert "Missing" in result.content
+
+    def test_inbox_no_messages(self, configured_context, gates):
+        """agent_inbox for an agent with no messages should report empty."""
+        wg, rg = gates
+        runtime = _TOOL_CONTEXT.__dict__.get("_agent_runtime")
+        runtime.set_subscriptions("empty-agent", [])
+
+        dispatch = _TOOL_DISPATCH.get("agent_inbox")
+        result = dispatch({"task_id": "empty-agent"}, wg, rg)
+        assert result.success is True
+        assert "No new messages" in result.content
+
+    def test_inbox_reads_messages(self, configured_context, gates):
+        """agent_inbox should return previously routed messages."""
+        wg, rg = gates
+        runtime = _TOOL_CONTEXT.__dict__.get("_agent_runtime")
+        runtime.set_subscriptions("reader-agent", ["handoff.result"])
+
+        # Route a message directly
+        from tools.agent_messages import AgentMessage, _route_message
+        msg = AgentMessage(
+            type="handoff.result",
+            sender="producer",
+            payload={"result": {"x": 1}, "task": "test"},
+        )
+        _route_message(msg, runtime.inboxes, runtime.subscriptions, runtime._lock)
+
+        dispatch = _TOOL_DISPATCH.get("agent_inbox")
+        result = dispatch({"task_id": "reader-agent"}, wg, rg)
+        assert result.success is True
+        assert "handoff.result" in result.content
+        assert "producer" in result.content
+
+    def test_inbox_since_polling(self, configured_context, gates):
+        """agent_inbox with 'since' should skip old messages."""
+        wg, rg = gates
+        runtime = _TOOL_CONTEXT.__dict__.get("_agent_runtime")
+        runtime.set_subscriptions("poll-agent", [])
+
+        from tools.agent_messages import AgentMessage
+        for i in range(3):
+            msg = AgentMessage(
+                type="text",
+                sender=f"sender-{i}",
+                payload={"body": f"msg-{i}"},
+            )
+            runtime.append_inbox("poll-agent", msg)
+
+        dispatch = _TOOL_DISPATCH.get("agent_inbox")
+        result = dispatch({"task_id": "poll-agent", "since": 1}, wg, rg)
+        assert result.success is True
+        assert "msg-1" in result.content
+        assert "msg-2" in result.content
+        assert "msg-0" not in result.content
+
+    def test_inbox_invalid_since(self, configured_context, gates):
+        """Invalid 'since' value should fail."""
+        wg, rg = gates
+        dispatch = _TOOL_DISPATCH.get("agent_inbox")
+        result = dispatch({"task_id": "any", "since": "abc"}, wg, rg)
+        assert result.success is False
+        assert "must be an integer" in result.content
+
+
+# ---------------------------------------------------------------------------
+# agent_subscribe tests
+# ---------------------------------------------------------------------------
+
+class TestAgentSubscribe:
+    def test_subscribe_missing_task_id(self, gates):
+        """agent_subscribe without task_id should fail."""
+        wg, rg = gates
+        dispatch = _TOOL_DISPATCH.get("agent_subscribe")
+        result = dispatch({}, wg, rg)
+        assert result.success is False
+        assert "Missing" in result.content
+
+    def test_subscribe_unknown_type_fails(self, configured_context, gates):
+        """Unknown message types should be rejected."""
+        wg, rg = gates
+        runtime = _TOOL_CONTEXT.__dict__.get("_agent_runtime")
+        # Register a task
+        ev = threading.Event()
+        t = threading.Thread(target=lambda: ev.wait(), daemon=True)
+        runtime.register("sub-test", t, ev)
+        t.start()
+
+        dispatch = _TOOL_DISPATCH.get("agent_subscribe")
+        result = dispatch({
+            "task_id": "sub-test",
+            "types": ["no.such.type"],
+        }, wg, rg)
+        assert result.success is False
+        assert "Unknown message type" in result.content
+
+        runtime.cancel("sub-test")
+        t.join(timeout=1)
+
+    def test_subscribe_success(self, configured_context, gates):
+        """Valid subscription should succeed."""
+        wg, rg = gates
+        runtime = _TOOL_CONTEXT.__dict__.get("_agent_runtime")
+        ev = threading.Event()
+        t = threading.Thread(target=lambda: ev.wait(), daemon=True)
+        runtime.register("sub-ok", t, ev)
+        t.start()
+
+        dispatch = _TOOL_DISPATCH.get("agent_subscribe")
+        result = dispatch({
+            "task_id": "sub-ok",
+            "types": ["handoff.result", "coord.sync"],
+        }, wg, rg)
+        assert result.success is True
+        assert "sub-ok" in result.content
+        assert "handoff.result" in result.content
+
+        # Verify subscriptions were set
+        subs = runtime.subscriptions.get("sub-ok", set())
+        assert "handoff.result" in subs
+        assert "coord.sync" in subs
+
+        runtime.cancel("sub-ok")
+        t.join(timeout=1)
+
+    def test_subscribe_default_all(self, configured_context, gates):
+        """Omitting types should reset to receive all (empty subscriptions)."""
+        wg, rg = gates
+        runtime = _TOOL_CONTEXT.__dict__.get("_agent_runtime")
+        ev = threading.Event()
+        t = threading.Thread(target=lambda: ev.wait(), daemon=True)
+        runtime.register("sub-all", t, ev)
+        t.start()
+
+        dispatch = _TOOL_DISPATCH.get("agent_subscribe")
+        result = dispatch({"task_id": "sub-all"}, wg, rg)
+        assert result.success is True
+        assert "receives all message types" in result.content
+
+        runtime.cancel("sub-all")
+        t.join(timeout=1)
+
+    def test_subscribe_agent_not_found(self, configured_context, gates):
+        """Non-existent agent should fail."""
+        wg, rg = gates
+        dispatch = _TOOL_DISPATCH.get("agent_subscribe")
+        result = dispatch({
+            "task_id": "no-such-agent",
+            "types": ["text"],
+        }, wg, rg)
+        assert result.success is False
+        assert "not found" in result.content
+
+    def test_subscribe_non_list_types_fails(self, configured_context, gates):
+        """Non-list 'types' should fail."""
+        wg, rg = gates
+        dispatch = _TOOL_DISPATCH.get("agent_subscribe")
+        result = dispatch({
+            "task_id": "any",
+            "types": "not_a_list",
+        }, wg, rg)
+        assert result.success is False
+        assert "must be a list" in result.content
+
+
+# ---------------------------------------------------------------------------
+# subscriptions param in spawn_agent tests
+# ---------------------------------------------------------------------------
+
+class TestSubscriptionsInSpawn:
+    def test_spawn_with_subscriptions(self, configured_context, gates):
+        """spawn_agent should accept and apply subscriptions param."""
+        wg, rg = gates
+        runtime = _TOOL_CONTEXT.__dict__.get("_agent_runtime")
+        dispatch = _TOOL_DISPATCH.get("spawn_agent")
+        result = dispatch({
+            "task": "say hello",
+            "max_turns": 1,
+            "subscriptions": ["handoff.result", "coord.sync"],
+        }, wg, rg)
+        assert result.success is True
+        assert "Spawned sub-agent" in result.content
+
+        # Extract task_id and verify subscriptions
+        import re
+        match = re.search(r"'([a-f0-9]{8})'", result.content)
+        if match:
+            tid = match.group(1)
+            subs = runtime.subscriptions.get(tid, set())
+            assert "handoff.result" in subs
+            assert "coord.sync" in subs
+
+    def test_spawn_without_subscriptions_gets_all(self, configured_context, gates):
+        """spawn_agent without subscriptions should default to all (empty set)."""
+        wg, rg = gates
+        runtime = _TOOL_CONTEXT.__dict__.get("_agent_runtime")
+        dispatch = _TOOL_DISPATCH.get("spawn_agent")
+        result = dispatch({
+            "task": "say hello",
+            "max_turns": 1,
+        }, wg, rg)
+        assert result.success is True
+
+        # The agent may have empty subscriptions (receive all) or not be set at all
+        import re
+        match = re.search(r"'([a-f0-9]{8})'", result.content)
+        if match:
+            tid = match.group(1)
+            # Either not in subscriptions or has empty set
+            subs = runtime.subscriptions.get(tid)
+            if subs is not None:
+                assert subs == set()
+

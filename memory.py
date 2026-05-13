@@ -84,14 +84,18 @@ def _total_tokens(messages: list[dict]) -> int:
 def _compress_tool_results(
     messages: list[dict],
     keep_recent: int = 6,
-) -> list[dict]:
+) -> tuple[list[dict], bool]:
     """Shorten old tool results to their first line only.
 
     Tool results within the last *keep_recent* messages are left intact.
     Older ones are trimmed to the first line + truncation marker.
+
+    Returns (messages, changed) — *changed* is True if at least one
+    message was compressed in-place.
     """
+    changed = False
     if len(messages) <= keep_recent:
-        return messages
+        return messages, changed
 
     # Messages that are "recent" (within the tail window) stay untouched
     cutoff = len(messages) - keep_recent
@@ -119,8 +123,9 @@ def _compress_tool_results(
         new_content = kept + f"\n… (truncated at 5 lines — {len(lines)} total)"
         data["content"] = new_content
         m["content"] = json.dumps(data)
+        changed = True
 
-    return messages
+    return messages, changed
 
 
 # ---------------------------------------------------------------------------
@@ -289,7 +294,7 @@ class MemoryStore:
     into a synthetic context message.
     """
 
-    DEFAULT_MAX_MESSAGES = 300
+    DEFAULT_MAX_MESSAGES = 500
     DEFAULT_MAX_TOKENS   = 800_000
 
     def __init__(
@@ -365,7 +370,7 @@ class MemoryStore:
         5. Write atomically to SQLite.
         """
         cleaned = _clean_messages(messages)
-        cleaned = _compress_tool_results(cleaned, keep_recent=6)
+        cleaned, compressed = _compress_tool_results(cleaned, keep_recent=6)
 
         kept, pruned = _prune_by_tokens(
             cleaned, self._max_tokens, self._max_messages,
@@ -384,7 +389,8 @@ class MemoryStore:
                 # Incremental save: if no pruning happened and we only
                 # appended messages, INSERT just the new rows instead of
                 # rewriting everything.
-                need_full_rewrite = bool(pruned) or len(kept) < self._last_saved_count
+                need_full_rewrite = (bool(pruned) or compressed
+                                     or len(kept) < self._last_saved_count)
                 if need_full_rewrite:
                     conn.execute(_DELETE)
                     conn.executemany(
@@ -400,8 +406,9 @@ class MemoryStore:
                         )
                 conn.commit()
             self._last_saved_count = len(kept)
-        except sqlite3.Error:
-            pass  # fail gracefully — next save will retry
+        except sqlite3.Error as exc:
+            import sys
+            print(f"Warning: memory save failed: {exc}", file=sys.stderr)
 
     def clear(self) -> None:
         """Remove all messages and reclaim disk space."""

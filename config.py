@@ -35,6 +35,23 @@ DEFAULT_EXA_API_KEY  = ""  # set via EXA_API_KEY env var or .mini_agent.toml
 
 
 # ---------------------------------------------------------------------------
+# MCP server config
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class McpServerConfig:
+    """One MCP server definition, parsed from ``[[mcp_server]]`` TOML blocks."""
+
+    name: str                           # unique, e.g. "filesystem"
+    command: str = ""                    # executable (required for stdio)
+    args: list[str] = field(default_factory=list)
+    env: dict[str, str] = field(default_factory=dict)
+    cwd: str = ""                       # "" means inherit workspace
+    enabled: bool = True
+
+
+# ---------------------------------------------------------------------------
 # Config object
 # ---------------------------------------------------------------------------
 
@@ -63,6 +80,7 @@ class AgentConfig:
     exa_api_key: str = DEFAULT_EXA_API_KEY
     approve_write_ops: bool = False
     unrestricted: bool = True
+    mcp_servers: list[McpServerConfig] = field(default_factory=list)
 
     # ------------------------------------------------------------------
     # Factory
@@ -147,6 +165,7 @@ _TOML_SCHEMA: dict[str, type] = {
     "exa_api_key": str,
     "approve_write_ops": bool,
     "unrestricted": bool,
+    "mcp_server": list,
 }
 
 
@@ -159,6 +178,29 @@ def _apply_toml(config: AgentConfig, data: dict) -> None:
         if key not in _TOML_SCHEMA:
             continue
         expected = _TOML_SCHEMA[key]
+
+        # ``[[mcp_server]]`` TOML syntax produces a list of dicts.
+        if key == "mcp_server":
+            if not isinstance(value, list):
+                print(
+                    f"Warning: .mini_agent.toml key 'mcp_server' expected list, "
+                    f"got {type(value).__name__} — skipping",
+                    file=sys.stderr,
+                )
+                continue
+            for entry in value:
+                if not isinstance(entry, dict):
+                    continue
+                config.mcp_servers.append(McpServerConfig(
+                    name=entry.get("name", ""),
+                    command=entry.get("command", ""),
+                    args=entry.get("args", []),
+                    env=entry.get("env", {}),
+                    cwd=entry.get("cwd", ""),
+                    enabled=entry.get("enabled", True),
+                ))
+            continue
+
         if not isinstance(value, expected):
             print(
                 f"Warning: .mini_agent.toml key '{key}' expected {expected.__name__}, "
@@ -256,6 +298,23 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
     
     build_symbol_index(workspace)
 
+    # Start MCP connections if configured
+    mcp_manager = None
+    if config.mcp_servers:
+        try:
+            from tools.mcp_client import McpClientManager
+            mcp_manager = McpClientManager(config.mcp_servers)
+            connected = mcp_manager.start_all()
+            if connected:
+                set_context(_mcp_manager=mcp_manager)
+                print(
+                    f"MCP: connected to {len(connected)} server(s): "
+                    f"{', '.join(connected)}",
+                    file=sys.stderr,
+                )
+        except Exception as exc:
+            print(f"Warning: MCP init failed: {exc}", file=sys.stderr)
+
     saved = memory.load()
     startup_ctx = build_startup_context(workspace)
     messages: list[dict] = [
@@ -266,6 +325,9 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
         messages.extend(saved)
 
     session = requests.Session()
+    # Set default timeout (connect, read) for every request.
+    import functools
+    session.request = functools.partial(session.request, timeout=(30, 120))
     # Limit connection pool to avoid resource waste on long-running sessions.
     session.mount("https://", requests.adapters.HTTPAdapter(
         pool_connections=2, pool_maxsize=4))
