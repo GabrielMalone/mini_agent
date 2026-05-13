@@ -282,7 +282,7 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
     """
     from safety import ReadSafetyGate, WriteSafetyGate
     from memory import MemoryStore
-    from prompt import SYSTEM_PROMPT
+    from prompt import build_system_prompt
     from tools import set_context, build_symbol_index
     from agent_runtime import AgentRuntime
 
@@ -322,7 +322,7 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
     startup_ctx = build_startup_context(workspace)
     messages: list[dict] = [
         {"role": "system", "content": startup_ctx},
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": build_system_prompt(config)},
     ]
     if saved:
         messages.extend(saved)

@@ -11,6 +11,7 @@ import shutil
 import time
 
 from safety import ReadSafetyGate, WriteSafetyGate
+from tools import clear_tool_cache
 from tools import _register, _summarize, ToolResult, _TOOL_CONTEXT, CTX_SCRATCHPAD_PATH, CTX_SCRATCHPAD_UPDATED
 
 
@@ -30,9 +31,6 @@ def _backup_before_write(resolved_path: str) -> None:
     backup_dir = os.path.join(os.path.dirname(resolved_path), ".mini_agent_backups")
     os.makedirs(backup_dir, exist_ok=True)
     timestamp = time.strftime("%Y%m%d_%H%M%S")
-    # Add microsecond + random suffix to avoid collisions under high concurrency
-    import random as _random
-    timestamp += f"_{time.time_ns() % 1_000_000_000:09d}_{_random.randint(0, 9999):04d}"
     fname = os.path.basename(resolved_path)
     backup_path = os.path.join(backup_dir, f"{fname}.{timestamp}.bak")
     shutil.copy2(resolved_path, backup_path)
@@ -70,7 +68,7 @@ def _read_file(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResu
     lines = content.splitlines(keepends=False)
 
     # Apply offset (0-indexed line number to start from)
-    offset = int(args.get("offset", 0))
+    offset = args.get("offset", 0)
     if offset < 0:
         offset = 0
     if offset > 0:
@@ -79,7 +77,7 @@ def _read_file(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResu
         lines = lines[offset:]
 
     # Apply limit (max lines to return)
-    limit = int(args.get("limit", _DEFAULT_READ_LINES))
+    limit = args.get("limit", _DEFAULT_READ_LINES)
     if limit < 1:
         limit = _DEFAULT_READ_LINES
     limit = min(limit, _ABSOLUTE_MAX_LINES)
@@ -127,6 +125,7 @@ def _write_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolRes
             f.write(content)
         from tools import _MODIFIED_FILES
         _MODIFIED_FILES.add(safety_result.resolved_path)
+        clear_tool_cache()
         # Keep symbol index fresh for newly written .py files
         if path.endswith(".py"):
             from tools.search_ops import _reindex_file
@@ -207,11 +206,7 @@ def _edit_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResu
 
         from tools import _MODIFIED_FILES
         _MODIFIED_FILES.add(safety_result.resolved_path)
-
-        # Keep symbol index fresh for edited .py files
-        if path.endswith(".py"):
-            from tools.search_ops import _reindex_file
-            _reindex_file(safety_result.resolved_path, wg.workspace_root)
+        clear_tool_cache()
 
         # Short summary: no full diff on success (saves context tokens)
         added = updated.count("\n") - original.count("\n")
@@ -345,20 +340,15 @@ def _write_scratchpad(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> 
                 content=f"Failed to update scratchpad: {e}",
             )
 
-    # Fallback: store in a file — route through the write safety gate
-    fallback_path = _os.path.join(
+    # Fallback: store in a file
+    fallback = _os.path.join(
         _TOOL_CONTEXT.workspace or ".", ".mini_agent_scratchpad.md"
     )
+    sr = _wg.check(fallback)
+    if not sr.allowed:
+        return ToolResult(success=False, content=f"Scratchpad blocked: {sr.reason}")
     try:
-        from safety import WriteSafetyGate
-        _fallback_gate = WriteSafetyGate(_TOOL_CONTEXT.workspace or ".", allow_overwrites=True)
-        fallback_safety = _fallback_gate.check(fallback_path)
-        if not fallback_safety.allowed:
-            return ToolResult(
-                success=False,
-                content=f"Scratchpad write blocked by safety layer: {fallback_safety.reason}",
-            )
-        with open(fallback_safety.resolved_path, "w") as f:
+        with open(fallback, "w") as f:
             f.write(content_text)
         return ToolResult(
             success=True,
@@ -444,7 +434,7 @@ def _restore_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolR
         shutil.copy2(backup_path, resolved)
         del _BACKUPS[resolved]
         from tools import _MODIFIED_FILES
-        _MODIFIED_FILES.discard(resolved)
+        _MODIFIED_FILES.discard(safety_result.resolved_path)
         return ToolResult(
             success=True,
             content=f"Restored '{resolved}' from backup ({os.path.basename(backup_path)}).",

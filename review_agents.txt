@@ -1,0 +1,378 @@
+================================================================================
+AUDIT: Agent Subsystem + Eval against Design Principles
+Files: agent_runtime.py, sub_agent.py, tools/agent_ops.py, tools/agent_messages.py,
+       tools/agent_patterns.py, eval/runner.py, eval/scorer.py, eval/metrics.py
+================================================================================
+
+PRINCIPLE 3: No circular imports. No global mutable state unless unavoidable.
+--------------------------------------------------------------------------------
+
+  [P3.1] tools/agent_ops.py, line 32-33
+  Issue: Module-level global mutable list + lock for inter-agent messaging.
+    _AGENT_MSGS: list[dict] = []
+    _AGENT_MSGS_LOCK = threading.Lock()
+  This is a global mutable list shared across all agent threads. The lock
+  mitigates races but the mutable global still exists. The same data is already
+  stored in AgentRuntime.inboxes (thread-safe). Consider deprecating _AGENT_MSGS
+  and routing all messages through the runtime. At minimum, document that this
+  is a legacy compatibility shim.
+
+  [P3.2] eval/scorer.py, line 24
+  Issue: Global mutable dispatch table _CHECKERS: dict[str, callable] = {}.
+  Populated via @_register decorator side effects. This is the same pattern as
+  tools/__init__.py, so it's consistent, but it is global mutable state.
+
+PRINCIPLE 4: No magic numbers; use named constants.
+--------------------------------------------------------------------------------
+
+  [P4.1] sub_agent.py, line 114
+  Issue: Magic number 64000 for token budget.
+    budget = 64000
+  Fix: Define TOKEN_BUDGET = 64000 at module level.
+
+  [P4.2] sub_agent.py, line 115
+  Issue: Magic number 100 used as percentage cap.
+    pct = min(100, estimate * 100 // budget)
+  Fix: Define MAX_PCT = 100 (trivial but consistent).
+
+  [P4.3] sub_agent.py, line 159
+  Issue: Magic number 2000 for content truncation.
+    content=content[:2000]
+  Fix: Define SUB_AGENT_CONTENT_CAP = 2000.
+
+  [P4.4] agent_runtime.py, line 74 vs tools/agent_ops.py, line 43
+  Issue: Duplicate _ABSOLUTE_MAX_TURNS constant with DIFFERENT VALUES.
+    agent_runtime.py line 74:   _ABSOLUTE_MAX_TURNS: int = 35
+    tools/agent_ops.py line 43: _ABSOLUTE_MAX_TURNS = 25
+  These conflict. The runtime's hard cap (35) is higher than the tool's hard
+  cap (25). A sub-agent could receive 35 turns from extend_turns() but the spawn
+  tool caps at 25. Fix: Use a single constant, import from agent_runtime.
+
+  [P4.5] eval/runner.py, line 186
+  Issue: Magic number 300 for default timeout_seconds.
+    timeout_seconds: int = 300,
+  Fix: Already a named parameter with default, but define DEFAULT_TASK_TIMEOUT = 300.
+
+  [P4.6] eval/scorer.py, line 131
+  Issue: Magic number 120 for subprocess timeout in _check_test_passes.
+    timeout=120,
+  Fix: Define CHECKER_TIMEOUT = 120.
+
+  [P4.7] eval/scorer.py, line 174
+  Issue: Magic number 60 for shell checker subprocess timeout.
+    timeout=60,
+  Fix: Define SHELL_CHECK_TIMEOUT = 60.
+
+PRINCIPLE 5: All tool results must be structured — never raw exceptions.
+--------------------------------------------------------------------------------
+
+  [P5.1] All files: PASS. Every tool function returns ToolResult. Exceptions
+  are caught and wrapped. sub_agent.py returns SubAgentResult (a structured
+  dataclass). eval modules return CheckResult/EvalResult/SuiteReport. No raw
+  exceptions leak.
+
+PRINCIPLE 6: Every file write must go through the safety layer.
+--------------------------------------------------------------------------------
+
+  [P6.1] All files: PASS. All writes in the audited files go through
+  WriteSafetyGate.check(). eval/runner.py uses shutil.copytree which bypasses
+  the safety layer, but this is the eval harness itself (runs in its own temp
+  dir), so it's acceptable.
+
+PRINCIPLE 7: Every new feature needs at least one test.
+--------------------------------------------------------------------------------
+
+  [P7.1] Tests exist: test_sub_agent.py (53 tests), test_agent_messages.py (23),
+  test_eval.py (38). Coverage appears adequate for the agent subsystem and eval.
+  
+  [P7.2] tools/agent_patterns.py: No dedicated test file found. The functions
+  fan_out(), fan_in(), pipeline(), barrier(), scatter_gather() are tested only
+  indirectly through test_sub_agent.py. A dedicated test_agent_patterns.py is
+  recommended.
+
+PRINCIPLE 9: Prefer readable code over clever code.
+--------------------------------------------------------------------------------
+
+  [P9.1] tools/agent_ops.py, line 157 (and many others throughout the file)
+  Issue: Repeated pattern accessing tool context internals via __dict__:
+    runtime: AgentRuntime = _TOOL_CONTEXT.__dict__.get("_agent_runtime")
+  This breaks encapsulation of AgentContext. It's used in at least 10 places
+  across agent_ops.py, sub_agent.py, and agent_patterns.py.
+  Fix: Add proper accessor methods/properties on AgentContext, or pass runtime
+  as an explicit parameter rather than reaching into __dict__.
+
+  [P9.2] tools/agent_messages.py, lines 148-155
+  Issue: _TYPE_CHECKERS uses lambdas for type checking, which produce opaque
+  tracebacks. Example:
+    "string": lambda v: isinstance(v, str),
+  Fix: Use named functions like _check_is_string(v) for better debug-ability.
+
+  [P9.3] tools/agent_patterns.py, line 115 and 198
+  Issue: Direct access to runtime._condition (private attribute):
+    with runtime._condition:
+        runtime._condition.wait(timeout=min(0.5, remaining))
+  This breaks encapsulation. The condition variable is an implementation detail
+  of AgentRuntime.
+  Fix: Add a public wait_for_completion(timeout) method to AgentRuntime.
+
+  [P9.4] tools/agent_ops.py, lines 468-482 (collect_any)
+  Issue: `list(candidates)` is materialized from a set then iterated. The
+  comment says "# materialize for iteration" but this is a non-obvious
+  workaround for dict/set mutation during iteration.
+  Fix: Use `list()` directly in the loop or restructure to avoid the need
+  to materialize.
+
+PRINCIPLE 10: Add type hints for public functions. Use clear names; avoid abbreviations.
+--------------------------------------------------------------------------------
+
+  [P10.1] sub_agent.py, lines 25-36 (run_sub_agent)
+  Issue: 'config' parameter has no type hint (only a comment # AgentConfig).
+    config,  # AgentConfig
+  Fix: Use 'config: AgentConfig' if it can be imported, or at minimum use a
+  Protocol/ABC to document the interface. Same issue for tui_queue parameter.
+
+  [P10.2] tools/agent_ops.py, line 47 (_parse_max_turns)
+  Issue: Return type uses a string annotation `"int | ToolResult"` instead of
+  a proper union. This works at runtime but is non-standard.
+  Fix: Use `int | ToolResult` directly (Python 3.10+) or `Union[int, ToolResult]`.
+
+  [P10.3] tools/agent_ops.py, line 59 (_spawn_one)
+  Issue: Missing type hints for 'config', 'wg', 'rg' parameters. Only documented
+  via comments.
+  Fix: Add full type annotations.
+
+  [P10.4] tools/agent_patterns.py, lines 23-36 (fan_out)
+  Issue: Missing type hints for 'config', 'wg', 'rg' parameters:
+    config=None,
+    wg=None,
+    rg=None,
+  Fix: Add Optional[AgentConfig], Optional[WriteSafetyGate], Optional[ReadSafetyGate].
+
+  [P10.5] tools/agent_messages.py, lines 192-196 (_route_message)
+  Issue: 'msg' parameter typed as 'AgentMessage' but inboxes typed with
+  'list[AgentMessage]' in signature — inconsistent with the runtime's actual
+  dict values which are plain 'list'.
+  Fix: Ensure runtime.inboxes is typed as dict[str, list[AgentMessage]].
+
+  [P10.6] eval/runner.py, line 94 (_load_yaml)
+  Issue: Return type uses string annotation `"callable"` instead of `Callable`.
+    def _load_yaml() -> "callable":
+  Fix: Use `from collections.abc import Callable` and annotate properly.
+
+  [P10.7] eval/scorer.py, line 24
+  Issue: _CHECKERS typed as `dict[str, callable]` (lowercase), should be
+  `dict[str, Callable]`.
+
+  [P10.8] eval/metrics.py, line 27 (on_tool_start)
+  Issue: 'parallel' parameter has default `False` but type is `bool`. The
+  default is fine but the summary string extraction (split on '(') is fragile
+  and could be documented better.
+
+PRINCIPLE 11: Keep prompts, execution logic, tools, and memory in separate modules.
+--------------------------------------------------------------------------------
+
+  [P11.1] sub_agent.py, lines 240-257
+  Issue: _SUB_AGENT_SYSTEM_PROMPT is a long string constant embedded in the
+  execution module. While it's a constant (not logic), it's a prompt living in
+  an execution module. This is acceptable given it's specific to the sub-agent,
+  but the main system prompt lives in prompt.py.
+  Fix: Consider moving to prompt.py or a dedicated sub_agent_prompt.py if it
+  grows further.
+
+  [P11.2] eval/runner.py: Contains YAML parsing, task execution, workspace
+  setup, git initialization, CLI, and report serialization all in one file
+  (~549 lines). This mixes concerns.
+  Fix: Split into eval/task_loader.py (YAML parsing), eval/executor.py (task
+  execution), eval/cli.py (CLI entry point).
+
+PRINCIPLE 13: Reuse existing abstractions before introducing new ones.
+--------------------------------------------------------------------------------
+
+  [P13.1] eval/scorer.py, lines 27-35 (_register decorator)
+  Issue: Re-implements the same @_register decorator pattern that already exists
+  in tools/__init__.py. Nearly identical code for registering checkers vs tools.
+  Fix: Extract a shared `@register_handler` decorator into a common utility or
+  just accept the duplication as each subsystem has different dispatch semantics.
+
+  [P13.2] tools/agent_patterns.py, lines 85-124 (fan_in)
+  Issue: fan_in() re-implements its own polling/wait loop instead of reusing
+  collect_agent() from agent_ops.py. The same condition-variable wait pattern
+  is duplicated.
+  Fix: fan_in should build on collect_agent for each task_id, or extract a
+  shared `_wait_for_completion` helper.
+
+  [P13.3] tools/agent_patterns.py, lines 127-203 (pipeline)
+  Issue: pipeline() re-implements the spawn-and-wait pattern from _spawn_one()
+  and collect_agent() rather than composing them. Also accesses runtime._condition
+  directly (P9.3).
+
+PRINCIPLE 14: Avoid duplicate logic; extract shared behavior carefully.
+--------------------------------------------------------------------------------
+
+  [P14.1] tools/agent_ops.py + tools/agent_patterns.py
+  Issue: Both modules import _spawn_one from agent_ops (fan_out at line 52,
+  pipeline at line 148). This is correct reuse. However, the "wait for
+  completion" polling loop is duplicated between:
+    - collect_agent (agent_ops.py, lines 358-373)
+    - collect_any (agent_ops.py, lines 470-482)
+    - fan_in (agent_patterns.py, lines 103-116)
+    - pipeline (agent_patterns.py, lines 182-198)
+  All four implement the same pattern: check status, condition.wait, timeout.
+  Fix: Extract a `_wait_for_completion(task_id, timeout)` helper into
+  agent_runtime.py or a shared utility.
+
+  [P14.2] tools/agent_ops.py, lines 132-248 vs lines 206-248
+  Issue: The single-task spawn path (lines 206-248) and the batch-task spawn
+  path (lines 132-189) duplicate significant validation logic:
+    - _parse_max_turns call
+    - runtime/context None checks
+    - active_count >= _MAX_CONCURRENT check
+  Fix: Extract common validation into a `_validate_spawn_prerequisites()`
+  function used by both paths.
+
+  [P14.3] eval/scorer.py, lines 91-123
+  Issue: _check_file_contains and _check_file_not_contains share nearly identical
+  file-reading and error-handling logic (differing only in the boolean check).
+  Lines 93-99 and 110-116 are duplicates.
+  Fix: Extract a `_read_file_for_check(path, workspace)` helper.
+
+THREAD SAFETY ANALYSIS
+--------------------------------------------------------------------------------
+
+  [TS.1] agent_runtime.py: Thread safety is well-designed.
+    - All public methods use `with self._lock`.
+    - store_result() notifies condition variable.
+    - mark_abandoned() handles zombie cleanup.
+    - Minor: active_count property acquires lock and iterates self.tasks.
+      store_result() pops from self.tasks, so the property correctly counts
+      only running tasks. However the `tid not in self.results` check is
+      redundant since store_result already removes from self.tasks. No bug,
+      just dead logic.
+
+  [TS.2] tools/agent_ops.py: _AGENT_MSGS with _AGENT_MSGS_LOCK is thread-safe
+  for append/read, but there's a TOCTOU between len() and append (count may be
+  stale by the time the ToolResult is returned). Low severity since it's just
+  a display count.
+
+  [TS.3] tools/agent_patterns.py: fan_in() (line 103-116) iterates pending
+  while holding no lock on runtime, checking status via get_status() which
+  acquires the lock internally. This is safe but may miss completions between
+  checks. The condition.wait() with timeout mitigates this.
+
+  [TS.4] eval/runner.py, line 258: threading.Timer used for timeout. The
+  _timeout callback sets cancel_event, which is checked by the agent loop in
+  another thread. This is safe (threading.Event is thread-safe).
+
+  [TS.5] eval/metrics.py: MetricsCollector has no locking. It's designed to be
+  called from a single thread (the agent loop). The `_current_batch_size` field
+  is reset on mark_turn(). Safe under single-threaded use, but if callbacks are
+  ever invoked from multiple threads, Counter operations would need locking.
+
+MODULE SIZE ASSESSMENT
+--------------------------------------------------------------------------------
+
+  [MS.1] tools/agent_ops.py: ~942 lines. This is the largest tool module.
+  Contains 10 tool implementations + summaries + helpers. Consider splitting:
+    - spawn/status/collect tools → tools/agent_lifecycle.py
+    - message/read/inbox/subscribe → tools/agent_comms.py
+    - handoff → tools/agent_handoff.py
+    - extend → keep in agent_ops.py or merge into lifecycle
+
+  [MS.2] eval/runner.py: ~549 lines. Contains YAML loading, task execution,
+  suite aggregation, git helpers, and CLI all in one file. See P11.2.
+
+  [MS.3] sub_agent.py: ~257 lines. Reasonable size for a single-purpose module.
+
+  [MS.4] agent_runtime.py: ~170 lines. Well-sized for a registry + result type.
+
+  [MS.5] tools/agent_messages.py: ~215 lines. Reasonable for message types,
+  validation, and routing.
+
+  [MS.6] tools/agent_patterns.py: ~285 lines. Reasonable for coordination
+  pattern helpers.
+
+  [MS.7] eval/scorer.py: ~190 lines. Good size.
+
+  [MS.8] eval/metrics.py: ~55 lines. Excellent, small, focused.
+
+CIRCULAR IMPORT ANALYSIS
+--------------------------------------------------------------------------------
+
+  [CI.1] Import graph is clean for the audited files:
+    agent_runtime.py     ← imports nothing from the project
+    sub_agent.py         ← imports from agent_runtime, safety
+    tools/agent_ops.py   ← imports from agent_runtime, agent_messages, safety
+    tools/agent_messages.py ← imports nothing from the project
+    tools/agent_patterns.py ← imports from agent_runtime, agent_ops (late import)
+    eval/runner.py       ← imports from eval.scorer, eval.metrics
+    eval/scorer.py       ← imports nothing from the project (except stdlib)
+    eval/metrics.py      ← imports nothing from the project
+
+  No circular imports detected. The late imports inside function bodies in
+  sub_agent.py and agent_patterns.py are intentional avoidance mechanisms.
+
+ADDITIONAL FINDINGS
+--------------------------------------------------------------------------------
+
+  [AF.1] tools/agent_ops.py, line 85 vs tools/agent_ops.py, line 107
+  Issue: In _runner(), 'visible' sets config.stream = True. This mutates the
+  parent's config object, which is shared across all sub-agents. If two
+  sub-agents are spawned simultaneously with different 'visible' settings, this
+  is a race condition on config.stream.
+  Fix: Copy the config or set stream on a per-sub-agent basis without mutating
+  the shared config.
+
+  [AF.2] eval/scorer.py, lines 96-98
+  Issue: open(path, "r").read() without a context manager. If read() fails,
+  the file handle leaks.
+  Fix: Use `with open(path, "r") as f: content = f.read()`.
+
+  [AF.3] sub_agent.py, lines 111-121
+  Issue: Token budget warning is injected as a _transient user message every
+  turn (after turn 1). This may clutter the sub-agent's context. The parent
+  agent loop presumably does the same, so this is consistent behavior, but the
+  budget constant (64000) should be shared with the parent loop.
+
+  [AF.4] tools/agent_ops.py, lines 157, 164, 221, 282
+  Issue: 'config' is retrieved from _TOOL_CONTEXT.__dict__.get("_agent_config")
+  but its type is never validated. If the context was set up incorrectly, this
+  will fail with an opaque AttributeError later.
+  Fix: Add an isinstance check or rely on a typed accessor.
+
+================================================================================
+SUMMARY
+================================================================================
+
+  Total violations found: 31
+
+  Critical (different behavior or bugs):
+    - P4.4: Duplicate _ABSOLUTE_MAX_TURNS with conflicting values (35 vs 25)
+    - AF.1: Shared config mutation race in _runner()
+    - P14.1: Duplicated wait-for-completion loop (4 copies)
+
+  High (design/encapsulation):
+    - P9.1: _TOOL_CONTEXT.__dict__.get(...) encapsulation violations (10+ sites)
+    - P9.3: Direct access to runtime._condition (2 sites)
+    - P3.1: Global mutable _AGENT_MSGS list
+
+  Medium (maintainability):
+    - MS.1: agent_ops.py at 942 lines should be split
+    - MS.2: eval/runner.py at 549 lines mixes concerns
+    - P4.1-P4.7: Magic numbers (7 instances)
+    - P7.2: Missing dedicated tests for agent_patterns.py
+    - P10.1-P10.8: Missing/weak type hints (8 instances)
+    - P14.2: Duplicate spawn validation logic
+
+  Low (cosmetic / minor):
+    - P9.2: Lambda type checkers
+    - AF.2: File handle leak in scorer.py
+    - TS.5: MetricsCollector has no locking (currently safe, fragile)
+    - P11.1: Prompt text in execution module
+    - P13.1: Duplicate @_register pattern
+
+  Pass (no issues found): P5 (structured results), P6 (safety layer),
+  CI.1 (circular imports).
+
+================================================================================
+=== Wed May 13 12:27:21 CDT 2026 ===
+HIGH priority issues fixed this session:

@@ -1,0 +1,365 @@
+================================================================================
+AUDIT: safety.py, mini_agent.py, tui.py, terminal.py
+Design Principles Violations
+================================================================================
+
+Principles audited:
+ 1. Keep modules small and single-purpose
+ 2. Prefer explicit control flow over hidden magic
+ 3. No circular imports. No global mutable state unless unavoidable
+ 4. No magic numbers; use named constants
+ 5. All tool results must be structured — never raw exceptions
+ 6. Every file write must go through the safety layer
+ 7. Every new feature needs at least one test
+ 8. Prefer small incremental edits over large rewrites
+ 9. Prefer readable code over clever code
+10. Add type hints for public functions. Use clear names; avoid abbreviations
+11. Keep prompts, execution logic, tools, and memory in separate modules
+12. Do not create new subsystems unless existing architecture cannot handle the need
+13. Reuse existing abstractions before introducing new ones
+14. Avoid duplicate logic; extract shared behavior carefully
+15. If a change touches more than 3 core files, pause and explain the plan first
+
+
+================================================================================
+FILE: safety.py (165 lines)
+================================================================================
+
+[1] Line 36-38 — Duplicate symbols / dead aliases
+    Issue: ReadSafetyResult and WriteSafetyResult are backward-compatibility
+           aliases that just point to SafetyResult. They clutter the namespace.
+    Principle: 9 (prefer readable code), 1 (small modules)
+    Fix: Remove aliases or add deprecation warnings. Better yet, search for all
+          usages and migrate consumers to SafetyResult, then delete lines 36-38.
+
+[2] Lines 60-92, 119-162 — Duplicate logic in ReadSafetyGate.check() and
+    WriteSafetyGate.check()
+    Issue: Both methods independently re-implement the same None check,
+           empty-string guard, and realpath resolution (lines 66-79 in read,
+           lines 125-138 in write). The only difference is the overwrite check
+           in the write gate. This is ~25 lines of duplicated code.
+    Principle: 14 (avoid duplicate logic)
+    Fix: Extract a shared _validate_path(path, root, unrestricted) method
+          returning (resolved, allowed, reason). Have each gate call it then
+          add its own gate-specific check.
+
+[3] Lines 80-82, 148-152 — TOCTOU race condition
+    Issue: Comment notes an inherent TOCTOU race between safety check and
+           actual file open(). While documented, this is a real security gap.
+    Principle: 6 (safety layer enforcement)
+    Fix: Pass an open-file-descriptor approach or use os.open() with O_NOFOLLOW,
+          then fdopen(). Alternatively, accept it but add a prominent note in
+          the docstring that this is a known limitation.
+
+[4] Lines 37-38 — Deprecated type aliases not marked deprecated
+    Issue: ReadSafetyResult/WriteSafetyResult are described as "deprecated" in
+           a comment but no DeprecationWarning is emitted. Users can still
+           import them without warning.
+    Principle: 2 (explicit control flow)
+    Fix: Add __getattr__ at module level that emits DeprecationWarning, or
+          remove them entirely (preferred).
+
+[5] No type annotation on module-level _is_within_workspace function
+    Issue: Already has type hints. OK. No violation.
+
+[6] Lines 48, 105 — __init__ parameters
+    Issue: `unrestricted` parameter uses a double-negative name.
+           "unrestricted=False" means "restricted". Confusing to read.
+    Principle: 9 (readable code)
+    Fix: Rename to `restricted=True` or `enforce_boundary=True`.
+
+
+================================================================================
+FILE: mini_agent.py (196 lines)
+================================================================================
+
+[7] Lines 79-83 — _export_conversation writes directly to disk, BYPASSES
+    WriteSafetyGate
+    Issue: `with open(path, "w") as f: f.write(md)` — no safety check at all.
+           The path is constructed inside the workspace, but this nonetheless
+           violates the architecture's promise that all writes go through the
+           safety layer.
+    Principle: 6 (every file write must go through the safety layer)
+    Fix: Either pass write_gate and call write_gate.check(path) before
+          writing, or route through _write_file.
+
+[8] Line 56 — Magic number 100
+    Issue: `if len(brief) > 100: brief = brief[:100] + "..."`
+    Principle: 4 (no magic numbers)
+    Fix: Define APPROVAL_TRUNCATION_LENGTH = 100 at module level.
+
+[9] Line 51 — Redundant re-import inside _approve()
+    Issue: `from terminal import c, _YELLOW, _RED` is already imported at
+           module level (line 42). Re-importing inside the function is
+           unnecessary and confusing.
+    Principle: 9 (readable code), 14 (avoid duplicate logic)
+    Fix: Remove the inner import.
+
+[10] Lines 51-63 — _approve() lacks return type hint
+     Issue: `def _approve(tool_name: str, args: dict) -> bool:` — the
+            `-> bool` is present, but `args` is typed as `dict` instead of
+            `dict[str, Any]`.
+     Principle: 10 (add type hints)
+     Fix: Use `dict[str, Any]` for args.
+
+[11] Line 67 — _log() typed as `verbose: bool` but *args/**kwargs untyped
+     Issue: `def _log(verbose: bool, *args, **kwargs) -> None` — the *args
+            suggest arbitrary print arguments but no type safety.
+     Principle: 10 (type hints)
+     Fix: Accept a `message: str` and optional `file` parameter instead of
+          arbitrary *args. Or keep as-is since it's a passthrough to print().
+
+[12] Lines 131-141 — Scratchpad output handling
+     Issue: `sp = memory.get_scratchpad()` — get_scratchpad is called on every
+            user message. This call reads from the database. If this is slow,
+            the REPL feels sluggish.
+     Principle: 9 (readable code — hidden I/O in input loop)
+     Fix: Document or consider caching.
+
+[13] Line 150 — Magic separator string with magic number
+     Issue: `c("\u2500" * 50, _DIM)` — 50 is a magic number.
+     Principle: 4 (no magic numbers)
+     Fix: Define SEPARATOR_WIDTH = 50.
+
+[14] Lines 42-44 — Import style
+     Issue: `from terminal import c, _DIM, _CYAN, _YELLOW, _GREEN, _RED`
+            imports private names (leading underscore) from terminal.py.
+            These are intended as internal to terminal.py.
+     Principle: 2 (explicit control flow — private exports)
+     Fix: Either make these public (remove underscore) in terminal.py, or
+          provide a public API that mini_agent.py uses.
+
+
+================================================================================
+FILE: tui.py (1114 lines) — MAJOR VIOLATIONS
+================================================================================
+
+[15] Overall — Module is 1114 lines, far too large
+     Issue: tui.py combines queue message types (lines 256-292), worker thread
+            (lines 296-335), TUI app class (lines 345-1114), theme definitions
+            (lines 58-132), CSS generation (lines 135-254), and drain-loop
+            message routing. This is ~5 concerns in one file.
+     Principle: 1 (keep modules small and single-purpose)
+     Fix: Split into tui_app.py (~600 lines for MiniAgentTUI), tui_messages.py
+          (message dataclasses), tui_themes.py (themes + CSS), and
+          tui_worker.py (AgentWorker). Each should be <300 lines.
+
+[16] Lines 620-625 — _export_to_file bypasses WriteSafetyGate
+     Issue: `with open(path, "w") as f: f.write(md)` — writes directly with
+            no safety check.
+     Principle: 6 (every file write must go through the safety layer)
+     Fix: Call self.write_gate.check(path) before writing.
+
+[17] Numerous magic numbers throughout:
+     Line 618: 80 (brief truncation)
+     Line 807: 40 (agent label truncation)
+     Lines 952-986: 400, 250, 400 (thinking chunk flush thresholds)
+     Lines 998-1035: 300, 300, 200 (content chunk flush thresholds)
+     Line 501: 0.04 (drain interval in seconds)
+     Line 502: 2.0 (status bar interval in seconds)
+     Line 161: 35% (static pane height percentage)
+     Line 874: 120 (detail truncation)
+     Principle: 4 (no magic numbers)
+     Fix: Define named constants at module level:
+          THINKING_CHUNK_SIZE = 400
+          CONTENT_CHUNK_SIZE = 300
+          DRAIN_INTERVAL = 0.04
+          STATUS_INTERVAL = 2.0
+          DETAIL_MAX_LEN = 120
+          BRIEF_MAX_LEN = 80
+          LABEL_MAX_LEN = 40
+          etc.
+
+[18] Line 34 — _safe() function defined before imports (out of order)
+     Issue: `_safe` is defined at line 34, between the _NotifyQueue class
+            and the main imports. It breaks the conventional import-then-code
+            ordering.
+     Principle: 9 (readable code)
+     Fix: Move _safe to after all imports, or to a utility section.
+
+[19] Lines 804-814 — Nested function `_find` inside `_drain`
+     Issue: `_find` is defined inside `_drain`'s body, recreated on every
+            drain call (~25 times per second).
+     Principle: 2 (explicit control flow — hidden allocation)
+     Fix: Move _find to a static method or module-level function.
+
+[20] Lines 826-840 — Module-level `_upd` function is misleading
+     Issue: `_upd` is defined at module level but only used inside `_drain`.
+            Its name is too short to convey purpose (update-tree-node-label).
+     Principle: 10 (clear names; avoid abbreviations)
+     Fix: Rename to `_update_tree_node_label` and keep at module level.
+
+[21] Lines 825-826, 842 — `_any_running` similarly has a terse name
+     Issue: Function name doesn't describe that it checks tree nodes.
+     Principle: 10 (clear names)
+     Fix: Rename to `_any_tree_node_running`.
+
+[22] Dynamic attribute creation via `hasattr` guards — lines 632-636,
+     638-640, 769-773, 795-798, 999-1002, 1006-1007, 1097-1099
+     Issue: Using `hasattr(self, "_sub_panes")` to guard lazy initialization
+            of attributes on first access is implicit and error-prone. It
+            obscures the full set of instance attributes from readers.
+     Principle: 2 (explicit control flow over hidden magic)
+     Fix: Initialize all attributes in __init__ or on_mount with empty
+          defaults (empty dict, empty list, 0, etc.).
+
+[23] Lines 854-855 — Duplicate code: `_AGENT_COLORS` assignment pattern
+     Issue: `color = _AGENT_COLORS[(self._sub_count - 1) % len(_AGENT_COLORS)]`
+            followed by `ac = getattr(t, color)` — the same pattern appears
+            for color assignment in sub-agent pane creation.
+     Principle: 14 (avoid duplicate logic)
+     Fix: Extract a helper: `def _agent_color(self, index: int) -> str`
+
+[24] Lines 770-798 — Sub-agent tuple message handling is interleaved in
+     `_drain` with the main message dispatcher
+     Issue: The sub-agent streaming (sub_token, sub_tree spawn, sub_tree
+            status, sub_done) consumes ~60 lines inside _drain, making it
+            hard to follow the main dispatch logic.
+     Principle: 1 (keep modules small — or at least methods small)
+     Fix: Extract sub-agent handling to `_drain_sub_agent(msg)` method.
+
+[25] Lines 911-1037 — _handle_token is 126 lines, very complex
+     Issue: Interleaves thinking vs content routing with table buffering,
+            sentence-boundary detection, chunking logic, and content
+            accumulation. Hard to test and maintain.
+     Principle: 9 (readable code), 8 (small incremental edits over large)
+     Fix: Split into _handle_thinking_token and _handle_content_token.
+
+[26] Lines 1040-1091 — _finish_turn promotes accumulated content to static
+     pane
+     Issue: The "promotion" concept (moving final content from chat to
+            tools-log) is not documented as a design decision. It's an
+            implicit side effect of turn completion.
+     Principle: 2 (explicit control flow)
+     Fix: Add a docstring explaining the promotion rationale.
+
+[27] Lines 465, 617, etc. — _safe() used pervasively for markup escaping
+     Issue: Every user-generated or LLM-generated string is manually
+            wrapped with _safe(). This is repetitive and easy to miss.
+     Principle: 14 (avoid duplicate logic — or repetitive patterns)
+     Fix: Consider subclassing RichLog to auto-escape via a custom `write`
+          wrapper, or accept it as necessary for Textual.
+
+[28] Lines 58-132 — Theme definitions take 74 lines
+     Issue: Theme data is pure data, not behavior. Could be in a separate
+            data file (JSON, TOML, or a dedicated themes.py).
+     Principle: 1 (small modules)
+     Fix: Move themes to tui_themes.py; import them into tui.py.
+
+[29] Lines 135-254 — _build_css is 120 lines of string formatting
+     Issue: CSS template is huge and mixed with Python code. Hard to edit
+            the CSS without reading Python string escaping.
+     Principle: 9 (readable code)
+     Fix: Put CSS in a separate .tcss file (Textual supports this natively).
+
+[30] Line 348 — `CSS = _build_css(THEMES[DEFAULT_THEME])` is a class variable
+     Issue: CSS is computed once at class definition time. If a different
+            theme is selected at runtime, the CSS class variable doesn't
+            update — _apply_theme manually overrides widget styles instead.
+            This means there are two competing theming mechanisms.
+     Principle: 2 (explicit control flow)
+     Fix: Use Textual's theme system properly or regenerate CSS on theme
+          switch. Accept one approach, not two.
+
+
+================================================================================
+FILE: terminal.py (61 lines)
+================================================================================
+
+[31] Lines 21-22 — Module-level color constants use private naming but are
+     used externally
+     Issue: `_DIM`, `_RED`, etc. are named with leading underscore (private)
+            but are imported and used by mini_agent.py. The underscore
+            convention is misleading.
+     Principle: 10 (clear names)
+     Fix: Remove underscores: DIM, RED, GREEN, YELLOW, CYAN. These are
+          clearly intended as public API.
+
+[32] Lines 17-18 — _color_enabled() checks sys.argv directly
+     Issue: `"--no-color" in sys.argv` is fragile. It depends on the exact
+            flag string and doesn't work with abbreviated flags or different
+            argument parsers (tui.py uses argparse too).
+     Principle: 2 (explicit control flow — hidden dependency on CLI format)
+     Fix: Have the caller (main()) pass a boolean `color_enabled` flag
+          explicitly rather than sniffing sys.argv.
+
+[33] Line 8 — Module docstring mentions stderr but _color_enabled() checks
+     stderr too
+     Issue: The dependency on stderr being a TTY is correct for terminal
+            output, but if someone redirects stderr, colors are silently
+            stripped. This is probably intentional but could be documented
+            more clearly.
+     Principle: 9 (readable code — insufficient documentation of behavior)
+     Fix: Add a comment: "Colors are disabled when stderr is piped or
+           redirected, so log files don't get ANSI garbage."
+
+[34] Lines 30-57 — format_table has nested function _row
+     Issue: `_row` is defined inside `format_table`, recreated on every call.
+     Principle: 2 (explicit control flow — hidden allocation)
+     Fix: Move _row to module level (it's a pure function).
+
+
+================================================================================
+CROSS-FILE ISSUES
+================================================================================
+
+[35] _write_scratchpad in tools/file_ops.py (line 311) bypasses safety
+     Issue: The function signature is `_write_scratchpad(args, _wg, _rg)`
+            where _wg is prefixed with underscore (meaning unused). The
+            fallback path at line 336 writes directly:
+            `with open(fallback, "w") as f: f.write(content_text)`
+            No safety gate check is performed.
+     Principle: 6 (every file write must go through safety layer)
+     Fix: Add `wg.check(fallback)` before writing. Remove the underscore
+          prefix from the parameter.
+
+[36] mini_agent.py and tui.py both call parse_args() independently
+     Issue: Both entry points parse CLI args in their own way. tui.py calls
+            parse_args() inside on_mount (line 451). mini_agent.py does it
+            in main(). If argument handling diverges, behavior differs.
+     Principle: 14 (avoid duplicate logic)
+     Fix: Ensure both paths use the same parse_args() from config.py, which
+          they currently do — but verify no duplicated flag handling.
+
+[37] tui.py line 48 imports both `from textual.containers import Container,
+     HorizontalScroll` and line 43 `from textual.containers import Container,
+     HorizontalScroll` — DUPLICATE IMPORT
+     Issue: Container and HorizontalScroll are imported twice, from the same
+            module. Horizontal is imported separately.
+     Principle: 9 (readable code)
+     Fix: Consolidate: `from textual.containers import Container, Horizontal,
+          HorizontalScroll`
+
+[38] All four files use `import json` or `json.dumps` style inconsistently
+     with f-strings
+     Issue: mini_agent.py line 54 uses `json.dumps(args)` for truncation;
+            tui.py line 616 uses `str(args)` for the same pattern.
+     Principle: 14 (avoid duplicate logic — inconsistent stringification)
+     Fix: Create a shared helper `_brief_args(args, max_len=80)` in a
+          utility module.
+
+
+================================================================================
+SUMMARY
+================================================================================
+
+Severity counts:
+  CRITICAL (safety bypass): 3  — [7], [16], [35]
+  HIGH (module size / magic numbers): 5  — [15], [17], [22], [25], [28]
+  MEDIUM (duplicate logic / imports): 8  — [2], [9], [23], [27], [30], [34], [37], [38]
+  LOW (naming / style): 22  — all others
+
+The most urgent fixes:
+  1. Route _export_conversation, _export_to_file, and _write_scratchpad
+     through the WriteSafetyGate (violations 7, 16, 35).
+  2. Split tui.py into 3-4 modules (violation 15).
+  3. Replace magic numbers with named constants in all four files
+     (violations 8, 13, 17).
+  4. Remove the duplicate import in tui.py line 43/48 (violation 37).
+
+================================================================================
+=== Wed May 13 12:27:21 CDT 2026 ===
+HIGH priority issues fixed this session:
+#5 _write_scratchpad safety bypass: FIXED - added _wg.check() before fallback open()
+#6 _export_to_file safety bypass: FIXED - added self.write_gate.check() in tui.py
+#7 Duplicate import: FIXED - merged two textual.containers imports in tui.py

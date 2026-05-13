@@ -35,20 +35,18 @@ def _safe(text: str) -> str:
     return text.replace("\\", "\\\\").replace("[", r"\[")
 
 from textual.app import App, ComposeResult
-from textual.containers import Container, HorizontalScroll
+from textual.containers import Container, Horizontal, HorizontalScroll
 from textual.widgets import Header, Footer, RichLog, TextArea, Tree
 from textual.binding import Binding
 
 import requests
 
 from config import AgentConfig, resolve_workspace, build_startup_context, init_session, parse_args
-from llm import run_agent_turn
-from stream import THINKING_START, THINKING_END
-from prompt import SYSTEM_PROMPT
+from llm import run_agent_turn, THINKING_START, THINKING_END
+from prompt import build_system_prompt
 from safety import ReadSafetyGate, WriteSafetyGate
 from memory import MemoryStore
 from tools import set_context, build_symbol_index
-from interject import push_interjection
 
 
 # ---------------------------------------------------------------------------
@@ -69,7 +67,6 @@ class TuiTheme:
     red: str      # errors
     thinking: str # thinking block dim
     pulse: str    # attention/approval glow
-    purple: str   # queued interjections
 
 THEMES: dict[str, TuiTheme] = {
     "dawn": TuiTheme(
@@ -77,56 +74,56 @@ THEMES: dict[str, TuiTheme] = {
         bg="#faf8f5", surface="#f0ede8", border="#d4cfc8",
         accent="#b8956a", text="#3d3a35", dim="#8a857d",
         green="#5a8a4a", yellow="#b89540", red="#c06050",
-        thinking="#b0aaa0", pulse="#f0c060", purple="#9a6aba",
+        thinking="#b0aaa0", pulse="#f0c060",
     ),
     "sepia": TuiTheme(
         name="Sepia",
         bg="#f4f0e6", surface="#e8e0d0", border="#c8b898",
         accent="#b8893a", text="#4a3f30", dim="#8a7a60",
         green="#6a8a4a", yellow="#c0a040", red="#b85840",
-        thinking="#b0a080", pulse="#e0b040", purple="#9a6a9a",
+        thinking="#b0a080", pulse="#e0b040",
     ),
     "ember": TuiTheme(
         name="Ember",
         bg="#1e1814", surface="#2a221c", border="#3a3028",
         accent="#d4985a", text="#d0c8be", dim="#7a7064",
         green="#7ab860", yellow="#d4a040", red="#d47050",
-        thinking="#5a5040", pulse="#e89840", purple="#c090d0",
+        thinking="#5a5040", pulse="#e89840",
     ),
     "slate": TuiTheme(
         name="Slate",
         bg="#111111", surface="#1b1b1b", border="#2a2a2a",
         accent="#8f8f8f", text="#b8b8b8", dim="#5a5a5a",
         green="#4f9f6f", yellow="#b89a4a", red="#a85a5a",
-        thinking="#3a3a3a", pulse="#c0c040", purple="#9060c0",
+        thinking="#3a3a3a", pulse="#c0c040",
     ),
     "midnight": TuiTheme(
         name="Midnight",
         bg="#090b0d", surface="#131619", border="#1e2226",
         accent="#8899aa", text="#b0c0d0", dim="#4a5560",
         green="#4a8a6a", yellow="#9a8a4a", red="#9a6060",
-        thinking="#2a3040", pulse="#6a8acc", purple="#7a80c0",
+        thinking="#2a3040", pulse="#6a8acc",
     ),
     "cobalt": TuiTheme(
         name="Cobalt",
         bg="#0a1220", surface="#101830", border="#1e2850",
         accent="#6090d0", text="#a0b8d8", dim="#4a6090",
         green="#5a9a6a", yellow="#a0a040", red="#b06060",
-        thinking="#203050", pulse="#5090e0", purple="#80a0d8",
+        thinking="#203050", pulse="#5090e0",
     ),
     "neon": TuiTheme(
         name="Neon",
         bg="#0c0c0c", surface="#16161a", border="#303030",
         accent="#e040e0", text="#c0e0c0", dim="#506050",
         green="#00e060", yellow="#e0c000", red="#ff4060",
-        thinking="#302040", pulse="#e040ff", purple="#d040d0",
+        thinking="#302040", pulse="#e040ff",
     ),
     "forest": TuiTheme(
         name="Forest",
         bg="#0e1410", surface="#141c16", border="#1e2e22",
         accent="#60a870", text="#a0c0a8", dim="#4a6a50",
         green="#60d070", yellow="#b0b040", red="#c06050",
-        thinking="#203028", pulse="#50d060", purple="#90a870",
+        thinking="#203028", pulse="#50d060",
     ),
 }
 
@@ -139,7 +136,7 @@ def _build_css(theme: TuiTheme) -> str:
 
     Layout (top to bottom):
       Header
-      #static-pane   — final responses, tool calls, tasks  (35%)
+      #static-pane   — Horizontal: #tools-log (left) + #agent-tree (right)  (35%)
       #chat-pane     — user input, streaming assistant     (1fr)
       #input-area    — TextArea for user typing
       Footer
@@ -166,35 +163,31 @@ Footer.pulse {{
 }}
 
 #static-pane {{
+    height: 35%;
+    min-height: 5;
+}}
+
+#tools-log {{
     background: {theme.bg};
     color: {theme.text};
     border: none;
+    border-bottom: solid {theme.border};
     padding: 0 1;
-    width: 1fr;
-    height: 100%;
     overflow-y: auto;
     scrollbar-size: 0 0;
-}}
-
-#static-area {{
-    background: {theme.bg};
-    border-bottom: solid {theme.border};
-    height: 35%;
-    min-height: 5;
-    layout: horizontal;
 }}
 
 #agent-tree {{
-    background: {theme.surface};
-    color: {theme.text};
+    display: none;
+    background: {theme.bg};
+    color: {theme.dim};
+    border: none;
     border-left: solid {theme.border};
+    border-bottom: solid {theme.border};
     padding: 0 1;
-    width: 30%;
-    min-width: 20;
-    height: 100%;
     overflow-y: auto;
     scrollbar-size: 0 0;
-    display: none;
+    min-width: 25;
 }}
 
 #subagent-pane {{
@@ -361,9 +354,9 @@ class MiniAgentTUI(App):
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
-        with Horizontal(id="static-area"):
-            yield RichLog(id="static-pane", highlight=True, markup=True, wrap=True)
-            yield Tree("Agents", id="agent-tree")
+        with Horizontal(id="static-pane"):
+            yield RichLog(id="tools-log", highlight=True, markup=True, wrap=True)
+            yield Tree("agent", id="agent-tree")
         with HorizontalScroll(id="subagent-pane"):
             pass
         yield RichLog(id="chat-pane", highlight=True, markup=True, wrap=True)
@@ -466,16 +459,16 @@ class MiniAgentTUI(App):
         self.session = data["session"]
 
         t = self._tui_theme
-        static = self.query_one("#static-pane", RichLog)
-        static.write(f"[bold {t.accent}]mini_agent[/]  —  {self.config.model}")
-        static.write(f"[{t.dim}]Workspace: {_safe(workspace)}[/]")
+        tools_log = self.query_one("#tools-log", RichLog)
+        tools_log.write(f"[bold {t.accent}]mini_agent[/]  —  {self.config.model}")
+        tools_log.write(f"[{t.dim}]Workspace: {_safe(workspace)}[/]")
         if saved := len(self.messages) - 2:
-            static.write(f"[{t.dim}]Restored {saved} messages from previous session[/]")
-        static.write(f"[{t.dim}]Theme: {t.name}  (/theme to switch)[/]")
+            tools_log.write(f"[{t.dim}]Restored {saved} messages from previous session[/]")
+        tools_log.write(f"[{t.dim}]Theme: {t.name}  (/theme to switch)[/]")
 
         # Cache widget refs for fast drain-loop access (avoid query_one DOM walks)
         self._chat = self.query_one("#chat-pane", RichLog)
-        self._static = static
+        self._tools_log = tools_log
 
 
         self.query_one("#input", TextArea).focus()
@@ -614,56 +607,30 @@ class MiniAgentTUI(App):
                 focused.text = ""
 
     def _approve(self, tool_name: str, args: dict) -> bool:
-        """Prompt the user for tool approval in the TUI.
-
-        When approve_write_ops is enabled, the user is shown the tool
-        request and the turn pauses briefly.  The user can cancel the
-        entire turn with Ctrl+C (checked via the worker cancel event).
-        In the TUI all tool calls are visible in real-time, so individual
-        tools are auto-approved unless the turn has been cancelled.
-        """
-        log = self.query_one("#static-pane", RichLog)
+        """Auto-approve in TUI. User sees tool calls and can cancel with Ctrl+C."""
+        log = self.query_one("#tools-log", RichLog)
         t = self._tui_theme
         brief = str(args)
         if len(brief) > 80:
             brief = brief[:80] + "..."
-
-        # If approval mode is off, auto-approve silently
-        if not self.config.approve_write_ops:
-            return True
-
-        # If the user cancelled the turn, deny immediately
-        if self.worker is not None and self.worker.cancel.is_set():
-            log.write(f"[{t.red}]  ✗ denied {tool_name}({_safe(brief)}) — turn cancelled[/]")
-            return False
-
-        # Show the approval request and auto-approve in TUI
-        log.write(f"[{t.yellow}]  🔐 approve? {tool_name}({_safe(brief)})[/]")
-        log.write(f"[{t.yellow} italic]  ⏳ approved {tool_name}({_safe(brief)}) [Ctrl+C to cancel turn][/]")
+        log.write(f"[{t.yellow} italic]  ⏳ approved {tool_name}({_safe(brief)})[/]")
         return True
 
     def _export_to_file(self, path: str) -> None:
         """Write current conversation to a markdown file."""
         from memory import export_conversation_markdown
         md = export_conversation_markdown(self.messages)
+        ok, reason = self.write_gate.check(path)
+        if not ok:
+            self.notify(f"Export blocked: {reason}", severity="error")
+            return
         with open(path, "w") as f:
             f.write(md)
 
     def _submit(self) -> None:
         """Send user message to the agent."""
-        # If agent is working, queue as interjection instead of blocking
+        # Guard against double-submit while agent is working
         if self.worker is not None and self.worker.is_alive():
-            input_widget = self.query_one("#input", TextArea)
-            text = input_widget.text.strip()
-            if text:
-                input_widget.clear()
-                push_interjection(text)
-                t = self._tui_theme
-                chat = self.query_one("#chat-pane", RichLog)
-                chat.write("")
-                MiniAgentTUI._box_open(chat, "You (queued)", t.purple)
-                MiniAgentTUI._box_line(chat, f"[dim italic]{_safe(text)}[/]", t.purple)
-                MiniAgentTUI._box_close(chat, t.purple)
             return
 
         # Defensive: clear any stale table buffer from a previous turn
@@ -723,10 +690,10 @@ class MiniAgentTUI(App):
         """Handle slash-commands typed in the input area."""
         cmd = text.lower().strip()
         t = self._tui_theme
-        log = self.query_one("#static-pane", RichLog)
+        log = self.query_one("#tools-log", RichLog)
 
         if cmd == "/clear":
-            self.messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+            self.messages = [{"role": "system", "content": build_system_prompt(self.config)}]
             self.memory.clear()
             self._history = []
             self._history_pos = 0
@@ -734,10 +701,6 @@ class MiniAgentTUI(App):
             self._total_tokens = 0
             log.write("")
             log.write(f"[{t.dim}]— conversation cleared —[/]")
-            return
-
-        if cmd == "/cancel":
-            self.action_cancel()
             return
 
         if cmd == "/help":
@@ -796,7 +759,7 @@ class MiniAgentTUI(App):
         self._drain_event.clear()
         t = self._tui_theme
         chat = self._chat
-        static = self._static
+        tools_log = self._tools_log
         try:
             while True:
                 msg = self.queue.get_nowait()
@@ -820,16 +783,6 @@ class MiniAgentTUI(App):
                         rlog.write(f"[{ac}]Agent {self._sub_count}  ({task_id})[/]")
                         sap.mount(rlog)
                         self._sub_panes[task_id] = rlog
-                        # ---- Agent tree: show + add node ----
-                        if not hasattr(self, "_tree_nodes"):
-                            self._tree_nodes = {}
-                        tree = self.query_one("#agent-tree", Tree)
-                        tree.styles.display = "block"
-                        tree.root.expand()
-                        node = tree.root.add_leaf(
-                            f"[{ac}]\u25cf[/] Agent {self._sub_count}  [{ac}]{task_id[:8]}[/]"
-                        )
-                        self._tree_nodes[task_id] = node
                     sublog = self._sub_panes[task_id]
                     if not hasattr(self, "_sub_bufs"):
                         self._sub_bufs = {}
@@ -838,8 +791,66 @@ class MiniAgentTUI(App):
                     ac = self._sub_colors[task_id]
                     for line in buf.split("\n")[:-1]:
                         if line:
-                            sublog.write(f"[{ac}][/] {_safe(line)}")
+                            sublog.write(f"[{ac}][/] {_safe(line)}", shrink=False)
                     self._sub_bufs[task_id] = buf.split("\n")[-1]
+                    continue
+
+                # Sub-agent tree: spawn event
+                if isinstance(msg, tuple) and len(msg) >= 4 and msg[0] == "sub_tree" and msg[1] == "spawn":
+                    _tag, _action, _task_id, _parent_id, _label = msg[0], msg[1], msg[2], msg[3], msg[4]
+                    tree = self.query_one("#agent-tree", Tree)
+                    tree.styles.display = "block"
+                    short = _label[:40] + "..." if len(_label) > 40 else _label
+                    node_label = f"[RUN] {_task_id}: {short}"
+                    parent_node = tree.root
+                    if _parent_id:
+                        def _find(n, tid):
+                            d = getattr(n, 'data', None)
+                            if isinstance(d, dict) and d.get("id") == tid:
+                                return n
+                            for c in n.children:
+                                r = _find(c, tid)
+                                if r:
+                                    return r
+                            return None
+                        pn = _find(tree.root, _parent_id)
+                        if pn:
+                            parent_node = pn
+                    node = parent_node.add(node_label)
+                    node.data = {"id": _task_id}
+                    tree.root.expand()
+                    continue
+
+                # Sub-agent tree: status update
+                if isinstance(msg, tuple) and len(msg) >= 4 and msg[0] == "sub_tree" and msg[1] == "status":
+                    _tag, _action, _task_id, _status = msg[0], msg[1], msg[2], msg[3]
+                    tag = "[OK]" if _status == "completed" else "[ERR]"
+                    tree = self.query_one("#agent-tree", Tree)
+                    def _upd(n):
+                        d = getattr(n, 'data', None)
+                        if isinstance(d, dict) and d.get("id") == _task_id:
+                            ol = str(n.label)
+                            for old_tag in ("[RUN]", "[OK]", "[ERR]"):
+                                if ol.startswith(old_tag + " "):
+                                    ol = ol[len(old_tag)+1:]
+                                    break
+                            n.set_label(f"{tag} {ol}")
+                            return True
+                        for c in n.children:
+                            if _upd(c):
+                                return True
+                        return False
+                    _upd(tree.root)
+                    # Hide tree if all agents are done
+                    def _any_running(n):
+                        if str(n.label).startswith("[RUN]"):
+                            return True
+                        for c in n.children:
+                            if _any_running(c):
+                                return True
+                        return False
+                    if not _any_running(tree.root):
+                        tree.styles.display = "none"
                     continue
 
                 # Sub-agent done — hide its pane
@@ -850,15 +861,6 @@ class MiniAgentTUI(App):
                         sublog.remove()
                         self._sub_colors.pop(task_id, None)
                         self._sub_bufs.pop(task_id, None)
-                    # ---- Agent tree: mark complete ----
-                    if hasattr(self, "_tree_nodes") and task_id in self._tree_nodes:
-                        node = self._tree_nodes.pop(task_id)
-                        ac = self._sub_colors.get(task_id, self._tui_theme.dim)
-                        node.label = f"[{ac}]\u2713[/] Agent done  [{ac}]{task_id[:8]}[/]"
-                        if not self._sub_panes:
-                            tree = self.query_one("#agent-tree", Tree)
-                            tree.styles.display = "none"
-                            self._tree_nodes = {}
                     continue
 
                 if isinstance(msg, _TokenMsg):
@@ -868,17 +870,17 @@ class MiniAgentTUI(App):
                     self._in_thinking = False
                     self._close_agent_box()
                     self._active_tool = msg.summary.split("(")[0].strip() if "(" in msg.summary else msg.summary[:20]
-                    MiniAgentTUI._box_open(static, _safe(f"⚙ {msg.summary}"), t.yellow)
+                    MiniAgentTUI._box_open(tools_log, _safe(f"⚙ {msg.summary}"), t.yellow)
                 elif isinstance(msg, _ToolEnd):
                     symbol = "✓" if msg.ok else "✗"
                     color = t.green if msg.ok else t.red
                     detail = _safe(msg.detail)
                     if len(detail) > 120:
                         detail = detail[:120] + "..."
-                    MiniAgentTUI._box_close(static, color, f"{symbol} {detail}")
+                    MiniAgentTUI._box_close(tools_log, color, f"{symbol} {detail}")
                     self._active_tool = ""
                 elif isinstance(msg, _ToolOutput):
-                    MiniAgentTUI._box_line(static, _safe(msg.text), t.dim)
+                    MiniAgentTUI._box_line(tools_log, _safe(msg.text), t.dim)
                 elif isinstance(msg, _Error):
                     self._close_agent_box()
                     MiniAgentTUI._box_open(chat, "✗ Error", t.red)
@@ -1042,7 +1044,7 @@ class MiniAgentTUI(App):
         """Commit buffers, close boxes, promote final response to static pane."""
         t = self._tui_theme
         chat = self.query_one("#chat-pane", RichLog)
-        static = self.query_one("#static-pane", RichLog)
+        static = self.query_one("#tools-log", RichLog)
 
         # Flush any remaining table buffer then regular buf
         if hasattr(self, "_table_buf") and self._table_buf:
@@ -1066,10 +1068,10 @@ class MiniAgentTUI(App):
         # Promote final content to static pane in a box
         accumulated = getattr(self, "_accumulated_content", [])
         if accumulated:
-            MiniAgentTUI._box_open(static, "Agent", t.accent)
+            MiniAgentTUI._box_open(self._tools_log, "Agent", t.accent)
             for line in accumulated:
-                MiniAgentTUI._box_line(static, _safe(line), t.accent)
-            MiniAgentTUI._box_close(static, t.accent)
+                MiniAgentTUI._box_line(self._tools_log, _safe(line), t.accent)
+            MiniAgentTUI._box_close(self._tools_log, t.accent)
         self._accumulated_content = []
 
         self.memory.save(self.messages)
