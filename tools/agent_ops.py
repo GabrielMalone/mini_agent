@@ -86,6 +86,7 @@ def _spawn_one(
         current_depth = parent_depth + 1
         _TOOL_CONTEXT.__dict__["_agent_depth"] = current_depth
         _TOOL_CONTEXT.__dict__["_agent_max_depth"] = max_depth
+        _TOOL_CONTEXT.__dict__["_agent_task_id"] = task_id
         original_stream = config.stream
         try:
             if visible:
@@ -127,7 +128,8 @@ def _spawn_one(
     tui_queue = _TOOL_CONTEXT.__dict__.get("_tui_queue")
     if tui_queue is not None:
         label = task[:60].replace("\n", " ")
-        tui_queue.put(("sub_tree", "spawn", task_id, "", label))
+        parent_id = _TOOL_CONTEXT.__dict__.get("_agent_task_id", "")
+        tui_queue.put(("sub_tree", "spawn", task_id, parent_id, label))
     thread.start()
     return task_id
 
