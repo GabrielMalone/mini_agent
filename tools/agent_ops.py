@@ -92,6 +92,9 @@ def _spawn_one(
             task_id=task_id,
         )
         runtime.store_result(task_id, result)
+        # Signal TUI to hide sub-agent streaming pane
+        if tui_queue is not None:
+            tui_queue.put(("sub_done", task_id))
 
     thread = threading.Thread(target=_runner, daemon=True, name=f"subagent-{task_id}")
     runtime.register(task_id, thread, cancel_event)

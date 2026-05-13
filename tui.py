@@ -773,6 +773,16 @@ class MiniAgentTUI(App):
                     self._sub_bufs[task_id] = buf.split("\n")[-1]
                     continue
 
+                # Sub-agent done — hide its pane
+                if isinstance(msg, tuple) and len(msg) == 2 and msg[0] == "sub_done":
+                    _tag, task_id = msg
+                    if hasattr(self, "_sub_panes") and task_id in self._sub_panes:
+                        sublog = self._sub_panes.pop(task_id)
+                        sublog.remove()
+                        self._sub_colors.pop(task_id, None)
+                        self._sub_bufs.pop(task_id, None)
+                    continue
+
                 if isinstance(msg, _TokenMsg):
                     self._handle_token(msg, chat)
                 elif isinstance(msg, _ToolStart):
