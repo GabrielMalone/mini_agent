@@ -13,7 +13,7 @@ from tui import _Done, _Error, _SubAgentToken
 from tui import (
     MiniAgentTUI, AgentWorker,
     _TokenMsg, _ToolStart, _ToolEnd, _SubAgentToken, _Done, _Error,
-    _safe,
+    _safe, _NotifyQueue,
 )
 from llm import THINKING_START, THINKING_END
 from config import AgentConfig, DEFAULT_API_KEY
@@ -403,28 +403,14 @@ class TestFinishTurn(unittest.TestCase):
 
 
 class TestDrainEvent(unittest.TestCase):
-    """Verify event-driven drain wakes on queue push, skips when idle."""
+    """Verify event-driven drain wakes on queue push via _NotifyQueue."""
 
-    def test_drain_event_exists_on_app(self):
-        from queue import Queue
-        import threading
-        # MiniAgentApp requires a full Textual runtime; test the pattern in isolation.
-        # The app stores _drain_event as a threading.Event and sets it on queue.put.
-        queue = Queue()
-        event = threading.Event()
-        # Simulate: no data pushed, event not set → drain should skip
-        self.assertFalse(event.is_set())
-        self.assertTrue(queue.empty())
-        # Simulate: data pushed → event set
-        queue.put("test")
-        event.set()
-        self.assertTrue(event.is_set())
-        # Drain: consume and clear
-        while not queue.empty():
-            queue.get_nowait()
-        event.clear()
-        self.assertFalse(event.is_set())
-        self.assertTrue(queue.empty())
+    def test_drain_event_sets_on_push(self):
+        # _NotifyQueue triggers _drain via call_from_thread on every put.
+        app = MagicMock()
+        q = _NotifyQueue(app=app)
+        q.put("test")
+        app.call_from_thread.assert_called_once_with(app._drain)
 
 
 # SKIP: hangs in CI

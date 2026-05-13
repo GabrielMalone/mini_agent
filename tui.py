@@ -19,13 +19,14 @@ from dataclasses import dataclass
 
 
 class _NotifyQueue(Queue):
-    """Queue that fires an event on every put."""
-    def __init__(self, event, *args, **kwargs):
+    """Queue that triggers the TUI drain on every put (event-driven, no polling)."""
+    def __init__(self, app: "MiniAgentTUI | None" = None, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._event = event
+        self._app = app
     def put(self, item, *args, **kwargs):
         super().put(item, *args, **kwargs)
-        self._event.set()
+        if self._app is not None:
+            self._app.call_from_thread(self._app._drain)
 
 
 # Escape user content for Rich markup.  rich.markup.escape() skips
@@ -508,8 +509,7 @@ class MiniAgentTUI(App):
 
 
         self.query_one("#input", TextArea).focus()
-        self._drain_event = threading.Event()
-        self.queue: Queue = _NotifyQueue(self._drain_event)
+        self.queue: Queue = _NotifyQueue(app=self)
         self.worker: AgentWorker | None = None
         self._buf = ""
         self._chat_buf = ""
@@ -534,7 +534,6 @@ class MiniAgentTUI(App):
 
         self._apply_theme()
         self._refresh_git_status()
-        self.set_interval(0.08, self._drain)
         self.set_interval(2.0, self._update_status_bar)
 
     # ------------------------------------------------------------------
@@ -705,6 +704,7 @@ class MiniAgentTUI(App):
         self._box_open(chat, "You", t.accent)
         self._box_line(chat, _safe(text), t.green)
         self._box_close(chat, t.accent)
+        self._flush_logs()
 
         self._buf = ""
         self._thinking_buf = ""
@@ -783,18 +783,13 @@ class MiniAgentTUI(App):
         log.write(f"[{t.yellow}]Unknown command: {text}[/]")
 
     # ------------------------------------------------------------------
-    # Drain queue (called by timer every 50ms)
+    # Drain queue (called on-demand via _NotifyQueue.put)
     # ------------------------------------------------------------------
 
     def _drain(self) -> None:
-        """Pull messages off the queue and route to the correct pane.
-
-        Chat pane (#chat-pane): user input, thinking stream, assistant stream.
-        Static pane (#static-pane): tool calls & results, final responses, system output.
-        """
-        if not self._drain_event.is_set() and self.queue.empty():
+        """Pull messages off the queue and route to the correct pane."""
+        if self.queue.empty():
             return
-        self._drain_event.clear()
         t = self._tui_theme
         chat = self._chat
         tools_log = self._tools_log
