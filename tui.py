@@ -925,7 +925,7 @@ class MiniAgentTUI(App):
                     else:
                         # Flush any buffered table first
                         if self._table_buf:
-                            MiniAgentTUI._box_line(log, "[code]\n" + "\n".join(self._table_buf) + "\n[/code]", t.accent)
+                            MiniAgentTUI._box_line(log, r"\[code\]\n" + "\n".join(_safe(l) for l in self._table_buf) + r"\n\[/code\]", t.accent)
                             self._table_buf = []
                         MiniAgentTUI._box_line(log, _safe(line), t.accent)
                         self._accumulated_content.append(line)
@@ -957,7 +957,7 @@ class MiniAgentTUI(App):
             if not getattr(self, "_agent_box_open", False):
                 MiniAgentTUI._box_open(chat, "Agent", t.accent)
                 self._agent_box_open = True
-            MiniAgentTUI._box_line(chat, "[code]\n" + "\n".join(self._table_buf) + "\n[/code]", t.accent)
+            MiniAgentTUI._box_line(chat, r"\[code\]\n" + "\n".join(_safe(l) for l in self._table_buf) + r"\n\[/code\]", t.accent)
             self._table_buf = []
 
         self._flush_buf()

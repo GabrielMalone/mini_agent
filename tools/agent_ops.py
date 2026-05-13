@@ -130,7 +130,7 @@ def _spawn_agent(args: dict, wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolRes
         max_turns = _parse_max_turns(args.get("max_turns", _DEFAULT_MAX_TURNS))
         if isinstance(max_turns, ToolResult):
             return max_turns
-        visible = args.get("visible", False)
+        visible = args.get("visible", True)
 
         runtime: AgentRuntime = _TOOL_CONTEXT.__dict__.get("_agent_runtime")
         if runtime is None:
@@ -182,7 +182,7 @@ def _spawn_agent(args: dict, wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolRes
     max_turns = _parse_max_turns(args.get("max_turns", _DEFAULT_MAX_TURNS))
     if isinstance(max_turns, ToolResult):
         return max_turns
-    visible = args.get("visible", False)
+    visible = args.get("visible", True)
     shared_context = args.get("shared_context", "")
 
     runtime: AgentRuntime = _TOOL_CONTEXT.__dict__.get("_agent_runtime")
