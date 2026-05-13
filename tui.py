@@ -1058,6 +1058,7 @@ class MiniAgentTUI(App):
                             self._table_buf = []
                         self._box_line(log, _safe(line), t.accent)
                         self._accumulated_content.append(line)
+                        self._flush_logs()
                 continue
 
             # No newline soon — flush at ~300 chars on a space boundary
@@ -1071,6 +1072,7 @@ class MiniAgentTUI(App):
                 if chunk:
                     self._box_line(log, _safe(chunk), t.accent)
                     self._accumulated_content.append(chunk)
+                    self._flush_logs()
                 continue
 
             break
