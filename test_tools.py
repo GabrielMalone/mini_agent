@@ -1282,3 +1282,61 @@ class ToolPipingTests(unittest.TestCase):
         result = execute_tool(tc, self.write_gate, self.read_gate)
         self.assertFalse(result.success)
         self.assertIn("Unknown parameter", result.content)
+
+
+# ---------------------------------------------------------------------------
+# max_tokens truncation test
+# ---------------------------------------------------------------------------
+
+class TestMaxTokensTruncation(unittest.TestCase):
+    """Verify _compress_tool_results actually truncates when data exceeds threshold."""
+
+    def test_compress_truncates_long_tool_results(self):
+        """Tool results > 5 lines are compressed to 5 lines + marker."""
+        from memory import _compress_tool_results
+
+        # Build tool-result messages with content well over 5 lines (10+ lines)
+        messages: list[dict] = []
+        for i in range(10):
+            content_lines = [f"line {j}" for j in range(20)]  # 20 lines
+            messages.append({
+                "role": "tool",
+                "tool_call_id": f"call_{i}",
+                "content": '{"success": true, "content": "' +
+                           "\\n".join(content_lines).replace('"', '\\"') +
+                           '"}',
+            })
+
+        # keep_recent=1 means only the last message stays untouched
+        result, changed = _compress_tool_results(messages, keep_recent=1)
+
+        self.assertTrue(changed, "Expected compression to happen with 20-line tool results")
+        # First 9 messages should be truncated
+        for i in range(9):
+            content = result[i]["content"]
+            parsed = json.loads(content)
+            self.assertIn("truncated at 5 lines", parsed["content"],
+                          f"Message {i} should be truncated")
+            self.assertEqual(parsed["content"].count("\n"), 5,
+                             f"Message {i} should have 5 kept lines + truncation marker")
+        # Last message (recent) should be untouched
+        last_content = result[9]["content"]
+        self.assertNotIn("truncated at 5 lines", last_content,
+                         "Recent message should not be truncated")
+
+    def test_under_threshold_not_truncated(self):
+        """Tool results <= 5 lines are NOT compressed."""
+        from memory import _compress_tool_results
+
+        short_content = "short\nresult\nhere"  # 3 lines
+        messages = [{
+            "role": "tool",
+            "tool_call_id": "call_0",
+            "content": '{"success": true, "content": "' +
+                       short_content.replace('"', '\\"') +
+                       '"}',
+        }]
+
+        result, changed = _compress_tool_results(messages, keep_recent=0)
+        self.assertFalse(changed, "Short results should not trigger compression")
+        self.assertEqual(result[0]["content"], messages[0]["content"])

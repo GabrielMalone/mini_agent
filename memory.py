@@ -43,6 +43,34 @@ _VACUUM  = "VACUUM"
 
 
 # ---------------------------------------------------------------------------
+# Named constants (extracted from magic numbers)
+# ---------------------------------------------------------------------------
+
+# Token estimation
+_CHARS_PER_TOKEN = 4                 # heuristic: ~4 characters per token
+_MIN_TOKEN_ESTIMATE = 1              # floor for token count estimates
+
+# Tool result compression
+_COMPRESSION_KEEP_RECENT = 6         # messages at the tail left uncompressed
+_COMPRESSION_MAX_LINES = 5           # lines before a tool result is compressed
+_COMPRESSION_MAX_FIRST_LINE = 500    # max length of the first line kept
+
+# Conversation summarization
+_SUMMARY_PREVIEW_LENGTH = 120        # character limit for content previews
+_SUMMARY_PATH_PREVIEW = 80           # character limit for path / command previews
+_SUMMARY_MAX_TURNS = 3               # max recent user turns shown
+_SUMMARY_MAX_FILES = 5               # max files listed per category
+_SUMMARY_MAX_COMMANDS = 3            # max commands listed
+
+# Context budget injection
+_CONTEXT_BUDGET_INJECT = 64_000      # token budget for context-usage messages
+_CONTEXT_PERCENT_CAP = 100           # percentage ceiling
+
+# Markdown export
+_MARKDOWN_TOOL_RESULT_PREVIEW = 500  # char limit for tool results in export
+
+
+# ---------------------------------------------------------------------------
 # Per-save message caches — avoid re-parsing JSON and re-estimating tokens
 # for the same message within a single save() call.
 # ---------------------------------------------------------------------------
@@ -105,13 +133,13 @@ def _estimate_tokens(msg: dict) -> int:
         for tc in msg["tool_calls"]:
             fn = tc.get("function", {})
             total += len(json.dumps(fn.get("arguments", "")))
-        result = max(1, total // 4)
+        result = max(_MIN_TOKEN_ESTIMATE, total // _CHARS_PER_TOKEN)
         _TOKEN_EST_CACHE[mid] = result
         return result
     else:
         text = msg.get("content", "") or json.dumps(msg)
 
-    result = max(1, len(text) // 4)
+    result = max(_MIN_TOKEN_ESTIMATE, len(text) // _CHARS_PER_TOKEN)
     _TOKEN_EST_CACHE[mid] = result
     return result
 
@@ -143,13 +171,12 @@ def _inject_token_budget(messages: list[dict], turn_count: int) -> None:
     """Append a context-usage message so the LLM knows how full its window is."""
     if turn_count <= 1:
         return
-    CONTEXT_BUDGET = 64000
     estimate = _total_tokens(messages)
-    pct = min(100, estimate * 100 // CONTEXT_BUDGET)
+    pct = min(_CONTEXT_PERCENT_CAP, estimate * _CONTEXT_PERCENT_CAP // _CONTEXT_BUDGET_INJECT)
     messages.append({
         "role": "user",
         "content": (
-            f"[Context: ~{estimate}//{CONTEXT_BUDGET} tokens ({pct}%). "
+            f"[Context: ~{estimate}//{_CONTEXT_BUDGET_INJECT} tokens ({pct}%). "
             f"Be concise if nearing limit.]"
         ),
         "_transient": True,

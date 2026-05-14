@@ -32,6 +32,7 @@ from tools.agent_messages import (
 # ---------------------------------------------------------------------------
 
 _AGENT_MSGS: list[dict] = []
+_AGENT_MSGS_MAX = 1000        # ring-buffer cap: keep last N messages
 _AGENT_MSGS_LOCK = threading.Lock()
 
 
@@ -113,8 +114,8 @@ def _spawn_one(
                 parent_depth=parent_depth,
                 max_depth=max_depth,
                 shared_context=shared_context,
-                tui_queue=tui_queue if visible else None,
-                tui_task_id=task_id if visible else "",
+                tui_queue=tui_queue,
+                tui_task_id=task_id,
                 task_id=task_id,
             )
             runtime.store_result(task_id, result)
@@ -580,6 +581,8 @@ def _agent_message(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> Too
     # Append to legacy flat list (backward compat)
     with _AGENT_MSGS_LOCK:
         _AGENT_MSGS.append(msg.to_legacy_dict())
+        if len(_AGENT_MSGS) > _AGENT_MSGS_MAX:
+            _AGENT_MSGS[:] = _AGENT_MSGS[-_AGENT_MSGS_MAX:]
         count = len(_AGENT_MSGS)
 
     # Route to subscribed inboxes
@@ -742,6 +745,8 @@ def _agent_handoff(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> Too
     # Append to legacy flat list (backward compat)
     with _AGENT_MSGS_LOCK:
         _AGENT_MSGS.append(msg.to_legacy_dict())
+        if len(_AGENT_MSGS) > _AGENT_MSGS_MAX:
+            _AGENT_MSGS[:] = _AGENT_MSGS[-_AGENT_MSGS_MAX:]
         count = len(_AGENT_MSGS)
 
     # Route to subscribed inboxes

@@ -28,10 +28,16 @@ from tools.schema import TOOLS
 # TOOL_SCHEMA_MAP — O(1) name→schema lookup for execute_tool() validation
 # ---------------------------------------------------------------------------
 
-TOOL_SCHEMA_MAP: dict[str, dict] = {
-    td["function"]["name"]: td["function"].get("parameters", {})
-    for td in TOOLS
-}
+def _get_tool_schema(name: str) -> dict | None:
+    """Look up a tool's parameter schema from TOOLS at runtime.
+
+    This is done at call time (not import time) so that MCP tools
+    dynamically appended to TOOLS after startup are always included.
+    """
+    for td in TOOLS:
+        if td["function"]["name"] == name:
+            return td["function"].get("parameters", {})
+    return None
 
 # ---------------------------------------------------------------------------
 # Structured tool result
@@ -198,9 +204,11 @@ def _repair_json(raw: str) -> tuple[object, bool]:
                     j += 1
                 result.append(text[i:j])
                 i = j
-        # Only apply regex to segments at even indices (outside strings)
+        # Only apply regex to segments at even indices (outside strings).
+        # Use [A-Za-z_]\w* instead of \w+ to avoid matching numeric keys
+        # like '1:' which would produce '"1":}' instead of leaving '1:' alone.
         for idx in range(0, len(result), 2):
-            result[idx] = re.sub(r'(\w+)(\s*:)', r'"\1"\2', result[idx])
+            result[idx] = re.sub(r'([A-Za-z_]\w*)(\s*:)', r'"\1"\2', result[idx])
         return ''.join(result)
 
     # Individual fixes
@@ -321,7 +329,7 @@ def execute_tool(
 
     # --- schema validation: check parameter names against tool definition ---
     if isinstance(args, dict):
-        tool_schema = TOOL_SCHEMA_MAP.get(name)
+        tool_schema = _get_tool_schema(name)
         if tool_schema:
             valid_params = set(tool_schema.get("properties", {}).keys())
             required_params = set(tool_schema.get("required", []))

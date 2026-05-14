@@ -574,5 +574,78 @@ def _mock_response(content: str = "", tool_calls=None) -> MagicMock:
     return m
 
 
+# ---------------------------------------------------------------------------
+# Tests: real agent loop with run_agent_turn (integration-style)
+# ---------------------------------------------------------------------------
+
+class TestRealAgentLoop(unittest.TestCase):
+    """Exercise run_agent_turn end-to-end with mocked API — not abstract."""
+
+    def setUp(self):
+        self.workspace = tempfile.mkdtemp()
+        self.write_gate, self.read_gate = _gates(self.workspace)
+        self.config = AgentConfig.load(self.workspace)
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.workspace, ignore_errors=True)
+
+    @patch("llm.requests.post")
+    def test_full_pipeline_write_then_read(self, mock_post):
+        """Agent writes a file, reads it back, and confirms in one turn."""
+        mock_post.side_effect = [
+            # Turn 1: write file
+            _mock_response(tool_calls=[
+                _tool_call("write_file", "w1", {
+                    "path": os.path.join(self.workspace, "greeting.txt"),
+                    "content": "hello from agent",
+                }),
+            ]),
+            # Turn 2: read it back
+            _mock_response(tool_calls=[
+                _tool_call("read_file", "r1", {
+                    "path": os.path.join(self.workspace, "greeting.txt"),
+                }),
+            ]),
+            # Turn 3: text response
+            _mock_response(content="File contains 'hello from agent'. Done."),
+        ]
+
+        messages: list[dict] = [
+            {"role": "user", "content": "write greeting.txt then read it back"}
+        ]
+
+        msg = run_agent_turn(
+            messages, self.config, self.write_gate, self.read_gate,
+            max_turns=5,
+        )
+
+        self.assertIsNotNone(msg)
+        self.assertEqual(msg["content"], "File contains 'hello from agent'. Done.")
+        # Verify the file was actually written
+        self.assertTrue(os.path.isfile(os.path.join(self.workspace, "greeting.txt")))
+        with open(os.path.join(self.workspace, "greeting.txt")) as f:
+            self.assertEqual(f.read(), "hello from agent")
+
+    @patch("llm.requests.post")
+    def test_run_agent_turn_exercises_real_loop(self, mock_post):
+        """run_agent_turn with text-only response exercises the full loop."""
+        mock_post.return_value = _mock_response(content="I am ready to help.")
+
+        messages: list[dict] = [
+            {"role": "user", "content": "are you ready?"}
+        ]
+
+        msg = run_agent_turn(
+            messages, self.config, self.write_gate, self.read_gate,
+        )
+
+        self.assertIsNotNone(msg)
+        self.assertEqual(msg["content"], "I am ready to help.")
+        self.assertNotIn("tool_calls", msg)
+        # messages list should have user + assistant
+        self.assertEqual(len(messages), 2)
+
+
 if __name__ == "__main__":
     unittest.main()

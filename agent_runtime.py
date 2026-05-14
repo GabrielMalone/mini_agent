@@ -115,8 +115,6 @@ class AgentRuntime:
             self.max_turns.pop(task_id, None)
             self.task_labels.pop(task_id, None)
             self.task_parents.pop(task_id, None)
-            self.task_labels.pop(task_id, None)
-            self.task_parents.pop(task_id, None)
             # Clean up inbox/subscriptions to prevent memory leak
             self.inboxes.pop(task_id, None)
             self.subscriptions.pop(task_id, None)
@@ -191,6 +189,8 @@ class AgentRuntime:
             self.task_labels.pop(task_id, None)
             self.task_parents.pop(task_id, None)
             self._seen_completions.discard(task_id)
+            self.inboxes.pop(task_id, None)
+            self.subscriptions.pop(task_id, None)
 
     def cancel(self, task_id: str) -> bool:
         """Request cancellation of a running sub-agent. Returns True if found."""

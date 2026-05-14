@@ -38,10 +38,16 @@ class TestAgentConfigDefaults(unittest.TestCase):
         self.assertFalse(config.allow_overwrites)
         self.assertFalse(config.stream)
         self.assertTrue(config.verbose)
+        self.assertFalse(config.unrestricted)
 
     def test_workspace_is_stored(self):
         config = AgentConfig.load("/some/path")
         self.assertEqual(config.workspace, "/some/path")
+
+    def test_unrestricted_default_is_false(self):
+        """Verify unrestricted defaults to False for workspace safety."""
+        config = AgentConfig()
+        self.assertFalse(config.unrestricted)
 
 
 class TestAgentConfigTOML(unittest.TestCase):
