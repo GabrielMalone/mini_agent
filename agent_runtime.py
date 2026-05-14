@@ -113,6 +113,9 @@ class AgentRuntime:
             self.tasks.pop(task_id, None)
             self.cancel_events.pop(task_id, None)
             self.max_turns.pop(task_id, None)
+            # Release file reservations held by this sub-agent
+            from tools import release_all_files
+            release_all_files(task_id)
             self.task_labels.pop(task_id, None)
             self.task_parents.pop(task_id, None)
             # Clean up inbox/subscriptions to prevent memory leak

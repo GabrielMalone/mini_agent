@@ -116,6 +116,10 @@ _TOOL_CACHE: dict[str, "ToolResult"] = {}
 _MODIFIED_FILES: set[str] = set()
 _TASK_REGISTRY: dict[str, subprocess.Popen] = {}  # background shell task registry
 
+# File reservation system — prevents sub-agent write collisions
+# Maps file_path (relative to workspace) → task_id of owning agent
+_FILE_RESERVATIONS: dict[str, str] = {}
+
 # Sub-agent runtime registry (lazy init in config.init_session)
 _AGENT_RUNTIME = None  # AgentRuntime — set by init_session
 _MCP_MANAGER = None    # McpClientManager — set by init_session
@@ -140,6 +144,32 @@ def set_context(**kwargs) -> None:
             _MCP_MANAGER = value
         else:
             setattr(ctx, key, value)
+
+
+def reserve_file(path: str, task_id: str) -> tuple[bool, str]:
+    """Try to reserve a file for writing. Returns (ok, message).
+
+    Fails if the file is already reserved by another agent.
+    Call this before write_file/edit_file to prevent collisions.
+    """
+    existing = _FILE_RESERVATIONS.get(path)
+    if existing is not None and existing != task_id:
+        return False, f"File '{path}' is reserved by agent '{existing[:8]}'"
+    _FILE_RESERVATIONS[path] = task_id
+    return True, ""
+
+
+def release_file(path: str, task_id: str) -> None:
+    """Release a file reservation. No-op if not reserved by this agent."""
+    if _FILE_RESERVATIONS.get(path) == task_id:
+        del _FILE_RESERVATIONS[path]
+
+
+def release_all_files(task_id: str) -> None:
+    """Release all file reservations held by an agent."""
+    to_release = [p for p, t in _FILE_RESERVATIONS.items() if t == task_id]
+    for path in to_release:
+        del _FILE_RESERVATIONS[path]
 
 
 def _register(name: str):

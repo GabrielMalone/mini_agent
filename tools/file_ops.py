@@ -13,6 +13,11 @@ import time
 from safety import ReadSafetyGate, WriteSafetyGate
 from tools import clear_tool_cache
 from tools import _register, _summarize, ToolResult, _TOOL_CONTEXT, CTX_SCRATCHPAD_PATH, CTX_SCRATCHPAD_UPDATED
+from tools import _FILE_RESERVATIONS
+
+# Thread-local: current sub-agent task_id (set by agent_ops before tool execution)
+import threading
+_current_agent_id: threading.local = threading.local()
 
 
 # ---------------------------------------------------------------------------
@@ -129,6 +134,18 @@ def _write_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolRes
                 f"Hint: Use a path inside the workspace ({wg.workspace_root}) or enable unrestricted mode."
             ),
         )
+    # File reservation check — prevent sub-agent collisions
+    agent_id = getattr(_current_agent_id, "task_id", None)
+    if agent_id is not None:
+        existing = _FILE_RESERVATIONS.get(path)
+        if existing is not None and existing != agent_id:
+            return ToolResult(
+                success=False,
+                content=(
+                    f"Write blocked: '{path}' is reserved by agent '{existing[:8]}'. "
+                    f"Hint: Coordinate with the parent — only one agent should write to a file."
+                ),
+            )
     try:
         parent = os.path.dirname(safety_result.resolved_path)
         if parent:
@@ -180,6 +197,18 @@ def _edit_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResu
             success=False,
             content=f"Edit blocked by safety layer: {safety_result.reason}",
         )
+    # File reservation check — prevent sub-agent collisions
+    agent_id = getattr(_current_agent_id, "task_id", None)
+    if agent_id is not None:
+        existing = _FILE_RESERVATIONS.get(path)
+        if existing is not None and existing != agent_id:
+            return ToolResult(
+                success=False,
+                content=(
+                    f"Edit blocked: '{path}' is reserved by agent '{existing[:8]}'. "
+                    f"Hint: Coordinate with the parent — only one agent should edit a file."
+                ),
+            )
     try:
         with open(safety_result.resolved_path, "r") as f:
             original = f.read()

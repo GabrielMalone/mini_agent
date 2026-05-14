@@ -69,6 +69,7 @@ def _spawn_one(
     visible: bool = False,
     shared_context: str = "",
     subscriptions: list[str] | None = None,
+    reserved_files: list[str] | None = None,
     parent_depth: int = 0,
     max_depth: int = 3,
     parent_task_id: str = "",
@@ -132,6 +133,11 @@ def _spawn_one(
     parent_id = parent_task_id
     runtime.register(task_id, thread, cancel_event, max_turns,
                      label=short_name, parent_task_id=parent_id)
+    # Reserve files if specified
+    if reserved_files:
+        from tools import _FILE_RESERVATIONS
+        for f in reserved_files:
+            _FILE_RESERVATIONS[f] = task_id
     # Set subscriptions if provided
     if subscriptions is not None:
         runtime.set_subscriptions(task_id, subscriptions)
