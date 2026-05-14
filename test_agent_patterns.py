@@ -164,15 +164,27 @@ class TestFanIn:
         assert results == []
 
     def test_respects_timeout(self):
-        """fan_in returns None for tasks that timeout."""
+        """fan_in returns None for tasks that timeout.
+        
+        Uses a threading.Event to control the ready predicate instead of
+        relying on a sub-second sleep-based timeout. The Event is never set,
+        so wait_for blocks until the deadline expires."""
         from tools.agent_patterns import fan_in
+        from threading import Event
 
-        runtime, _, _, _ = _make_runtime(
-            task_statuses={"slow": "running"},
-            task_results={},
-        )
+        runtime = MagicMock(spec=AgentRuntime)
+        runtime._condition = threading.Condition()
 
-        results = fan_in(["slow"], runtime=runtime, timeout=0.1)
+        complete_ev = Event()  # never set — simulates a stuck task
+
+        def _get_status(tid):
+            if complete_ev.is_set():
+                return "completed"
+            return "running"
+
+        runtime.get_status.side_effect = _get_status
+
+        results = fan_in(["slow"], runtime=runtime, timeout=0.5)
         assert len(results) == 1
         assert results[0] is None
 
@@ -293,34 +305,53 @@ class TestBarrier:
         assert arrived is True
 
     def test_partial_arrival_returns_false(self):
-        """barrier returns False when some agents haven't arrived."""
+        """barrier returns False when some agents haven't arrived.
+        
+        Uses threading.Event to control inbox delivery instead of relying
+        on a sub-second timeout. The Event gates whether agent "b" has arrived."""
         from tools.agent_patterns import barrier
+        from threading import Event
 
-        runtime, _, _, inboxes = _make_runtime(
-            task_statuses={"a": "running", "b": "running"},
-            task_results={},
-            inboxes={
-                "a": [_sync_msg("phase1")],
-                "b": [],  # b hasn't arrived
-            },
-        )
+        runtime = MagicMock(spec=AgentRuntime)
+        runtime._condition = threading.Condition()
 
-        arrived = barrier("phase1", ["a", "b"], runtime=runtime, timeout=0.2)
+        b_arrived = Event()  # never set — simulates agent "b" never arriving
+
+        def _get_inbox(tid):
+            if tid == "a":
+                return [_sync_msg("phase1")]
+            elif tid == "b" and b_arrived.is_set():
+                return [_sync_msg("phase1")]
+            return []
+
+        runtime.get_inbox.side_effect = _get_inbox
+        runtime.get_status.return_value = "running"
+
+        arrived = barrier("phase1", ["a", "b"], runtime=runtime, timeout=0.5)
         assert arrived is False
 
     def test_wrong_barrier_name_ignored(self):
-        """barrier ignores coord.sync messages with a different barrier name."""
+        """barrier ignores coord.sync messages with a different barrier name.
+        
+        Uses threading.Event to control delivery of correctly-named messages.
+        The Event is never set, so the barrier name never matches."""
         from tools.agent_patterns import barrier
+        from threading import Event
 
-        runtime, _, _, inboxes = _make_runtime(
-            task_statuses={"a": "running"},
-            task_results={},
-            inboxes={
-                "a": [_sync_msg("other")],
-            },
-        )
+        runtime = MagicMock(spec=AgentRuntime)
+        runtime._condition = threading.Condition()
 
-        arrived = barrier("phase1", ["a"], runtime=runtime, timeout=0.1)
+        correct_name = Event()  # never set — simulates wrong barrier name
+
+        def _get_inbox(tid):
+            if correct_name.is_set():
+                return [_sync_msg("phase1")]
+            return [_sync_msg("other")]
+
+        runtime.get_inbox.side_effect = _get_inbox
+        runtime.get_status.return_value = "running"
+
+        arrived = barrier("phase1", ["a"], runtime=runtime, timeout=0.5)
         assert arrived is False
 
     def test_empty_task_list_returns_true(self):

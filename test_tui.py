@@ -109,11 +109,14 @@ class TestSubAgentStreaming(unittest.TestCase):
         self.assertEqual(safe_text, r"\[bold]danger\[/]")
 
     def test_spawn_one_visible_pushes_start_message(self):
-        """_spawn_one with visible=True should push a start token to tui_queue."""
+        """_spawn_one with visible=True pushes sub_tree spawn token to tui_queue."""
         from tools.agent_ops import _spawn_one
-        from tools import _TOOL_CONTEXT, set_context
-        from agent_runtime import AgentRuntime
+        from tools import _TOOL_CONTEXT
+        from agent_runtime import AgentRuntime, SubAgentResult
+        from unittest.mock import patch
+        from safety import ReadSafetyGate, WriteSafetyGate
         import queue
+        import time
 
         # Set up context with a mock TUI queue
         tui_q = queue.Queue()
@@ -121,15 +124,45 @@ class TestSubAgentStreaming(unittest.TestCase):
         runtime = AgentRuntime()
 
         class MockConfig:
+            model = "test"
+            api_key = "key"
+            api_url = "http://test"
             stream = False
+            sub_agent_max_turns = 5
 
-        # _spawn_one will push to tui_q if visible=True
-        # We can't easily test the full spawn (needs LLM), but we can verify
-        # the queue push behavior by checking the function exists and is callable
-        self.assertTrue(callable(_spawn_one))
+        config = MockConfig()
 
-        # Verify the queue is empty before
-        self.assertTrue(tui_q.empty())
+        # Mock run_sub_agent to return immediately (avoids LLM call)
+        with patch("sub_agent.run_sub_agent") as mock_run:
+            mock_run.return_value = SubAgentResult(
+                success=True, content="done", turns_used=1
+            )
+            task_id = _spawn_one(
+                "test task", config, runtime,
+                WriteSafetyGate("/tmp"), ReadSafetyGate("/tmp"),
+                max_turns=1,
+                visible=True,
+                subscriptions=["handoff.result"],
+            )
+
+        # Wait for the sub-agent thread to finish
+        deadline = time.monotonic() + 3.0
+        while runtime.get_status(task_id) == "running" and time.monotonic() < deadline:
+            time.sleep(0.05)
+
+        # Verify queue received messages
+        spawn_messages = []
+        while not tui_q.empty():
+            spawn_messages.append(tui_q.get_nowait())
+
+        # Should have at least: sub_tree spawn, sub_done
+        self.assertTrue(len(spawn_messages) >= 2,
+                        f"Expected at least 2 queue messages, got: {spawn_messages}")
+
+        # Check for the spawn message and done
+        spawn_types = {msg[0] for msg in spawn_messages}
+        self.assertIn("sub_tree", spawn_types)
+        self.assertIn("sub_done", spawn_types)
 
         # Clean up context
         _TOOL_CONTEXT.__dict__.pop("_tui_queue", None)

@@ -117,6 +117,8 @@ class AgentConfig:
         # ---- 2.  Environment variables --------------------------------------
         if os.environ.get("DEEPSEEK_API_KEY"):
             config.api_key = os.environ["DEEPSEEK_API_KEY"]
+        if os.environ.get("DEEPSEEK_API_URL"):
+            config.api_url = os.environ["DEEPSEEK_API_URL"]
         if os.environ.get("AGENT_WORKSPACE"):
             config.workspace = os.environ["AGENT_WORKSPACE"]
         if os.environ.get("EXA_API_KEY"):
@@ -304,7 +306,8 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
     memory_path = os.path.join(workspace or os.getcwd(), config.memory_filename)
     memory = MemoryStore(memory_path, max_messages=config.max_messages,
                         max_tokens=config.max_tokens)
-    set_context(exa_api_key=config.exa_api_key, scratchpad_path=memory._db_path)
+    set_context(exa_api_key=config.exa_api_key, scratchpad_path=memory._db_path,
+                _memory_store=memory)
     
     # Initialize multi-agent runtime
     runtime = AgentRuntime()

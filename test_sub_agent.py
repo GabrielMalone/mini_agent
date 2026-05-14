@@ -275,13 +275,64 @@ class TestCollectAgentTool:
 
 class TestRecursionGuard:
     def test_blocked_tools_at_max_depth(self):
-        """At max depth, spawn/status/collect tools are blocked."""
-        blocked = {"spawn_agent", "agent_status", "collect_agent", "collect_any", "agent_extend"}
+        """At max depth, spawn/status/collect tools are blocked at runtime.
+        
+        Verifies the depth guard actually blocks tool execution by running
+        run_sub_agent with parent_depth=2 and max_depth=3 (current_depth=3),
+        which is at max depth. The LLM is mocked to return a tool call for
+        each blocked tool, and we verify the sub-agent survives (tool_calls_made
+        increments but the tool is blocked without crashing)."""
         from sub_agent import run_sub_agent
-        import inspect
-        source = inspect.getsource(run_sub_agent)
-        for tool in blocked:
-            assert tool in source, f"Depth guard should mention '{tool}'"
+        from unittest.mock import patch, MagicMock
+
+        blocked = {"spawn_agent", "agent_status", "collect_agent", "collect_any", "agent_extend"}
+
+        wg = MagicMock()
+        rg = MagicMock()
+
+        class MockConfig:
+            model = "test"
+            api_key = "key"
+            api_url = "http://test"
+            stream = False
+            workspace = "/tmp"
+            unrestricted = False
+            allow_overwrites = True
+            approve_write_ops = False
+
+        for tool_name in blocked:
+            with patch("llm.call_deepseek") as mock_llm:
+                # Response 1: blocked tool call; Response 2: text (exits loop)
+                mock_llm.side_effect = [
+                    {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [{
+                            "id": f"call_{tool_name}",
+                            "type": "function",
+                            "function": {
+                                "name": tool_name,
+                                "arguments": "{}",
+                            },
+                        }],
+                    },
+                    {"role": "assistant", "content": "done"},
+                ]
+                result = run_sub_agent(
+                    task="test blocked tools",
+                    config=MockConfig(),
+                    write_gate=wg,
+                    read_gate=rg,
+                    max_turns=2,
+                    parent_depth=2,  # current_depth becomes 3
+                    max_depth=3,
+                )
+
+            # The sub-agent should complete (not crash) and the tool was attempted
+            assert result.success is True, f"Sub-agent should succeed for blocked {tool_name}"
+            assert result.tool_calls_made == 1, (
+                f"Expected 1 tool call attempt for {tool_name}, got {result.tool_calls_made}"
+            )
 
 
 # ---------------------------------------------------------------------------

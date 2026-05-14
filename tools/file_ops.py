@@ -64,6 +64,7 @@ def _read_file(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResu
     if limit < 1:
         limit = _DEFAULT_READ_LINES
     limit = min(limit, _ABSOLUTE_MAX_LINES)
+    line_numbers = args.get("line_numbers", False)
 
     try:
         with open(safety_result.resolved_path, "r") as f:
@@ -75,7 +76,10 @@ def _read_file(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResu
                 if lineno < offset:
                     continue
                 if len(collected) < limit:
-                    collected.append(line.rstrip("\n"))
+                    stripped = line.rstrip("\n")
+                    if line_numbers:
+                        stripped = f"{total_lines}: {stripped}"
+                    collected.append(stripped)
                 # Keep iterating to count total lines if we might need truncation message
                 # but stop once we've gone well past what we need (limit + 1 is enough
                 # to know whether we truncated)
@@ -301,6 +305,21 @@ def _file_info(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResu
         ]
         if stat_module.S_ISDIR(st.st_mode):
             parts.append("type: directory")
+            # Gather child count and total recursive size
+            child_count = 0
+            total_size = 0
+            try:
+                with os.scandir(resolved) as entries:
+                    for entry in entries:
+                        child_count += 1
+                        try:
+                            total_size += entry.stat(follow_symlinks=False).st_size
+                        except OSError:
+                            pass
+            except PermissionError:
+                pass
+            parts.append(f"children: {child_count}")
+            parts.append(f"total_children_size: {total_size} bytes")
         else:
             parts.append("type: file")
         return ToolResult(success=True, content="\n".join(parts))

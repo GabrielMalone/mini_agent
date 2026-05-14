@@ -140,11 +140,15 @@ def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: 
     command = args["command"]
     force = args.get("force", False)
     timeout = min(int(args.get("timeout", 60)), 300)
+    stdin_text = args.get("stdin", None)  # optional stdin to pipe to the process
     if not force:
         block = _check_destructive(command)
         if block is not None:
             return ToolResult(success=False, content=block)
     try:
+        stdin_kw = {}
+        if stdin_text is not None:
+            stdin_kw["stdin"] = subprocess.PIPE
         proc = subprocess.Popen(
             command,
             shell=True,
@@ -152,6 +156,7 @@ def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: 
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            **stdin_kw,
         )
 
         stdout_lines: list[str] = []
@@ -165,6 +170,9 @@ def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: 
             # Drain stdout/stderr in daemon threads to prevent pipe-buffer deadlock
             threading.Thread(target=_stream_reader, args=(proc.stdout, []), daemon=True).start()
             threading.Thread(target=_stream_reader, args=(proc.stderr, []), daemon=True).start()
+            # Write stdin in a daemon thread to avoid blocking
+            if stdin_text is not None and proc.stdin is not None:
+                threading.Thread(target=lambda p, t: (p.stdin.write(t), p.stdin.close()), args=(proc, stdin_text), daemon=True).start()
             return ToolResult(
                 success=True,
                 content=f"Started background task {task_id}. Use task_status to check.",
@@ -172,6 +180,10 @@ def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: 
 
         if on_output is not None:
             # Streaming mode: need threads to forward output in real-time
+            # Write stdin before starting reader threads to avoid race
+            if stdin_text is not None and proc.stdin is not None:
+                proc.stdin.write(stdin_text)
+                proc.stdin.close()
             t_out = threading.Thread(
                 target=_stream_reader, args=(proc.stdout, stdout_lines, True, on_output, ""), daemon=True,
             )
@@ -197,7 +209,7 @@ def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: 
         else:
             # No streaming: use communicate() to avoid thread overhead
             try:
-                out, err = proc.communicate(timeout=timeout)
+                out, err = proc.communicate(input=stdin_text, timeout=timeout)
             except subprocess.TimeoutExpired:
                 proc.kill()
                 out, err = proc.communicate()
@@ -263,8 +275,12 @@ _BINARY_EXTS = {".pyc", ".pyo", ".so", ".o", ".a", ".dylib", ".dll",
                 ".exe", ".bin", ".dat", ".pkl", ".pickle"}
 
 
+_SEARCH_MAX_RESULTS = 200
+
+
 def _search_single_file(
-    filepath: str, pattern: str, use_regex: bool, ignore_case: bool
+    filepath: str, pattern: str, use_regex: bool, ignore_case: bool,
+    offset: int = 0,
 ) -> ToolResult:
     """Search for pattern in a single file.  Used by _search_files(file_path=...)."""
     import re as _re
@@ -282,21 +298,25 @@ def _search_single_file(
         match_fn = lambda line: pattern in line
 
     results: list[str] = []
+    skipped = 0
     try:
         with open(filepath, "r", errors="replace") as f:
             for lineno, line in enumerate(f, 1):
                 if match_fn(line):
+                    if skipped < offset:
+                        skipped += 1
+                        continue
                     results.append(f"{filepath}:{lineno}: {line.rstrip()}")
-                    if len(results) >= 50:
+                    if len(results) >= _SEARCH_MAX_RESULTS:
                         break
     except (OSError, PermissionError) as e:
         return ToolResult(success=False, content=f"Error reading '{filepath}': {e}")
 
     if not results:
-        return ToolResult(
-            success=True,
-            content=f"No matches for '{pattern}' in {filepath}",
-        )
+        msg = f"No matches for '{pattern}' in {filepath}"
+        if offset:
+            msg += f" (offset={offset})"
+        return ToolResult(success=True, content=msg)
     return ToolResult(success=True, content="\n".join(results))
 
 
@@ -307,6 +327,7 @@ def _search_files(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolR
     file_path = args.get("file_path", "")
     use_regex = args.get("regex", False)
     ignore_case = args.get("ignore_case", False)
+    offset = max(0, int(args.get("offset", 0)))
 
     if file_path:
         # Single-file mode: skip the directory safety check, only validate the file
@@ -319,7 +340,7 @@ def _search_files(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolR
         resolved = file_safety.resolved_path
         if not os.path.isfile(resolved):
             return ToolResult(success=False, content=f"Not a file: {resolved}")
-        return _search_single_file(resolved, pattern, use_regex, ignore_case)
+        return _search_single_file(resolved, pattern, use_regex, ignore_case, offset=offset)
 
     # Directory search mode: safety-check the search path
     safety_result = rg.check(path)
@@ -344,6 +365,7 @@ def _search_files(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolR
         match_fn = lambda line: pattern in line
 
     results: list[str] = []
+    skipped = 0
     file_count = 0
     try:
         for root, dirs, files in os.walk(safety_result.resolved_path):
@@ -363,26 +385,29 @@ def _search_files(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolR
                     with open(fpath, "r", errors="replace") as f:
                         for lineno, line in enumerate(f, 1):
                             if match_fn(line):
+                                if skipped < offset:
+                                    skipped += 1
+                                    continue
                                 results.append(f"{fpath}:{lineno}: {line.rstrip()}")
-                                if len(results) >= 50:
+                                if len(results) >= _SEARCH_MAX_RESULTS:
                                     break
                 except (OSError, PermissionError):
                     continue
-                if len(results) >= 50:
+                if len(results) >= _SEARCH_MAX_RESULTS:
                     break
-            if len(results) >= 50:
+            if len(results) >= _SEARCH_MAX_RESULTS:
                 break
     except Exception as e:
         return ToolResult(success=False, content=f"Error searching: {e}")
 
     if not results:
-        return ToolResult(
-            success=True,
-            content=f"No matches for '{pattern}' in {safety_result.resolved_path}",
-        )
+        msg = f"No matches for '{pattern}' in {safety_result.resolved_path}"
+        if offset:
+            msg += f" (offset={offset})"
+        return ToolResult(success=True, content=msg)
     output = "\n".join(results)
-    if len(results) >= 50:
-        output += "\n… (capped at 50 results)"
+    if len(results) >= _SEARCH_MAX_RESULTS:
+        output += f"\n… (capped at {_SEARCH_MAX_RESULTS} results)"
     return ToolResult(success=True, content=output)
 
 

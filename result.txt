@@ -1,1 +1,1 @@
-hello from sub-agent 1
+test_hello.txt contains "hello world from mini_agent"; tools/*.py totals 5380 lines across 9 files.

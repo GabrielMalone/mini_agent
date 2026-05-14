@@ -460,11 +460,32 @@ class TestRunAgentTurn(unittest.TestCase):
         self.assertEqual(len(messages), 9)  # user, budget, asst, tool, budget, asst, tool, budget, asst
 
     def test_token_budget_code_path_exists(self):
-        """Verify _save_turn_summary and budget injection functions are importable."""
+        """Verify _save_turn_summary stores turn history and _total_tokens counts."""
         from llm import _save_turn_summary
         from memory import _total_tokens
-        self.assertTrue(callable(_save_turn_summary))
-        self.assertTrue(callable(_total_tokens))
+        from tools import _TOOL_CONTEXT
+
+        # Test _total_tokens with sample messages
+        messages = [
+            {"role": "user", "content": "hello world"},
+            {"role": "assistant", "content": "hi there, how can I help?"},
+        ]
+        token_count = _total_tokens(messages)
+        self.assertIsInstance(token_count, int)
+        self.assertGreater(token_count, 0)
+
+        # Test _save_turn_summary stores in _TOOL_CONTEXT._turn_history
+        self.config.model = "test"
+        self.config.api_key = "key"
+        msg = {"role": "assistant", "content": "I wrote the file.", "tool_calls": []}
+        _save_turn_summary(
+            turn=1,
+            msg=msg,
+            deferred_results=[],
+            messages=[{"role": "user", "content": "write file"}],
+        )
+        self.assertIn(1, _TOOL_CONTEXT._turn_history)
+        self.assertIn("I wrote the file", _TOOL_CONTEXT._turn_history[1])
 
     def test_cancel_mid_turn_returns_none(self):
         """Cancel event set before call returns None."""

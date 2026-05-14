@@ -43,6 +43,41 @@ _VACUUM  = "VACUUM"
 
 
 # ---------------------------------------------------------------------------
+# Per-save message caches — avoid re-parsing JSON and re-estimating tokens
+# for the same message within a single save() call.
+# ---------------------------------------------------------------------------
+
+_TOOL_PARSE_CACHE: dict[int, str] = {}   # id(msg) -> extracted text content
+_TOKEN_EST_CACHE: dict[int, int] = {}     # id(msg) -> estimated token count
+
+
+def _clear_message_caches() -> None:
+    """Clear per-save caches. Called at the start of MemoryStore.save()."""
+    _TOOL_PARSE_CACHE.clear()
+    _TOKEN_EST_CACHE.clear()
+
+
+def _get_tool_content(msg: dict) -> str:
+    """Extract the text content from a tool-result message.
+
+    Caches by message identity (id(msg)) so the same message's JSON
+    is parsed at most once per save().
+    """
+    mid = id(msg)
+    try:
+        return _TOOL_PARSE_CACHE[mid]
+    except KeyError:
+        pass
+    try:
+        data = json.loads(msg["content"])
+        text = data.get("content", "")
+    except (json.JSONDecodeError, TypeError):
+        text = msg.get("content", "")
+    _TOOL_PARSE_CACHE[mid] = text
+    return text
+
+
+# ---------------------------------------------------------------------------
 # Token estimation
 # ---------------------------------------------------------------------------
 
@@ -52,24 +87,33 @@ def _estimate_tokens(msg: dict) -> int:
     Heuristic: ~4 characters per token (works well for English/code).
     For tool results (JSON content), we parse and estimate just the
     content field — the JSON wrapper overhead is negligible.
+
+    Caches results by message identity so repeated calls on the same
+    message within a single save() are O(1) after the first call.
     """
+    mid = id(msg)
+    try:
+        return _TOKEN_EST_CACHE[mid]
+    except KeyError:
+        pass
+
     if msg.get("role") == "tool":
-        try:
-            data = json.loads(msg["content"])
-            text = data.get("content", "")
-        except (json.JSONDecodeError, TypeError):
-            text = msg.get("content", "")
+        text = _get_tool_content(msg)
     elif msg.get("role") == "assistant" and msg.get("tool_calls"):
         # Tool-call messages: count the arguments text
         total = len(msg.get("content", ""))
         for tc in msg["tool_calls"]:
             fn = tc.get("function", {})
             total += len(json.dumps(fn.get("arguments", "")))
-        return max(1, total // 4)
+        result = max(1, total // 4)
+        _TOKEN_EST_CACHE[mid] = result
+        return result
     else:
         text = msg.get("content", "") or json.dumps(msg)
 
-    return max(1, len(text) // 4)
+    result = max(1, len(text) // 4)
+    _TOKEN_EST_CACHE[mid] = result
+    return result
 
 
 def _total_tokens(messages: list[dict]) -> int:
@@ -93,6 +137,23 @@ def _total_tokens(messages: list[dict]) -> int:
         _ACCUM_TOTAL = sum(_estimate_tokens(m) for m in messages)
         _ACCUM_COUNT = n
     return _ACCUM_TOTAL
+
+
+def _inject_token_budget(messages: list[dict], turn_count: int) -> None:
+    """Append a context-usage message so the LLM knows how full its window is."""
+    if turn_count <= 1:
+        return
+    CONTEXT_BUDGET = 64000
+    estimate = _total_tokens(messages)
+    pct = min(100, estimate * 100 // CONTEXT_BUDGET)
+    messages.append({
+        "role": "user",
+        "content": (
+            f"[Context: ~{estimate}//{CONTEXT_BUDGET} tokens ({pct}%). "
+            f"Be concise if nearing limit.]"
+        ),
+        "_transient": True,
+    })
 
 
 # Running accumulator for _total_tokens (length-based, not identity-based)
@@ -127,9 +188,13 @@ def _compress_tool_results(
             break
         if m.get("role") != "tool":
             continue
+        text = _get_tool_content(m)
+        if not text:
+            continue
+
+        # Re-parse to get the mutable dict for modification
         try:
             data = json.loads(m["content"])
-            text = data.get("content", "")
         except (json.JSONDecodeError, TypeError):
             continue
 
@@ -146,6 +211,9 @@ def _compress_tool_results(
         new_content = kept + f"\n… (truncated at 5 lines — {len(lines)} total)"
         data["content"] = new_content
         m["content"] = json.dumps(data)
+        # Invalidate cache for this message since content changed
+        _TOOL_PARSE_CACHE.pop(id(m), None)
+        _TOKEN_EST_CACHE.pop(id(m), None)
         changed = True
 
     return messages, changed
@@ -180,11 +248,7 @@ def _summarize_pruned(pruned: list[dict]) -> str:
             turns.append(f"User: {preview}")
 
         elif role == "tool":
-            try:
-                data = json.loads(m["content"])
-                text = data.get("content", "")
-            except (json.JSONDecodeError, TypeError):
-                text = m.get("content", "")
+            text = _get_tool_content(m)
 
             if "bytes to" in text or "OK: wrote" in text or "OK: replaced" in text:
                 # Extract path
@@ -418,6 +482,7 @@ class MemoryStore:
         4. Summarize pruned messages into a context note.
         5. Write atomically to SQLite.
         """
+        _clear_message_caches()
         cleaned = _clean_messages(messages)
         cleaned, compressed = _compress_tool_results(cleaned, keep_recent=6)
 

@@ -142,20 +142,9 @@ def run_sub_agent(
                 error="Cancelled",
             )
 
-        # Token budget awareness (same as parent loop)
-        if turn_count > 1:
-            from memory import _total_tokens
-            estimate = _total_tokens(messages)
-            budget = 64000
-            pct = min(100, estimate * 100 // budget)
-            messages.append({
-                "role": "user",
-                "content": (
-                    f"[Context: ~{estimate}//{budget} tokens ({pct}%). "
-                    f"Be concise if nearing limit.]"
-                ),
-                "_transient": True,
-            })
+        # Token budget awareness (shared helper)
+        from memory import _inject_token_budget
+        _inject_token_budget(messages, turn_count)
 
         # Call the LLM — stream to TUI subagent pane or stderr if config.stream is set
         on_token = None
@@ -214,6 +203,10 @@ def run_sub_agent(
             fn = tc.get("function", {})
             name = fn.get("name", "")
 
+            # Stream tool start to TUI
+            if tui_queue is not None:
+                tui_queue.put(("sub_tool", "start", name, _TOOL_CONTEXT.__dict__.get("_agent_task_id", "")))
+
             # --- Depth guard: block spawn/status/collect at max depth ---
             if current_depth >= max_depth and name in ("spawn_agent", "agent_status", "collect_agent", "collect_any", "agent_extend"):
                 from tools import ToolResult as TR
@@ -262,6 +255,11 @@ def run_sub_agent(
                 "tool_call_id": tc["id"],
                 "content": result.to_json(),
             })
+            # Stream tool end to TUI
+            if tui_queue is not None:
+                ok = result.success
+                detail = result.content[:100] if result.content else ""
+                tui_queue.put(("sub_tool", "end", name, ok, detail))
 
     # Exhausted turns
     return SubAgentResult(

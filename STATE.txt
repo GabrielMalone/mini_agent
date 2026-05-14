@@ -3,7 +3,58 @@
 A coding agent powered by DeepSeek V4 Pro. Terminal REPL + Textual TUI.
 562 tests, 31 tools, SQLite memory.
 
-## This Session (2025-05-17)
+
+### Tree Display Fix (2025-07-16)
+- **Bug**: Completed sub-agent nodes were immediately pruned, hiding tree structure
+- **Bug**: Tree auto-hid when all nodes done — user only saw flat "linked list"
+- **Bug (root cause)**: `_TOOL_CONTEXT.__dict__["_agent_task_id"]` as shared mutable state — 
+  race condition where children's spawn messages arrived before parent's node existed
+- **Fix**: Explicit `parent_task_id` parameter on `_spawn_one` (no global dict read)
+- **Fix**: `_pending_children` queue for out-of-order spawn messages
+- **Fix**: `parent_node.expand()` so grandchildren are visible
+- **Lesson**: Shared global mutable state (`__dict__` on singleton) is unreliable across threads
+## This Session (2025-07-16)
+
+### Parallel Codebase Audit + Multi-Agent Fix Sprint
+[... previous entries ...]
+
+### Agent Tree Fixes
+- **Tree hierarchy**: `AgentRuntime` now tracks `task_parents` per task; `_spawn_one` passes explicit `parent_task_id` to `runtime.register()` instead of relying on mutable global `_TOOL_CONTEXT._agent_task_id`
+- **Human-readable names**: Sub-agents get short names derived from task text (first 3 alphanumeric words, e.g. "perf_memory_fix"), displayed in tree instead of UUID prefixes
+- **Node pruning**: Completed/cancelled/error agent nodes are removed from the tree via `node.remove()` + `_tree_node_map.pop()`; empty tree auto-hides
+- **Files changed**: `agent_runtime.py` (+11), `tools/agent_ops.py` (+10), `tui.py` (+7), `test_tui.py` (1 fix)
+- **Tests**: 288 pass, 0 lint
+- 5 sub-agents audited codebase for: architecture, TUI/UX, performance, testing, features
+- All findings implemented in parallel by 5 fix agents
+
+### Performance Fixes
+- **memory.py**: JSON parse cache (`_get_tool_content`), token estimate cache — avoids 3x re-parse per save()
+- **memory.py**: `_inject_token_budget()` extracted — shared by llm.py and sub_agent.py (dedup -11 lines each)
+- **search_ops.py**: Single `os.walk` for both symbol + semantic index (was 2 separate walks)
+- **search_ops.py**: Index persistence debounced to 2s (was every .py write)
+- **tui.py**: `_handle_token` O(n²) → O(n) (moving index vs buffer slicing)
+- **tui.py**: Flat `_tree_node_map` for O(1) status updates (was recursive tree walk)
+- **tui.py**: Footer cached in `on_mount` (was `query_one` every 2s)
+
+### Architecture Dedup
+- **llm.py**: `_apply_pipe()` helper extracted — pipe substitution was copy-pasted 3x
+- **llm.py**: Circuit breaker sites now use `_append_tool_result` — was inline duplicated
+- **_inject_token_budget**: single implementation in memory.py, used by both loops
+
+### New Features (5 quick wins)
+- **agent_cancel**: tool exposed (runtime.cancel() existed, no tool wrapper)
+- **search_files**: cap 50→200, added `offset` param for pagination
+- **read_file**: `line_numbers` flag (default false for token economy)
+- **run_shell**: `stdin` param for piping input to commands
+- **file_info**: dir stats (child count + total_children_size)
+
+### Testing Fixes
+- test_agent_patterns.py: flaky timeout=0.1 replaced with threading.Event synchronization
+- test_agent_loop.py: test_token_budget_code_path_exists now asserts behavior
+- test_tui.py: test_spawn_one_visible actually calls _spawn_one
+- test_sub_agent.py: test_blocked_tools verifies runtime blocking
+- test_config.py: DEEPSEEK_API_URL env var test added
+- test_memory.py: concurrent access test added
 
 ### Event-driven TUI (no polling)
 - Removed `set_interval(0.08, self._drain)` — was 12.5 Hz polling

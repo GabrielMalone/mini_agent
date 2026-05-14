@@ -45,6 +45,10 @@ TOOLS = [
                     "limit": {
                         "type": "integer",
                         "description": "Optional: max lines to return (default: 300, absolute max: 1000)."
+                    },
+                    "line_numbers": {
+                        "type": "boolean",
+                        "description": "Optional: prefix each line with its line number (e.g. '42: content'). Default: false."
                     }
                 },
                 "required": [
@@ -152,6 +156,10 @@ TOOLS = [
                     "timeout": {
                         "type": "integer",
                         "description": "Optional: max seconds before timing out (default 60, max 300)."
+                    },
+                    "stdin": {
+                        "type": "string",
+                        "description": "Optional: string to pipe to the process's standard input."
                     }
                 },
                 "required": [
@@ -164,7 +172,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "search_files",
-            "description": "Search for a text pattern recursively in files within the workspace. Returns matching lines with file path and line number. Skips hidden directories, binary files, and common VCS/venv dirs. Capped at 50 results.",
+            "description": "Search for a text pattern recursively in files within the workspace. Returns matching lines with file path and line number. Skips hidden directories, binary files, and common VCS/venv dirs. Capped at 200 results. Use offset for pagination.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -187,6 +195,10 @@ TOOLS = [
                     "file_path": {
                         "type": "string",
                         "description": "Optional: restrict search to a single file instead of a directory tree. When set, 'path' is ignored."
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "Optional: skip the first N matching results (for pagination). Default: 0."
                     }
                 },
                 "required": [
@@ -199,7 +211,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "file_info",
-            "description": "Get metadata about a file or directory at the given path. Returns size, permissions, modification time, and type (file/directory). Also reports whether the path exists.",
+            "description": "Get metadata about a file or directory at the given path. Returns size, permissions, modification time, and type (file/directory). For directories, also returns child count and total size of immediate children. Also reports whether the path exists.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -611,6 +623,23 @@ TOOLS = [
                     "additional": {
                         "type": "integer",
                         "description": "Additional turns to grant (default 10)."
+                    }
+                },
+                "required": ["task_id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "agent_cancel",
+            "description": "Cancel a running sub-agent by sending a cancellation signal. The sub-agent will stop at its next turn boundary. Use agent_status to confirm cancellation.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "string",
+                        "description": "Task ID returned by spawn_agent."
                     }
                 },
                 "required": ["task_id"]

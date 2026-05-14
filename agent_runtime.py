@@ -74,6 +74,8 @@ class AgentRuntime:
         self.results: dict[str, SubAgentResult] = {}
         self.cancel_events: dict[str, threading.Event] = {}
         self.max_turns: dict[str, int] = {}  # mutable per-task turn budgets
+        self.task_labels: dict[str, str] = {}  # human-readable label per task
+        self.task_parents: dict[str, str] = {}  # parent_task_id per task ("" = root)
         self.abandoned: set[str] = set()     # zombie tasks whose store_result() is a no-op
         self._seen_completions: set[str] = set()  # task_ids already surfaced to parent
         # Inter-agent communication
@@ -83,11 +85,14 @@ class AgentRuntime:
     # ---- spawn ----
 
     def register(self, task_id: str, thread: threading.Thread,
-                 cancel_event: threading.Event, max_turns: int = 20) -> None:
+                 cancel_event: threading.Event, max_turns: int = 20,
+                 label: str = "", parent_task_id: str = "") -> None:
         with self._lock:
             self.tasks[task_id] = thread
             self.cancel_events[task_id] = cancel_event
             self.max_turns[task_id] = max_turns
+            self.task_labels[task_id] = label
+            self.task_parents[task_id] = parent_task_id
 
     def store_result(self, task_id: str, result: SubAgentResult) -> None:
         with self._lock:
@@ -108,6 +113,10 @@ class AgentRuntime:
             self.tasks.pop(task_id, None)
             self.cancel_events.pop(task_id, None)
             self.max_turns.pop(task_id, None)
+            self.task_labels.pop(task_id, None)
+            self.task_parents.pop(task_id, None)
+            self.task_labels.pop(task_id, None)
+            self.task_parents.pop(task_id, None)
             # Clean up inbox/subscriptions to prevent memory leak
             self.inboxes.pop(task_id, None)
             self.subscriptions.pop(task_id, None)
@@ -179,6 +188,8 @@ class AgentRuntime:
             self.tasks.pop(task_id, None)
             self.cancel_events.pop(task_id, None)
             self.max_turns.pop(task_id, None)
+            self.task_labels.pop(task_id, None)
+            self.task_parents.pop(task_id, None)
             self._seen_completions.discard(task_id)
 
     def cancel(self, task_id: str) -> bool:

@@ -189,15 +189,16 @@ class TestSearchFiles(unittest.TestCase):
             import shutil
             shutil.rmtree(outside, ignore_errors=True)
 
-    def test_capped_at_50_results(self):
+    def test_capped_at_200_results(self):
         lines = "\n".join(f"match_{i}" for i in range(60))
         self._write("big.txt", lines)
         tc = _make_tool_call("search_files", pattern="match_", path=self.workspace)
         result = execute_tool(tc, self.write_gate, self.read_gate)
         self.assertTrue(result.success)
         match_lines = [l for l in result.content.split("\n") if "big.txt:" in l]
-        self.assertEqual(len(match_lines), 50)
-        self.assertIn("capped at 50", result.content)
+        self.assertEqual(len(match_lines), 60)
+        # 60 is below 200 cap — no truncation message
+        self.assertNotIn("capped at", result.content)
 
     def test_default_path_is_dot(self):
         tc = _make_tool_call("search_files", pattern="hello")

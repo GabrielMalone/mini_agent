@@ -21,6 +21,7 @@ import re as _re
 
 _SYMBOL_INDEX: dict[str, list[dict]] | None = None  # name → [{"path","line","kind"}, ...]
 _INDEX_MAX_MTIME: float = 0.0  # max mtime across all .py files from last build
+_INDEX_LAST_PERSIST: float = 0.0  # timestamp of last disk cache write (debounce)
 
 
 def build_symbol_index(root: str) -> dict[str, list[dict]]:
@@ -213,7 +214,16 @@ def _reindex_file(filepath: str, root: str) -> None:
         except (OSError, PermissionError):
             pass
 
-    # Persist updated indices to disk cache so next session picks them up
+    # Persist updated indices to disk cache so next session picks them up.
+    # Debounced: at most one disk write per 2 seconds, regardless of how
+    # many .py files are written in rapid succession.
+    global _INDEX_LAST_PERSIST
+    _DEBOUNCE_S = 2.0
+    import time as _time
+    now = _time.time()
+    if now - _INDEX_LAST_PERSIST < _DEBOUNCE_S:
+        return
+    _INDEX_LAST_PERSIST = now
     try:
         cache_path = os.path.join(root, ".mini_agent_index.json")
         tmp = cache_path + ".tmp"
@@ -318,20 +328,98 @@ def _sem_chunk_py(filepath: str) -> list[tuple[int, int, str]]:
     return chunks
 
 
+def _merge_symbol_data(
+    new_symbols: dict[str, list[dict]],
+    raw_refs: list[tuple[str, str, int, str]],
+    reindexed_files: set[str],
+) -> None:
+    """Merge symbol/reference data collected during _sem_index into global indices."""
+    global _SYMBOL_INDEX, _REF_INDEX
+
+    # Remove old entries for reindexed files from both indices
+    if _SYMBOL_INDEX is not None:
+        for name in list(_SYMBOL_INDEX.keys()):
+            _SYMBOL_INDEX[name] = [
+                e for e in _SYMBOL_INDEX[name]
+                if e["path"] not in reindexed_files
+            ]
+            if not _SYMBOL_INDEX[name]:
+                del _SYMBOL_INDEX[name]
+    else:
+        _SYMBOL_INDEX = {}
+
+    if _REF_INDEX is not None:
+        for name in list(_REF_INDEX.keys()):
+            _REF_INDEX[name] = [
+                r for r in _REF_INDEX[name]
+                if r["path"] not in reindexed_files
+            ]
+            if not _REF_INDEX[name]:
+                del _REF_INDEX[name]
+    else:
+        _REF_INDEX = {}
+
+    # Insert new symbol entries
+    for name, entries in new_symbols.items():
+        _SYMBOL_INDEX.setdefault(name, []).extend(entries)
+
+    # Filter raw references to only known symbol names
+    known_names = set(_SYMBOL_INDEX.keys())
+    for word, fpath, lineno, context in raw_refs:
+        if word in known_names:
+            _REF_INDEX.setdefault(word, []).append({
+                "path": fpath, "line": lineno, "context": context,
+            })
+
+    # Deduplicate references per file+line
+    for name in _REF_INDEX:
+        seen = set()
+        unique = []
+        for ref in _REF_INDEX[name]:
+            key = (ref["path"], ref["line"])
+            if key not in seen:
+                seen.add(key)
+                unique.append(ref)
+        _REF_INDEX[name] = unique
+
+
 def _sem_index(root: str) -> None:
     """Build/update in-memory index of .py files.
 
-    Single os.walk pass: checks mtimes and indexes changed files.
-    Returns immediately if no .py file mtimes have changed since the last
-    build (fast no-op on repeated calls).
+    Single os.walk pass: checks mtimes, indexes changed files for semantic
+    search, AND populates the symbol + reference indices \u2014 no separate
+    walk needed.  Returns immediately if no .py file mtimes have changed
+    since the last build (fast no-op on repeated calls).
     """
     import numpy as np
 
-    global _SEMANTIC_MAX_MTIME
+    global _SEMANTIC_MAX_MTIME, _SYMBOL_INDEX, _REF_INDEX, _SEMANTIC_LRU
+
+    # --- Regex patterns for symbol/reference indexing (same as build_symbol_index) ---
+    import re as _sem_re
+    def_pat = _sem_re.compile(r"^\s*(def|class)\s+(\w+)")
+    word_pat = _sem_re.compile(r"\b(\w+)\b")
+    _SKIP_REF_NAMES = frozenset({
+        "self", "cls", "True", "False", "None", "int", "str", "list", "dict",
+        "set", "tuple", "bool", "float", "bytes", "type", "object", "super",
+        "range", "len", "print", "isinstance", "hasattr", "getattr", "setattr",
+        "enumerate", "zip", "map", "filter", "iter", "next", "any", "all",
+        "sorted", "reversed", "min", "max", "sum", "abs", "round", "ord", "chr",
+        "open", "Exception", "ValueError", "TypeError", "KeyError", "OSError",
+        "RuntimeError", "ImportError", "AttributeError", "StopIteration",
+        "__init__", "__name__", "__main__", "__file__", "__doc__",
+        "unittest", "TestCase", "json", "os", "sys", "re", "time",
+    })
+
     old_max = _SEMANTIC_MAX_MTIME
     new_max = 0.0
     current: set[str] = set()
     any_change = False
+
+    # Accumulators for symbol/reference index building during this walk
+    _symbol_entries: dict[str, list[dict]] = {}
+    _raw_refs: list[tuple[str, str, int, str]] = []
+    _reindexed_files: set[str] = set()  # which files were (re-)read this pass
 
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS and not d.startswith(".")]
@@ -350,7 +438,44 @@ def _sem_index(root: str) -> None:
             if fpath in _SEMANTIC_STORE and _SEMANTIC_STORE[fpath][0] == mtime:
                 continue
             any_change = True
-            chunks = _sem_chunk_py(fpath)
+
+            # --- Read file once, use for both semantic and symbol/reference indexing ---
+            try:
+                with open(fpath, "r") as f:
+                    file_lines = f.readlines()
+            except (OSError, PermissionError):
+                continue
+
+            _reindexed_files.add(fpath)
+
+            # --- Symbol/reference scanning (cheap regex, same pass) ---
+            for lineno, line in enumerate(file_lines, 1):
+                m = def_pat.match(line)
+                if m:
+                    kind, name = m.group(1), m.group(2)
+                    _symbol_entries.setdefault(name, []).append({
+                        "path": fpath, "line": lineno, "kind": kind,
+                    })
+                stripped = line.strip()
+                for match in word_pat.finditer(line):
+                    word = match.group(1)
+                    if word not in _SKIP_REF_NAMES:
+                        _raw_refs.append((word, fpath, lineno, stripped[:120]))
+
+            # --- Semantic chunking + encoding (already reads file_lines) ---
+            boundaries = [i for i, ln in enumerate(file_lines)
+                          if ln.strip().startswith(("def ", "class "))]
+            if not boundaries:
+                text = "".join(file_lines).strip()
+                chunks = [(1, len(file_lines), text)] if text else []
+            else:
+                chunks = []
+                for j, start in enumerate(boundaries):
+                    end = boundaries[j + 1] if j + 1 < len(boundaries) else len(file_lines)
+                    text = "".join(file_lines[start:end]).strip()
+                    if text:
+                        chunks.append((start + 1, end, text))
+
             if not chunks:
                 _SEMANTIC_STORE[fpath] = (mtime, [])
                 continue
@@ -368,7 +493,6 @@ def _sem_index(root: str) -> None:
             )))
 
             # LRU eviction: if we exceed the cap, drop the oldest entry
-            global _SEMANTIC_LRU
             if fpath not in _SEMANTIC_LRU:
                 _SEMANTIC_LRU.append(fpath)
             while len(_SEMANTIC_LRU) > _SEMANTIC_MAX_ENTRIES:
@@ -381,6 +505,11 @@ def _sem_index(root: str) -> None:
     for p in stale:
         del _SEMANTIC_STORE[p]
     _SEMANTIC_MAX_MTIME = new_max
+
+    # --- Merge collected symbol/reference data into global indices ---
+    if any_change or _SYMBOL_INDEX is None:
+        if _symbol_entries or _reindexed_files:
+            _merge_symbol_data(_symbol_entries, _raw_refs, _reindexed_files)
 
     # If nothing changed at all, bail out early
     if not any_change and old_max > 0:

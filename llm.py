@@ -350,20 +350,8 @@ def run_agent_turn(
                 })
 
             # Token budget awareness — inject context usage at turn start
-            if turn_count > 1:
-                estimate = _total_tokens(messages)
-                # Rough max: model's context window minus headroom
-                CONTEXT_BUDGET = 64000
-                budget = CONTEXT_BUDGET
-                pct = min(100, estimate * 100 // budget)
-                messages.append({
-                    "role": "user",
-                    "content": (
-                        f"[Context: ~{estimate}//{budget} tokens ({pct}%). "
-                        f"Be concise if nearing limit.]"
-                    ),
-                    "_transient": True,
-                })
+            from memory import _inject_token_budget
+            _inject_token_budget(messages, turn_count)
 
             # Periodic progress check — inject a system reminder
             if turn_count > 1 and turn_count % PROGRESS_INTERVAL == 0:
@@ -510,15 +498,9 @@ def run_agent_turn(
             if not remaining:
                 messages.append(msg)
                 for tc, result in deferred_stream_results:
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tc["id"],
-                        "content": result.to_json(),
-                    })
-                    with tool_keys_lock:
-                        recent_tool_keys.append(_tool_call_key(tc))
-                        while len(recent_tool_keys) > _CIRCUIT_WINDOW:
-                            recent_tool_keys.pop(0)
+                    _append_tool_result(messages, tc, result, on_tool_end,
+                                        recent_keys=recent_tool_keys,
+                                        lock=tool_keys_lock)
                 _save_turn_summary(turn_count, msg, deferred_stream_results, messages)
                 continue
 
@@ -527,15 +509,9 @@ def run_agent_turn(
             messages.append(msg)
             # Flush deferred tool results from streaming execution
             for tc, result in deferred_stream_results:
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc["id"],
-                    "content": result.to_json(),
-                })
-                with tool_keys_lock:
-                    recent_tool_keys.append(_tool_call_key(tc))
-                    while len(recent_tool_keys) > _CIRCUIT_WINDOW:
-                        recent_tool_keys.pop(0)
+                _append_tool_result(messages, tc, result, on_tool_end,
+                                    recent_keys=recent_tool_keys,
+                                    lock=tool_keys_lock)
 
             # --- Tool piping: extract _pipe deps from remaining tools ---
             # _pipe format: {"from": <source_index_in_remaining>, "into": "<param_name>"}
@@ -553,6 +529,24 @@ def run_agent_turn(
                 if isinstance(pipe_cfg, dict) and "from" in pipe_cfg:
                     pipe_deps[i] = (int(pipe_cfg["from"]), pipe_cfg.get("into", ""))
                 tc["function"]["arguments"] = _json.dumps(ad)
+
+            def _apply_pipe(tc, i, pipe_deps, pipe_results, _json):
+                """Substitute piped result into tc's arguments in-place."""
+                if i not in pipe_deps:
+                    return
+                src_idx, into_param = pipe_deps[i]
+                src_result = pipe_results.get(src_idx)
+                if src_result is None:
+                    return
+                args_dict = _json.loads(tc["function"]["arguments"])
+                if not into_param:
+                    for k, v in args_dict.items():
+                        if isinstance(v, str):
+                            into_param = k
+                            break
+                if into_param and into_param in args_dict:
+                    args_dict[into_param] = src_result.content.strip()
+                    tc["function"]["arguments"] = _json.dumps(args_dict)
 
             if not pipe_deps:
                 # No piping — original behavior
@@ -649,20 +643,7 @@ def run_agent_turn(
                     i = group[0]
                     tc = remaining[i]
                     # Substitute pipe input if this tool has a dep
-                    if i in pipe_deps:
-                        src_idx, into_param = pipe_deps[i]
-                        src_result = pipe_results.get(src_idx)
-                        if src_result is not None:
-                            args_dict = _json.loads(tc["function"]["arguments"])
-                            if not into_param:
-                                # Default: first string parameter
-                                for k, v in args_dict.items():
-                                    if isinstance(v, str):
-                                        into_param = k
-                                        break
-                            if into_param and into_param in args_dict:
-                                args_dict[into_param] = src_result.content.strip()
-                                tc["function"]["arguments"] = _json.dumps(args_dict)
+                    _apply_pipe(tc, i, pipe_deps, pipe_results, _json)
                     if cancel_event is not None and cancel_event.is_set():
                         break
                     result = execute_tool(tc, write_gate, read_gate,
@@ -677,19 +658,7 @@ def run_agent_turn(
 
                     def _run_piped(i):
                         tc = remaining[i]
-                        if i in pipe_deps:
-                            src_idx, into_param = pipe_deps[i]
-                            src_result = pipe_results.get(src_idx)
-                            if src_result is not None:
-                                args_dict = _json.loads(tc["function"]["arguments"])
-                                if not into_param:
-                                    for k, v in args_dict.items():
-                                        if isinstance(v, str):
-                                            into_param = k
-                                            break
-                                if into_param and into_param in args_dict:
-                                    args_dict[into_param] = src_result.content.strip()
-                                    tc["function"]["arguments"] = _json.dumps(args_dict)
+                        _apply_pipe(tc, i, pipe_deps, pipe_results, _json)
                         return i, tc, execute_tool(tc, write_gate, read_gate,
                                                    on_output=on_tool_output,
                                                    approve_callback=approve_callback)

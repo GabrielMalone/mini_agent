@@ -357,6 +357,7 @@ class MiniAgentTUI(App):
     BINDINGS = [
         Binding("ctrl+c", "cancel", "Cancel"),
         Binding("ctrl+q", "quit", "Quit"),
+        Binding("ctrl+shift+c", "copy", "Copy"),
         Binding("enter", "submit", "Submit", priority=True),
     ]
 
@@ -507,6 +508,17 @@ class MiniAgentTUI(App):
         self._chat = self.query_one("#chat-pane", RichLog)
         self._tools_log = tools_log
 
+        # Cache footer ref to avoid query_one DOM walk every 2s
+        self._footer = self.query_one(Footer)
+
+        # Flat task_id → tree node map for O(1) status updates (avoid recursive tree walks)
+        self._tree_node_map: dict[str, object] = {}
+        # Pending children whose parent hasn't arrived yet (race condition)
+        self._pending_children: dict[str, list] = {}
+        # Last assistant response for clipboard copy
+        self._last_response: str = ""
+        # Timer for auto-hiding the agent tree after all agents complete
+        self._tree_hide_timer: float | None = None
 
         self.query_one("#input", TextArea).focus()
         self.queue: Queue = _NotifyQueue(app=self)
@@ -559,10 +571,7 @@ class MiniAgentTUI(App):
 
     def _update_status_bar(self) -> None:
         """Refresh the Footer with live metrics every 2 seconds."""
-        try:
-            footer = self.query_one(Footer)
-        except Exception:
-            return
+        footer = self._footer
         parts = []
         if self._git_branch:
             dirty = "*" if self._git_dirty else ""
@@ -608,6 +617,21 @@ class MiniAgentTUI(App):
         """Save conversation before quitting (Ctrl+Q)."""
         self.memory.save(self.messages)
         self.exit()
+
+    def action_copy(self) -> None:
+        """Copy last response to clipboard (Ctrl+Shift+C).
+        
+        RichLog panes don't support native mouse text selection, so
+        this copies from a dedicated buffer that tracks the last
+        assistant response.
+        """
+        import pyperclip
+        text = getattr(self, "_last_response", "")
+        if text:
+            pyperclip.copy(text)
+            self.notify(f"Copied {len(text)} chars", timeout=1.5)
+        else:
+            self.notify("Nothing to copy yet", severity="warning", timeout=2)
 
     def action_submit(self) -> None:
         """Submit: Enter key — send TextArea content to agent."""
@@ -683,6 +707,12 @@ class MiniAgentTUI(App):
             self._sub_panes.clear()
             self._sub_count = 0
             sap.styles.display = "none"
+
+            # Clear agent tree for new conversation
+            tree = self.query_one("#agent-tree", Tree)
+            tree.clear()
+            self._tree_node_map.clear()
+            self._pending_children.clear()
 
         input_widget = self.query_one("#input", TextArea)
         text = input_widget.text.strip()
@@ -813,6 +843,14 @@ class MiniAgentTUI(App):
                         if not hasattr(self, "_sub_colors"):
                             self._sub_colors = {}
                         self._sub_colors[task_id] = ac
+                        # Agent name in top border
+                        rlog.border_title = f"{color} Agent {self._sub_count} ({task_id[:8]}...)"
+                        # Dynamic font: cap normal, scale down when many agents
+                        max_h = max(4, 12 - (self._sub_count - 1) * 2)
+                        rlog.max_lines = max_h
+                        # Redistribute max_lines across existing panes
+                        for _tid, _rlog in self._sub_panes.items():
+                            _rlog.max_lines = max(4, 12 - (self._sub_count - 1) * 2)
                         self._write_to_log(rlog, f"[{ac}]Agent {self._sub_count}  ({task_id})[/]")
                         sap.mount(rlog)
                         self._sub_panes[task_id] = rlog
@@ -829,52 +867,59 @@ class MiniAgentTUI(App):
                     continue
 
                 # Sub-agent tree: spawn event
-                if isinstance(msg, tuple) and len(msg) >= 4 and msg[0] == "sub_tree" and msg[1] == "spawn":
-                    _tag, _action, _task_id, _parent_id, _label = msg[0], msg[1], msg[2], msg[3], msg[4]
+                if isinstance(msg, tuple) and len(msg) >= 5 and msg[0] == "sub_tree" and msg[1] == "spawn":
+                    _tag, _action, _task_id, _parent_id = msg[0], msg[1], msg[2], msg[3]
+                    _name = msg[4] if len(msg) > 4 else _task_id
+                    _desc = msg[5] if len(msg) > 5 else ""
                     tree = self.query_one("#agent-tree", Tree)
-                    tree.styles.display = "block"
-                    short = _label[:40] + "..." if len(_label) > 40 else _label
-                    node_label = f"[RUN] {_task_id}: {short}"
+                    # Cancel any pending auto-hide timer since new agents are spawning
+                    if self._tree_hide_timer is not None:
+                        self._tree_hide_timer.stop()
+                        self._tree_hide_timer = None
+                    label = f"[RUN] {_name}"
                     parent_node = tree.root
-                    if _parent_id:
-                        def _find(n, tid):
-                            d = getattr(n, 'data', None)
-                            if isinstance(d, dict) and d.get("id") == tid:
-                                return n
-                            for c in n.children:
-                                r = _find(c, tid)
-                                if r:
-                                    return r
-                            return None
-                        pn = _find(tree.root, _parent_id)
-                        if pn:
-                            parent_node = pn
-                    node = parent_node.add(node_label)
-                    node.data = {"id": _task_id}
+                    if _parent_id and _parent_id in self._tree_node_map:
+                        parent_node = self._tree_node_map[_parent_id]
+                    elif _parent_id:
+                        # Parent not yet in tree (race: child spawn msg arrived first)
+                        self._pending_children.setdefault(_parent_id, []).append(
+                            (_task_id, _name, _desc)
+                        )
+                        continue
+                    node = parent_node.add(label)
+                    node.data = {"id": _task_id, "label": _name, "desc": _desc}
+                    self._tree_node_map[_task_id] = node
                     tree.root.expand()
+                    parent_node.expand()
+                    # Only show tree AFTER a real node is added
+                    tree.styles.display = "block"
+                    # Attach any children that arrived before this parent
+                    for child_id, child_name, child_desc in self._pending_children.pop(_task_id, []):
+                        child_node = node.add(f"[RUN] {child_name}")
+                        child_node.data = {"id": child_id, "label": child_name, "desc": child_desc}
+                        self._tree_node_map[child_id] = child_node
+                        node.expand()
                     continue
 
                 # Sub-agent tree: status update
                 if isinstance(msg, tuple) and len(msg) >= 4 and msg[0] == "sub_tree" and msg[1] == "status":
                     _tag, _action, _task_id, _status = msg[0], msg[1], msg[2], msg[3]
-                    tag = "[OK]" if _status == "completed" else "[ERR]"
                     tree = self.query_one("#agent-tree", Tree)
-                    def _upd(n):
-                        d = getattr(n, 'data', None)
-                        if isinstance(d, dict) and d.get("id") == _task_id:
-                            ol = str(n.label)
-                            for old_tag in ("[RUN]", "[OK]", "[ERR]"):
-                                if ol.startswith(old_tag + " "):
-                                    ol = ol[len(old_tag)+1:]
-                                    break
-                            n.set_label(f"{tag} {ol}")
-                            return True
-                        for c in n.children:
-                            if _upd(c):
-                                return True
-                        return False
-                    _upd(tree.root)
-                    # Hide tree if all agents are done
+                    node = self._tree_node_map.get(_task_id)
+                    if node is not None:
+                        ol = str(node.label)
+                        for old_tag in ("[RUN]", "[OK]", "[ERR]"):
+                            if ol.startswith(old_tag + " "):
+                                ol = ol[len(old_tag)+1:]
+                                break
+                        if _status == "running":
+                            node.set_label(f"[RUN] {ol}")
+                        elif _status == "completed":
+                            node.set_label(f"[OK] {ol}")
+                        else:
+                            node.set_label(f"[ERR] {ol}")
+                    # Keep tree visible even when all done (so user can see structure).
+                    # Only hide on next conversation start when tree is empty.
                     def _any_running(n):
                         if str(n.label).startswith("[RUN]"):
                             return True
@@ -882,8 +927,35 @@ class MiniAgentTUI(App):
                             if _any_running(c):
                                 return True
                         return False
-                    if not _any_running(tree.root):
+                    if not _any_running(tree.root) and len(list(tree.root.children)) == 0:
                         tree.styles.display = "none"
+                        self._tree_node_map.clear()
+                    elif not _any_running(tree.root) and len(list(tree.root.children)) > 0:
+                        # All agents done but tree has children — start auto-hide timer
+                        if self._tree_hide_timer is None:
+                            self._tree_hide_timer = self.set_timer(
+                                3.0, self._hide_agent_tree
+                            )
+                    continue
+
+                # Sub-agent tool streaming to tools-log
+                if isinstance(msg, tuple) and len(msg) >= 3 and msg[0] == "sub_tool":
+                    _tag, _action = msg[0], msg[1]
+                    name = msg[2] if len(msg) > 2 else "?"
+                    if _action == "start":
+                        task_id = msg[3] if len(msg) > 3 else ""
+                        # Find color for this agent
+                        ac = t.dim
+                        if hasattr(self, "_sub_colors") and task_id in self._sub_colors:
+                            ac = self._sub_colors[task_id]
+                        label = task_id[:8] if task_id else "sub"
+                        self._box_open(tools_log, _safe(f"[{label}] {name}"), ac)
+                    elif _action == "end":
+                        ok = msg[3] if len(msg) > 3 else True
+                        detail = msg[4] if len(msg) > 4 else ""
+                        symbol = "✓" if ok else "✗"
+                        color = t.green if ok else t.red
+                        self._box_close(tools_log, color, f"{symbol} {_safe(detail[:60])}")
                     continue
 
                 # Sub-agent done — hide its pane
@@ -913,7 +985,7 @@ class MiniAgentTUI(App):
                     self._box_close(tools_log, color, f"{symbol} {detail}")
                     self._active_tool = ""
                 elif isinstance(msg, _ToolOutput):
-                    self._box_line(tools_log, _safe(msg.text), t.dim)
+                    pass  # Tool start/end already summarize; suppress raw output clutter
                 elif isinstance(msg, _Error):
                     self._close_agent_box()
                     self._box_open(chat, "✗ Error", t.red)
@@ -938,6 +1010,11 @@ class MiniAgentTUI(App):
     def _close_agent_box(self) -> None:
         """Close the agent content box if it's currently open."""
         if getattr(self, "_agent_box_open", False):
+            # Capture last response for clipboard
+            acc = getattr(self, "_accumulated_content", [])
+            if acc:
+                self._last_response = "\n".join(acc)
+                self._accumulated_content = []
             try:
                 chat = self._chat
                 t = self._tui_theme
@@ -945,6 +1022,28 @@ class MiniAgentTUI(App):
             except Exception:
                 pass
             self._agent_box_open = False
+
+    def _hide_agent_tree(self) -> None:
+        """Auto-hide the agent tree after all agents complete (called by timer)."""
+        self._tree_hide_timer = None
+        try:
+            tree = self.query_one("#agent-tree", Tree)
+            if not hasattr(self, "_tree_node_map"):
+                tree.styles.display = "none"
+                return
+            def _any_running(n):
+                if str(n.label).startswith("[RUN]"):
+                    return True
+                for c in n.children:
+                    if _any_running(c):
+                        return True
+                return False
+            if not _any_running(tree.root):
+                tree.clear()
+                self._tree_node_map.clear()
+                tree.styles.display = "none"
+        except Exception:
+            pass
 
     def _handle_token(self, msg: _TokenMsg, log) -> None:
         """Process a single token: route to thinking or content buffer.
@@ -958,6 +1057,7 @@ class MiniAgentTUI(App):
 
         if text.startswith(THINKING_START):
             self._flush_buf()  # safety: flush any pending content first
+            self._close_agent_box()
             self._close_agent_box()
             self._in_thinking = True
             self._thinking_buf = ""

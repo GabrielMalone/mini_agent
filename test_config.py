@@ -155,6 +155,19 @@ class TestAgentConfigEnvVars(unittest.TestCase):
         config = AgentConfig.load(self.workspace)
         self.assertEqual(config.api_key, "env-key")
 
+    @patch.dict(os.environ, {"DEEPSEEK_API_URL": "https://custom.api/v1"}, clear=True)
+    def test_env_api_url_overrides_default(self):
+        config = AgentConfig.load(self.workspace)
+        self.assertEqual(config.api_url, "https://custom.api/v1")
+
+    @patch.dict(os.environ, {"DEEPSEEK_API_URL": "https://env.url"}, clear=True)
+    def test_env_api_url_overrides_toml(self):
+        path = os.path.join(self.workspace, CONFIG_FILENAME)
+        with open(path, "w") as f:
+            f.write('[agent]\napi_url = "https://toml.url"\n')
+        config = AgentConfig.load(self.workspace)
+        self.assertEqual(config.api_url, "https://env.url")
+
     @patch.dict(os.environ, {"AGENT_WORKSPACE": "/env/ws"}, clear=True)
     def test_env_workspace_overrides_default(self):
         config = AgentConfig.load(self.workspace)

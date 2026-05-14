@@ -70,6 +70,7 @@ def _spawn_one(
     subscriptions: list[str] | None = None,
     parent_depth: int = 0,
     max_depth: int = 3,
+    parent_task_id: str = "",
 ) -> str:
     """Spawn a single sub-agent thread. Returns the task_id."""
     from tools import _TOOL_CONTEXT
@@ -78,6 +79,13 @@ def _spawn_one(
     task_id = str(uuid.uuid4())[:8]
     if cancel_event is None:
         cancel_event = threading.Event()
+
+    # Generate a short human-readable name from the task text
+    words = task.strip().split()
+    short_name = "_".join(w for w in words[:3] if w.isalnum() or w in ("-",))
+    if not short_name:
+        short_name = "agent"
+    short_name = short_name.lower()[:24]
 
     def _runner() -> None:
         import sys as _sys
@@ -119,7 +127,10 @@ def _spawn_one(
             config.stream = original_stream
 
     thread = threading.Thread(target=_runner, daemon=True, name=f"subagent-{task_id}")
-    runtime.register(task_id, thread, cancel_event, max_turns)
+    # Determine parent task_id (passed explicitly by caller)
+    parent_id = parent_task_id
+    runtime.register(task_id, thread, cancel_event, max_turns,
+                     label=short_name, parent_task_id=parent_id)
     # Set subscriptions if provided
     if subscriptions is not None:
         runtime.set_subscriptions(task_id, subscriptions)
@@ -127,9 +138,8 @@ def _spawn_one(
     from tools import _TOOL_CONTEXT
     tui_queue = _TOOL_CONTEXT.__dict__.get("_tui_queue")
     if tui_queue is not None:
-        label = task[:60].replace("\n", " ")
-        parent_id = _TOOL_CONTEXT.__dict__.get("_agent_task_id", "")
-        tui_queue.put(("sub_tree", "spawn", task_id, parent_id, label))
+        desc = task[:60].replace("\n", " ")
+        tui_queue.put(("sub_tree", "spawn", task_id, parent_id, short_name, desc))
     thread.start()
     return task_id
 
@@ -183,6 +193,7 @@ def _spawn_agent(args: dict, wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolRes
                 content="Agent config not available in tool context.",
             )
 
+        parent_task_id = _TOOL_CONTEXT.__dict__.get("_agent_task_id", "")
         task_ids = []
         for task in valid_tasks:
             if runtime.active_count >= _MAX_CONCURRENT:
@@ -192,7 +203,8 @@ def _spawn_agent(args: dict, wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolRes
                              shared_context=shared_context,
                              subscriptions=subscriptions,
                              parent_depth=_TOOL_CONTEXT.__dict__.get("_agent_depth", 0),
-                             max_depth=_TOOL_CONTEXT.__dict__.get("_agent_max_depth", 3))
+                             max_depth=_TOOL_CONTEXT.__dict__.get("_agent_max_depth", 3),
+                             parent_task_id=parent_task_id)
             task_ids.append(tid)
 
         if not task_ids:
@@ -250,12 +262,14 @@ def _spawn_agent(args: dict, wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolRes
             content="Agent config not available in tool context.",
         )
 
+    parent_task_id = _TOOL_CONTEXT.__dict__.get("_agent_task_id", "")
     task_id = _spawn_one(task, config, runtime, wg, rg, max_turns,
                          cancel_event=None, visible=visible,
                          shared_context=shared_context,
                          subscriptions=subscriptions,
                          parent_depth=_TOOL_CONTEXT.__dict__.get("_agent_depth", 0),
-                         max_depth=_TOOL_CONTEXT.__dict__.get("_agent_max_depth", 3))
+                         max_depth=_TOOL_CONTEXT.__dict__.get("_agent_max_depth", 3),
+                         parent_task_id=parent_task_id)
 
     return ToolResult(
         success=True,
@@ -964,3 +978,58 @@ def _agent_extend(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> Tool
 @_summarize("agent_extend")
 def _agent_extend_summary(args: dict) -> str:
     return f"agent_extend({args.get('task_id', '?')}, +{args.get('additional', 10)})"
+
+
+# ---------------------------------------------------------------------------
+# agent_cancel
+# ---------------------------------------------------------------------------
+
+@_register("agent_cancel")
+def _agent_cancel(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
+    """Cancel a running sub-agent by setting its cancel event."""
+    from tools import _TOOL_CONTEXT
+    from agent_runtime import AgentRuntime
+
+    task_id = args.get("task_id", "")
+    if not task_id:
+        return ToolResult(
+            success=False,
+            content="Missing required parameter: 'task_id'.",
+        )
+
+    runtime: AgentRuntime | None = _TOOL_CONTEXT.__dict__.get("_agent_runtime")
+    if runtime is None:
+        return ToolResult(
+            success=False,
+            content="Agent runtime not initialized.",
+        )
+
+    status = runtime.get_status(task_id)
+    if status == "not_found":
+        return ToolResult(
+            success=False,
+            content=f"Sub-agent '{task_id}' not found.",
+        )
+
+    if status == "completed":
+        return ToolResult(
+            success=True,
+            content=f"Sub-agent '{task_id}' has already completed.",
+        )
+
+    ok = runtime.cancel(task_id)
+    if not ok:
+        return ToolResult(
+            success=False,
+            content=f"Failed to cancel sub-agent '{task_id}'.",
+        )
+
+    return ToolResult(
+        success=True,
+        content=f"Sub-agent '{task_id}' cancellation requested.",
+    )
+
+
+@_summarize("agent_cancel")
+def _agent_cancel_summary(args: dict) -> str:
+    return f"agent_cancel({args.get('task_id', '?')})"

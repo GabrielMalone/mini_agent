@@ -97,6 +97,7 @@ class AgentContext:
         self._turn_history: dict[int, str] = {}
         self._plan_steps: list[str] = []
         self._plan_done: set[int] = set()
+        self._memory_store = None  # MemoryStore instance (set by init_session)
 
 
 _TOOL_CONTEXT = AgentContext()
