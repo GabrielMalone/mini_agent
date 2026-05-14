@@ -68,6 +68,7 @@ class TuiTheme:
     red: str      # errors
     thinking: str # thinking block dim
     pulse: str    # attention/approval glow
+    purple: str   # interjection queued messages
 
 THEMES: dict[str, TuiTheme] = {
     "dawn": TuiTheme(
@@ -75,63 +76,63 @@ THEMES: dict[str, TuiTheme] = {
         bg="#faf8f5", surface="#f0ede8", border="#d4cfc8",
         accent="#b8956a", text="#3d3a35", dim="#8a857d",
         green="#5a8a4a", yellow="#b89540", red="#c06050",
-        thinking="#b0aaa0", pulse="#f0c060",
+        thinking="#b0aaa0", pulse="#f0c060", purple="#a080c0",
     ),
     "sepia": TuiTheme(
         name="Sepia",
         bg="#f4f0e6", surface="#e8e0d0", border="#c8b898",
         accent="#b8893a", text="#4a3f30", dim="#8a7a60",
         green="#6a8a4a", yellow="#c0a040", red="#b85840",
-        thinking="#b0a080", pulse="#e0b040",
+        thinking="#b0a080", pulse="#e0b040", purple="#9a7ab0",
     ),
     "ember": TuiTheme(
         name="Ember",
         bg="#1e1814", surface="#2a221c", border="#3a3028",
         accent="#d4985a", text="#d0c8be", dim="#7a7064",
         green="#7ab860", yellow="#d4a040", red="#d47050",
-        thinking="#5a5040", pulse="#e89840",
+        thinking="#5a5040", pulse="#e89840", purple="#c090d0",
     ),
     "slate": TuiTheme(
         name="Slate",
         bg="#111111", surface="#1b1b1b", border="#2a2a2a",
         accent="#8f8f8f", text="#b8b8b8", dim="#5a5a5a",
         green="#4f9f6f", yellow="#b89a4a", red="#a85a5a",
-        thinking="#3a3a3a", pulse="#c0c040",
+        thinking="#3a3a3a", pulse="#c0c040", purple="#8a7ab0",
     ),
     "midnight": TuiTheme(
         name="Midnight",
         bg="#090b0d", surface="#131619", border="#1e2226",
         accent="#8899aa", text="#b0c0d0", dim="#4a5560",
         green="#4a8a6a", yellow="#9a8a4a", red="#9a6060",
-        thinking="#2a3040", pulse="#6a8acc",
+        thinking="#2a3040", pulse="#6a8acc", purple="#7a8ab0",
     ),
     "cobalt": TuiTheme(
         name="Cobalt",
         bg="#0a1220", surface="#101830", border="#1e2850",
         accent="#6090d0", text="#a0b8d8", dim="#4a6090",
         green="#5a9a6a", yellow="#a0a040", red="#b06060",
-        thinking="#203050", pulse="#5090e0",
+        thinking="#203050", pulse="#5090e0", purple="#8090d0",
     ),
     "neon": TuiTheme(
         name="Neon",
         bg="#0c0c0c", surface="#16161a", border="#303030",
         accent="#e040e0", text="#c0e0c0", dim="#506050",
         green="#00e060", yellow="#e0c000", red="#ff4060",
-        thinking="#302040", pulse="#e040ff",
+        thinking="#302040", pulse="#e040ff", purple="#c040ff",
     ),
     "forest": TuiTheme(
         name="Forest",
         bg="#0e1410", surface="#141c16", border="#1e2e22",
         accent="#60a870", text="#a0c0a8", dim="#4a6a50",
         green="#60d070", yellow="#b0b040", red="#c06050",
-        thinking="#203028", pulse="#50d060",
+        thinking="#203028", pulse="#50d060", purple="#8090b0",
     ),
     "dracula": TuiTheme(
         name="Dracula",
         bg="#282a36", surface="#1e1f29", border="#44475a",
         accent="#bd93f9", text="#f8f8f2", dim="#6272a4",
         green="#50fa7b", yellow="#f1fa8c", red="#ff5555",
-        thinking="#44475a", pulse="#ff79c6",
+        thinking="#44475a", pulse="#ff79c6", purple="#bd93f9",
     ),
 }
 
@@ -186,7 +187,7 @@ Footer.pulse {{
 }}
 
 #agent-tree {{
-    display: none;
+    display: block;
     background: {theme.bg};
     color: {theme.dim};
     border: none;
@@ -267,11 +268,13 @@ class _TokenMsg:
 class _ToolStart:
     summary: str
     parallel: bool = False
+    turn_id: int = 0
 
 @dataclass
 class _ToolEnd:
     ok: bool
     detail: str
+    turn_id: int = 0
 
 @dataclass
 class _SubAgentToken:
@@ -284,6 +287,7 @@ class _SubAgentToken:
 @dataclass
 class _ToolOutput:
     text: str
+    turn_id: int = 0
 
 @dataclass
 class _Done:
@@ -324,9 +328,9 @@ class AgentWorker(threading.Thread):
                 self.messages, config,
                 self.write_gate, self.read_gate,
                 on_token=lambda t: self.out.put(_TokenMsg(t)),
-                on_tool_start=lambda s, parallel=False: self.out.put(_ToolStart(s, parallel)),
-                on_tool_end=lambda ok, d: self.out.put(_ToolEnd(ok, d)),
-                on_tool_output=lambda line: self.out.put(_ToolOutput(line)),
+                on_tool_start=lambda s, parallel=False: self.out.put(_ToolStart(s, parallel, turn_id=self.turn_id)),
+                on_tool_end=lambda ok, d: self.out.put(_ToolEnd(ok, d, turn_id=self.turn_id)),
+                on_tool_output=lambda line: self.out.put(_ToolOutput(line, turn_id=self.turn_id)),
                 cancel_event=self.cancel,
                 session=self.session,
                 approve_callback=self.approve_callback,
@@ -517,9 +521,6 @@ class MiniAgentTUI(App):
         self._pending_children: dict[str, list] = {}
         # Last assistant response for clipboard copy
         self._last_response: str = ""
-        # Timer for auto-hiding the agent tree after all agents complete
-        self._tree_hide_timer: float | None = None
-
         self.query_one("#input", TextArea).focus()
         self.queue: Queue = _NotifyQueue(app=self)
         self.worker: AgentWorker | None = None
@@ -691,7 +692,19 @@ class MiniAgentTUI(App):
     def _submit(self) -> None:
         """Send user message to the agent."""
         # Guard against double-submit while agent is working
+        # Instead of silently dropping the message, push it as an interjection
+        # so the agent sees it at its next tool-call boundary.
         if self.worker is not None and self.worker.is_alive():
+            input_widget = self.query_one("#input", TextArea)
+            text = input_widget.text.strip()
+            if text:
+                from interject import push_interjection
+                push_interjection(text)
+                input_widget.clear()
+                # Show confirmation to the user
+                t = self._tui_theme
+                chat = self.query_one("#chat-pane", RichLog)
+                chat.write(f"[{t.purple} bold]  💬 queued:[/] [{t.purple}]{_safe(text[:120])}[/]")
             return
 
         # Defensive: clear any stale table buffer from a previous turn
@@ -871,11 +884,10 @@ class MiniAgentTUI(App):
                     _tag, _action, _task_id, _parent_id = msg[0], msg[1], msg[2], msg[3]
                     _name = msg[4] if len(msg) > 4 else _task_id
                     _desc = msg[5] if len(msg) > 5 else ""
+                    # Dedup: if this task_id already has a tree node, skip
+                    if hasattr(self, "_tree_node_map") and _task_id in self._tree_node_map:
+                        continue
                     tree = self.query_one("#agent-tree", Tree)
-                    # Cancel any pending auto-hide timer since new agents are spawning
-                    if self._tree_hide_timer is not None:
-                        self._tree_hide_timer.stop()
-                        self._tree_hide_timer = None
                     label = f"[RUN] {_name}"
                     parent_node = tree.root
                     if _parent_id and _parent_id in self._tree_node_map:
@@ -919,23 +931,6 @@ class MiniAgentTUI(App):
                         else:
                             node.set_label(f"[ERR] {ol}")
                     # Keep tree visible even when all done (so user can see structure).
-                    # Only hide on next conversation start when tree is empty.
-                    def _any_running(n):
-                        if str(n.label).startswith("[RUN]"):
-                            return True
-                        for c in n.children:
-                            if _any_running(c):
-                                return True
-                        return False
-                    if not _any_running(tree.root) and len(list(tree.root.children)) == 0:
-                        tree.styles.display = "none"
-                        self._tree_node_map.clear()
-                    elif not _any_running(tree.root) and len(list(tree.root.children)) > 0:
-                        # All agents done but tree has children — start auto-hide timer
-                        if self._tree_hide_timer is None:
-                            self._tree_hide_timer = self.set_timer(
-                                3.0, self._hide_agent_tree
-                            )
                     continue
 
                 # Sub-agent tool streaming to tools-log
@@ -944,6 +939,13 @@ class MiniAgentTUI(App):
                     name = msg[2] if len(msg) > 2 else "?"
                     if _action == "start":
                         task_id = msg[3] if len(msg) > 3 else ""
+                        # Dedup: skip if this sub-agent already has an open tool box
+                        if not hasattr(self, "_active_sub_tools"):
+                            self._active_sub_tools = set()
+                        key = (task_id, name)
+                        if key in self._active_sub_tools:
+                            continue
+                        self._active_sub_tools.add(key)
                         # Find color for this agent
                         ac = t.dim
                         if hasattr(self, "_sub_colors") and task_id in self._sub_colors:
@@ -953,6 +955,10 @@ class MiniAgentTUI(App):
                     elif _action == "end":
                         ok = msg[3] if len(msg) > 3 else True
                         detail = msg[4] if len(msg) > 4 else ""
+                        task_id_e = msg[3] if len(msg) > 3 else ""
+                        name_e = msg[2] if len(msg) > 2 else "?"
+                        if hasattr(self, "_active_sub_tools"):
+                            self._active_sub_tools.discard((task_id_e, name_e))
                         symbol = "✓" if ok else "✗"
                         color = t.green if ok else t.red
                         self._box_close(tools_log, color, f"{symbol} {_safe(detail[:60])}")
@@ -971,12 +977,24 @@ class MiniAgentTUI(App):
                 if isinstance(msg, _TokenMsg):
                     self._handle_token(msg, chat)
                 elif isinstance(msg, _ToolStart):
+                    if msg.turn_id != self._turn_id:
+                        continue
                     self._flush_buf()
-                    self._in_thinking = False
+                    if self._in_thinking:
+                        # Close thinking box before opening tool box
+                        remaining = self._thinking_buf[self._thinking_flush_pos:].strip()
+                        if remaining:
+                            self._box_line(chat, f"[dim]{_safe(remaining)}[/]", f"dim {t.thinking}")
+                        self._box_close(chat, f"dim {t.thinking}")
+                        self._in_thinking = False
+                        self._thinking_buf = ""
+                        self._thinking_flush_pos = 0
                     self._close_agent_box()
                     self._active_tool = msg.summary.split("(")[0].strip() if "(" in msg.summary else msg.summary[:20]
                     self._box_open(tools_log, _safe(f"[tool] {msg.summary}"), t.yellow)
                 elif isinstance(msg, _ToolEnd):
+                    if msg.turn_id != self._turn_id:
+                        continue
                     symbol = "✓" if msg.ok else "✗"
                     color = t.green if msg.ok else t.red
                     detail = _safe(msg.detail)
@@ -985,6 +1003,8 @@ class MiniAgentTUI(App):
                     self._box_close(tools_log, color, f"{symbol} {detail}")
                     self._active_tool = ""
                 elif isinstance(msg, _ToolOutput):
+                    if msg.turn_id != self._turn_id:
+                        continue
                     pass  # Tool start/end already summarize; suppress raw output clutter
                 elif isinstance(msg, _Error):
                     self._close_agent_box()
@@ -1022,28 +1042,6 @@ class MiniAgentTUI(App):
             except Exception:
                 pass
             self._agent_box_open = False
-
-    def _hide_agent_tree(self) -> None:
-        """Auto-hide the agent tree after all agents complete (called by timer)."""
-        self._tree_hide_timer = None
-        try:
-            tree = self.query_one("#agent-tree", Tree)
-            if not hasattr(self, "_tree_node_map"):
-                tree.styles.display = "none"
-                return
-            def _any_running(n):
-                if str(n.label).startswith("[RUN]"):
-                    return True
-                for c in n.children:
-                    if _any_running(c):
-                        return True
-                return False
-            if not _any_running(tree.root):
-                tree.clear()
-                self._tree_node_map.clear()
-                tree.styles.display = "none"
-        except Exception:
-            pass
 
     def _handle_token(self, msg: _TokenMsg, log) -> None:
         """Process a single token: route to thinking or content buffer.
