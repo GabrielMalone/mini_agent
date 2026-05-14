@@ -65,6 +65,10 @@ def run_sub_agent(
     from tools.schema import TOOLS
     from prompt import build_system_prompt
 
+    # Thread-local agent ID for file reservation enforcement
+    from tools.file_ops import _current_agent_id as _agent_tl
+    _agent_tl.task_id = task_id
+
     # --- build messages for sub-agent ---
     messages: list[dict] = [
         {"role": "system", "content": _SUB_AGENT_SYSTEM_PROMPT},
