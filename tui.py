@@ -858,12 +858,6 @@ class MiniAgentTUI(App):
                         self._sub_colors[task_id] = ac
                         # Agent name in top border
                         rlog.border_title = f"{color} Agent {self._sub_count} ({task_id[:8]}...)"
-                        # Dynamic font: cap normal, scale down when many agents
-                        max_h = max(4, 12 - (self._sub_count - 1) * 2)
-                        rlog.max_lines = max_h
-                        # Redistribute max_lines across existing panes
-                        for _tid, _rlog in self._sub_panes.items():
-                            _rlog.max_lines = max(4, 12 - (self._sub_count - 1) * 2)
                         self._write_to_log(rlog, f"[{ac}]Agent {self._sub_count}  ({task_id})[/]")
                         sap.mount(rlog)
                         self._sub_panes[task_id] = rlog
