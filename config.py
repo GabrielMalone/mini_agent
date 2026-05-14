@@ -31,6 +31,15 @@ DEFAULT_MAX_TOKENS   = 800_000
 DEFAULT_SUB_AGENT_MAX_TURNS = 25
 DEFAULT_EXA_API_KEY  = ""  # set via EXA_API_KEY env var or .mini_agent.toml
 
+# Truncation / timeout / connection-pool constants
+TREE_TRUNCATION_LINES   = 60   # max lines in workspace tree before truncating
+STATE_TAIL_LINES        = 50   # last N lines of STATE.txt shown on startup
+GIT_LOG_TIMEOUT         = 5    # seconds to wait for git log
+HTTP_CONNECT_TIMEOUT    = 30   # seconds to establish HTTP connection
+HTTP_READ_TIMEOUT       = 120  # seconds to read HTTP response
+HTTP_POOL_CONNECTIONS   = 2    # max connections per host
+HTTP_POOL_MAXSIZE       = 4    # max total pool size
+
 
 # ---------------------------------------------------------------------------
 # MCP server config
@@ -77,7 +86,7 @@ class AgentConfig:
     sub_agent_max_turns: int = DEFAULT_SUB_AGENT_MAX_TURNS
     exa_api_key: str = DEFAULT_EXA_API_KEY
     approve_write_ops: bool = False
-    unrestricted: bool = True
+    unrestricted: bool = False
     mcp_servers: list[McpServerConfig] = field(default_factory=list)
 
     # ------------------------------------------------------------------
@@ -252,7 +261,7 @@ def build_startup_context(workspace: str) -> str:
             if fname.startswith("."):
                 continue
             tree_lines.append(f"{indent}  [f] {fname}")
-        if len(tree_lines) > 60:
+        if len(tree_lines) > TREE_TRUNCATION_LINES:
             tree_lines.append(f"{indent}  ... (truncated)")
             break
     parts.append("```\n" + "\n".join(tree_lines) + "\n```")
@@ -265,8 +274,8 @@ def build_startup_context(workspace: str) -> str:
                 state_content = f.read()
             # Only include last ~50 lines to keep it brief
             state_lines = state_content.split("\n")
-            if len(state_lines) > 50:
-                state_content = "\n".join(state_lines[-50:])
+            if len(state_lines) > STATE_TAIL_LINES:
+                state_content = "\n".join(state_lines[-STATE_TAIL_LINES:])
                 parts.append("\n## Latest STATE.txt (last 50 lines)\n" + state_content)
             else:
                 parts.append("\n## STATE.txt\n" + state_content)
@@ -276,7 +285,7 @@ def build_startup_context(workspace: str) -> str:
     # 3. Recent git log (last 5 commits, if this is a git repo)
     try:
         r = _sp.run(["git", "-C", workspace, "log", "--oneline", "-5"],
-                    capture_output=True, text=True, timeout=5)
+                    capture_output=True, text=True, timeout=GIT_LOG_TIMEOUT)
         if r.returncode == 0 and r.stdout.strip():
             parts.append("\n## Recent git log\n```\n" + r.stdout.rstrip() + "\n```")
     except Exception:
@@ -345,10 +354,10 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
     session = _requests.Session()
     # Set default timeout (connect, read) for every request.
     import functools
-    session.request = functools.partial(session.request, timeout=(30, 120))
+    session.request = functools.partial(session.request, timeout=(HTTP_CONNECT_TIMEOUT, HTTP_READ_TIMEOUT))
     # Limit connection pool to avoid resource waste on long-running sessions.
     session.mount("https://", _requests.adapters.HTTPAdapter(
-        pool_connections=2, pool_maxsize=4))
+        pool_connections=HTTP_POOL_CONNECTIONS, pool_maxsize=HTTP_POOL_MAXSIZE))
 
     # Ensure the session is closed on normal interpreter shutdown.
     import atexit

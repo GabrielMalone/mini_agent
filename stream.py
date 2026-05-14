@@ -9,6 +9,7 @@ Resilient to connection drops — returns partial results instead of crashing.
 
 import json
 import sys
+from collections.abc import Callable
 
 import requests
 
@@ -19,7 +20,7 @@ THINKING_START = "\n[thinking] "
 THINKING_END = "\n[/thinking]"
 
 
-def _parse_stream(response: requests.Response, on_token: callable = None, on_tool_ready: callable = None) -> dict:
+def _parse_stream(response: requests.Response, on_token: Callable[[str], None] | None = None, on_tool_ready: Callable[[dict], None] | None = None) -> dict:
     """Parse an SSE streamed response, printing text as it arrives.
 
     Accumulates both text content and tool_calls from deltas.  Tool call

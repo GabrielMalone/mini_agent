@@ -65,10 +65,7 @@ def _request_with_retry(
                 if cancel_event is not None and cancel_event.wait(delay):
                     return None  # cancelled during wait
             else:
-                raise RuntimeError(
-                    f"Exhausted {_MAX_RETRIES + 1} retries on {r.status_code}. "
-                    f"Last response: {r.text[:500]}"
-                ) from None
+                return r  # exhausted retries — return last response (caller checks r.ok)
         except requests.RequestException as exc:
             last_exc = exc
             if attempt < _MAX_RETRIES:

@@ -188,8 +188,8 @@ class TestRetryableStatusCodes(unittest.TestCase):
 class TestExhaustedRetries(unittest.TestCase):
     """Tests for exhausted retry behaviour."""
 
-    def test_exhausted_on_status_code_raises(self):
-        """All retries exhausted on a retryable status code raises RuntimeError."""
+    def test_exhausted_on_status_code_returns_response(self):
+        """All retries exhausted on a retryable status code returns the response (structured, not exception)."""
         retry_resp = MagicMock()
         retry_resp.ok = False
         retry_resp.status_code = 503
@@ -198,14 +198,15 @@ class TestExhaustedRetries(unittest.TestCase):
         mock_post = MagicMock(return_value=retry_resp)
         with patch.object(requests, "post", mock_post):
             with patch("time.sleep"):
-                with self.assertRaises(RuntimeError) as ctx:
-                    _request_with_retry(
-                        requests,
-                        "http://api.example.com",
-                        json={"messages": []},
-                    )
-        self.assertIn("Exhausted", str(ctx.exception))
-        self.assertIn("503", str(ctx.exception))
+                result = _request_with_retry(
+                    requests,
+                    "http://api.example.com",
+                    json={"messages": []},
+                )
+        # Returns the last response — caller checks result.ok
+        self.assertIs(result, retry_resp)
+        self.assertFalse(result.ok)
+        self.assertEqual(result.status_code, 503)
         # _MAX_RETRIES + 1 = 4 attempts
         self.assertEqual(mock_post.call_count, _MAX_RETRIES + 1)
 

@@ -4,11 +4,11 @@ llm.py — DeepSeek API communication for mini_agent.
 
 Provides ``call_deepseek()`` for non-streaming and streaming API
 requests, ``run_agent_turn()`` orchestrator, circuit breaker,
-tool piping (Kahns algorithm), and turn-summary persistence.
+tool piping (Kahn's algorithm), and turn-summary persistence.
 Retry logic lives in ``retry.py``; SSE parsing in ``stream.py``.
-requests with automatic retry on transient failures, and ``_parse_stream()``
-for SSE parsing with tool-call accumulation and connection-drop resilience.
 """
+
+from __future__ import annotations
 
 import json
 import os
@@ -17,6 +17,7 @@ import sys
 import threading
 from collections import Counter, deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Any, Callable
 
 import requests
 
@@ -30,7 +31,27 @@ from memory import _total_tokens
 from safety import ReadSafetyGate, WriteSafetyGate
 from interject import poll_interjections
 
-# Thinking-mode delimiters sent through the on_token stream
+
+# ---------------------------------------------------------------------------
+# Shared truncation / utility functions (reusable by sub_agent.py)
+# ---------------------------------------------------------------------------
+
+def truncate_content(content: str, max_len: int = 300) -> str:
+    """Truncate a string to *max_len* chars, appending '…' if truncated."""
+    if len(content) <= max_len:
+        return content
+    return content[:max_len] + "…"
+
+
+def format_tool_detail(result: "ToolResult", max_len: int = 300) -> str:
+    """Format a ToolResult's content for display, truncated to *max_len*."""
+    from tools import ToolResult as TR
+    detail = result.content[:max_len]
+    if len(result.content) > max_len:
+        detail += "…"
+    return detail
+
+
 # ---------------------------------------------------------------------------
 # API call
 # ---------------------------------------------------------------------------
@@ -63,11 +84,11 @@ def _clean_message(msg: dict, index: int) -> dict:
 def call_deepseek(
     messages: list[dict],
     config: AgentConfig,
-    on_token: callable = None,
+    on_token: Callable[[str], Any] | None = None,
     session: requests.Session | None = None,
-    on_tool_ready: callable = None,
+    on_tool_ready: Callable[[dict], Any] | None = None,
     cancel_event: threading.Event | None = None,
-) -> dict:
+) -> dict | None:
     """Send messages to DeepSeek, return the assistant message dict.
 
     DeepSeek thinking mode requires ``reasoning_content`` to be passed back
@@ -133,11 +154,12 @@ def call_deepseek(
         return r.json()["choices"][0]["message"]
 
 
+# ---------------------------------------------------------------------------
 # Circuit breaker — guards against repeated identical tool calls
 # ---------------------------------------------------------------------------
 
-_CIRCUIT_WINDOW = 6       # lookback window size
-_CIRCUIT_THRESHOLD = 3    # trip after this many identical calls in the window
+_CIRCUIT_WINDOW: int = 6       # lookback window size
+_CIRCUIT_THRESHOLD: int = 3    # trip after this many identical calls in the window
 
 
 def _tool_call_key(tc: dict) -> str:
@@ -180,10 +202,11 @@ def _check_circuit(recent_keys: list[str]) -> str | None:
 def _save_turn_summary(
     turn: int,
     msg: dict,
-    deferred_results: list,
+    deferred_results: list[tuple[dict, "ToolResult"]],
     messages: list[dict],
 ) -> None:
     """Save a concise summary of this turn for later recall via recall_turn()."""
+    from tools import ToolResult as TR
 
     parts: list[str] = []
     content = msg.get("content", "")
@@ -198,11 +221,10 @@ def _save_turn_summary(
         ok = "✓" if result.success else "✗"
         summary = result.content[:150].replace("\n", " ")
         if len(result.content) > 150:
-            summary += "\u2026"
+            summary += "…"
         parts.append(f"  Result: {ok} {summary}")
     _TOOL_CONTEXT._turn_history[turn] = "\n".join(parts)
     # Cap to last 200 entries to prevent unbounded memory growth
-    # Track _min_turn with an incrementing counter (O(1)) instead of sorted(keys)[0]
     if not hasattr(_TOOL_CONTEXT, '_min_turn'):
         _TOOL_CONTEXT._min_turn = 0
     if len(_TOOL_CONTEXT._turn_history) > 200:
@@ -213,45 +235,33 @@ def _save_turn_summary(
         _TOOL_CONTEXT._min_turn = oldest + 1
 
 
-def run_agent_turn(
+# Module-level flags for one-time context injections
+_scratchpad_injected: bool = False
+_git_diff_injected: bool = False
+
+
+def _inject_context(
     messages: list[dict],
-    config: AgentConfig,
-    write_gate: WriteSafetyGate,
-    read_gate: ReadSafetyGate,
     *,
-    on_token: callable = None,
-    on_tool_start: callable = None,
-    on_tool_end: callable = None,
-    on_tool_output: callable = None,
-    approve_callback: callable = None,
-    cancel_event: threading.Event = None,
-    max_turns: int = 100,
-    session=None,
-    memory_store=None,
-) -> dict | None:
-    """Run one full agent turn — possibly multiple API calls if tools are used.
+    turn_count: int,
+    memory_store: Any = None,
+    read_gate: ReadSafetyGate | None = None,
+    recent_tool_keys: list[str] | None = None,
+    cancel_event: threading.Event | None = None,
+) -> None:
+    """Inject all context messages for the current turn.
 
-    Calls the LLM, executes any tool calls, feeds results back, and repeats
-    until the model returns a plain text response or the turn is cancelled.
-
-    *messages* is mutated in place: assistant and tool messages are appended.
-    Returns the final assistant message dict, or ``None`` if cancelled.
-    *max_turns* is a hard safety cap (default 100).
-
-    If *memory_store* is provided, the scratchpad is read from it and
-    injected as context at the start of the turn.
-
-    Multiple independent tool calls are executed in parallel via a thread pool.
-    If *session* is a requests.Session, it is reused across API calls for
-    connection reuse. If None, the requests module is used (test-friendly).
-
-    Every 5 tool-using turns, a system reminder is injected to keep the agent
-    on track and let it decide whether to continue or wrap up.
+    Handles:
+      - One-time: scratchpad, git diff (first turn), orchestration context
+      - Every turn: user interjections, token budget, progress reminders,
+        modified-files checkpoint, circuit breaker, scratchpad nudge,
+        active plan status.
     """
-    PROGRESS_INTERVAL = 5
+    global _scratchpad_injected, _git_diff_injected
 
-    # --- inject scratchpad context ---
-    if memory_store is not None:
+    # --- one-time: scratchpad context ---
+    if not _scratchpad_injected and memory_store is not None:
+        _scratchpad_injected = True
         scratchpad = memory_store.get_scratchpad()
         if scratchpad.strip():
             messages.append({
@@ -263,14 +273,9 @@ def run_agent_turn(
                 "_transient": True,
             })
 
-    total_usage: dict[str, int] = {}
-    turn_count = 0
-    recent_tool_keys: list[str] = []  # circuit breaker tracking
-    tool_keys_lock = threading.Lock()  # guards recent_tool_keys in parallel path
-
-    # --- inject recent git changes (first turn only) ---
-    _git_diff_injected = False
-    if memory_store is not None:
+    # --- one-time: git diff ---
+    if not _git_diff_injected and memory_store is not None and read_gate is not None:
+        _git_diff_injected = True
         try:
             result = _sp.run(
                 ["git", "diff", "--stat", "HEAD~1"],
@@ -287,15 +292,11 @@ def run_agent_turn(
                     ),
                     "_transient": True,
                 })
-            _git_diff_injected = True
         except Exception as exc:
-            print(f"  \u26a0 git diff failed: {exc}", file=sys.stderr, flush=True)
+            print(f"  ⚠ git diff failed: {exc}", file=sys.stderr, flush=True)
 
-    # --- inject sub-agent orchestration context ---
-    # At turn start, surface running agents and newly-completed results
-    # so the parent agent knows to check on its sub-agents.
+    # --- one-time: sub-agent orchestration context ---
     try:
-        from tools import _TOOL_CONTEXT
         runtime = _TOOL_CONTEXT.__dict__.get("_agent_runtime")
         if runtime is not None:
             running_ids = runtime.get_running_ids()
@@ -327,110 +328,344 @@ def run_agent_turn(
                         "_transient": True,
                     })
     except Exception as exc:
-        print(f"  \u26a0 orchestration context failed: {exc}", file=sys.stderr, flush=True)
+        print(f"  ⚠ orchestration context failed: {exc}", file=sys.stderr, flush=True)
+
+    # --- per-turn: poll user interjections ---
+    interjections = poll_interjections()
+    for msg_text in interjections:
+        messages.append({
+            "role": "user",
+            "content": "[User interjection while you were working] " + msg_text,
+        })
+
+    # --- per-turn: token budget awareness ---
+    from memory import _inject_token_budget
+    _inject_token_budget(messages, turn_count)
+
+    # --- per-turn: periodic progress check ---
+    PROGRESS_INTERVAL = 5
+    if turn_count > 1 and turn_count % PROGRESS_INTERVAL == 0:
+        reminder = (
+            f"You have been working for {turn_count} turns. "
+            "Briefly assess your progress: are you making headway, "
+            "stuck in a loop, or done? If you can wrap up now, "
+            "give the final answer. If you truly need more turns, "
+            "continue — but be specific about what remains."
+        )
+        messages.append({"role": "user", "content": reminder, "_transient": True})
+
+    # --- per-turn: modified-files checkpoint (turn 2 only) ---
+    if turn_count == 2 and hasattr(read_gate, "workspace_root") if read_gate else False:
+        if _MODIFIED_FILES:
+            mod_list = "\n".join(f"  - {f}" for f in sorted(_MODIFIED_FILES))
+            test_hint = ""
+            for mf in _MODIFIED_FILES:
+                base = os.path.basename(mf)
+                if base.startswith("test_") and base.endswith(".py"):
+                    test_hint += f"\n  Relevant test: {base}"
+                elif base.endswith(".py") and not base.startswith("test_"):
+                    candidate = f"test_{base}"
+                    dp = os.path.dirname(mf)
+                    test_path = os.path.join(dp, candidate) if dp else candidate
+                    if os.path.isfile(os.path.join(read_gate.workspace_root, test_path)):
+                        test_hint += f"\n  Relevant test: {test_path}"
+            ckpt = (
+                f"Files modified this session:\n{mod_list}\n"
+                f"Running `verify` or `run_tests`{test_hint if test_hint else ''} "
+                f"after changes is recommended."
+            )
+            messages.append({"role": "user", "content": ckpt, "_transient": True})
+
+    # --- per-turn: circuit breaker check ---
+    if recent_tool_keys is not None:
+        warning = _check_circuit(recent_tool_keys)
+        if warning:
+            messages.append({"role": "user", "content": warning, "_transient": True})
+
+    # --- per-turn: scratchpad staleness nudge ---
+    if turn_count > 4 and (turn_count - 1) % 3 == 0:
+        if not _TOOL_CONTEXT._scratchpad_updated:
+            messages.append({
+                "role": "user",
+                "content": (
+                    "⚠️ Your scratchpad hasn't been updated in several turns. "
+                    "Consider using write_scratchpad to capture your current "
+                    "plan, progress, and decisions before continuing."
+                ),
+                "_transient": True,
+            })
+        _TOOL_CONTEXT._scratchpad_updated = False
+
+    # --- per-turn: active plan status ---
+    plan_steps = _TOOL_CONTEXT._plan_steps
+    if plan_steps:
+        plan_done = _TOOL_CONTEXT._plan_done
+        lines = [f"Active plan ({len(plan_done)}/{len(plan_steps)} done):"]
+        for i, s in enumerate(plan_steps, 1):
+            mark = "✓" if (i - 1) in plan_done else "○"
+            lines.append(f"  [{mark}] {i}. {s}")
+        lines.append("Use plan_status to mark steps complete as you finish them.")
+        messages.append({
+            "role": "user",
+            "content": "\n".join(lines),
+            "_transient": True,
+        })
+
+
+def _execute_tools(
+    remaining: list[dict],
+    messages: list[dict],
+    write_gate: WriteSafetyGate,
+    read_gate: ReadSafetyGate,
+    *,
+    on_tool_start: Callable[..., Any] | None = None,
+    on_tool_end: Callable[..., Any] | None = None,
+    on_tool_output: Callable[..., Any] | None = None,
+    approve_callback: Callable[..., Any] | None = None,
+    cancel_event: threading.Event | None = None,
+    recent_tool_keys: list[str] | None = None,
+    tool_keys_lock: threading.Lock | None = None,
+) -> list[tuple[dict, "ToolResult"]]:
+    """Execute a list of tool calls, respecting _pipe dependencies.
+
+    Uses Kahn's algorithm for topological sort when _pipe deps are present.
+    Independent tools run in parallel via ThreadPoolExecutor.
+    Returns a list of (tool_call_dict, ToolResult) tuples.
+    """
+    from tools import ToolResult as TR
+    import json as _json
+
+    # --- Tool piping: extract _pipe deps from remaining tools ---
+    pipe_deps: dict[int, tuple[int, str]] = {}  # target_idx -> (source_idx, param)
+    pipe_results: dict[int, "ToolResult"] = {}   # idx -> result (for substitution)
+    for i, tc in enumerate(remaining):
+        raw = tc["function"].get("arguments", "{}")
+        try:
+            ad = _json.loads(raw) if isinstance(raw, str) else dict(raw)
+        except Exception:
+            continue
+        pipe_cfg = ad.pop("_pipe", None)
+        if isinstance(pipe_cfg, dict) and "from" in pipe_cfg:
+            pipe_deps[i] = (int(pipe_cfg["from"]), pipe_cfg.get("into", ""))
+        tc["function"]["arguments"] = _json.dumps(ad)
+
+    def _apply_pipe(tc: dict, i: int,
+                    pipe_deps: dict, pipe_results: dict, _json: Any) -> None:
+        """Substitute piped result into tc's arguments in-place."""
+        if i not in pipe_deps:
+            return
+        src_idx, into_param = pipe_deps[i]
+        src_result = pipe_results.get(src_idx)
+        if src_result is None:
+            return
+        args_dict = _json.loads(tc["function"]["arguments"])
+        if not into_param:
+            for k, v in args_dict.items():
+                if isinstance(v, str):
+                    into_param = k
+                    break
+        if into_param and into_param in args_dict:
+            args_dict[into_param] = src_result.content.strip()
+            tc["function"]["arguments"] = _json.dumps(args_dict)
+
+    # No piping — simple parallel or sequential execution
+    if not pipe_deps:
+        if len(remaining) == 1:
+            tc = remaining[0]
+            if cancel_event is not None and cancel_event.is_set():
+                return []
+            if on_tool_start is not None:
+                on_tool_start(tool_summary(tc))
+            result = execute_tool(tc, write_gate, read_gate,
+                                  on_output=on_tool_output,
+                                  approve_callback=approve_callback)
+            _append_tool_result(messages, tc, result, on_tool_end,
+                                recent_keys=recent_tool_keys,
+                                lock=tool_keys_lock)
+            return [(tc, result)]
+
+        if on_tool_start is not None:
+            for tc in remaining:
+                on_tool_start(tool_summary(tc), True)
+
+        def _run_tool(tc: dict) -> tuple[dict, "ToolResult"]:
+            return tc, execute_tool(tc, write_gate, read_gate,
+                                    on_output=on_tool_output,
+                                    approve_callback=approve_callback)
+
+        parallel_results: list[tuple] = []
+        with ThreadPoolExecutor(max_workers=len(remaining)) as pool:
+            futures = {pool.submit(_run_tool, tc): tc for tc in remaining}
+            for future in as_completed(futures):
+                if cancel_event is not None and cancel_event.is_set():
+                    pool.shutdown(wait=False, cancel_futures=True)
+                    return parallel_results
+                tc, result = future.result()
+                _append_tool_result(messages, tc, result, on_tool_end,
+                                    recent_keys=recent_tool_keys,
+                                    lock=tool_keys_lock)
+                parallel_results.append((tc, result))
+        return parallel_results
+
+    # --- Piping: topological sort into execution groups ---
+    import collections
+    children: dict[int, list[int]] = {i: [] for i in range(len(remaining))}
+    indeg: dict[int, int] = {i: 0 for i in range(len(remaining))}
+    for tgt, (src, _) in pipe_deps.items():
+        children.setdefault(src, []).append(tgt)
+        indeg[tgt] = indeg.get(tgt, 0) + 1
+
+    queue = collections.deque([i for i in range(len(remaining)) if indeg[i] == 0])
+    groups: list[list[int]] = []
+    seen = 0
+    while queue:
+        group = list(queue)
+        groups.append(group)
+        queue.clear()
+        for node in group:
+            seen += 1
+            for child in children.get(node, []):
+                indeg[child] -= 1
+                if indeg[child] == 0:
+                    queue.append(child)
+
+    if seen != len(remaining):
+        # Cycle detected — fall back to sequential execution
+        if on_tool_start is not None:
+            for tc in remaining:
+                on_tool_start(tool_summary(tc))
+        for i, tc in enumerate(remaining):
+            if cancel_event is not None and cancel_event.is_set():
+                break
+            result = execute_tool(tc, write_gate, read_gate,
+                                  on_output=on_tool_output,
+                                  approve_callback=approve_callback)
+            pipe_results[i] = result
+            _append_tool_result(messages, tc, result, on_tool_end,
+                                recent_keys=recent_tool_keys)
+        return []
+
+    # Execute groups in order (parallel within group, sequential across groups)
+    all_results: list[tuple] = []
+    for group in groups:
+        if on_tool_start is not None:
+            for i in group:
+                on_tool_start(tool_summary(remaining[i]),
+                              parallel=len(group) > 1)
+
+        if len(group) == 1:
+            i = group[0]
+            tc = remaining[i]
+            _apply_pipe(tc, i, pipe_deps, pipe_results, _json)
+            if cancel_event is not None and cancel_event.is_set():
+                break
+            result = execute_tool(tc, write_gate, read_gate,
+                                  on_output=on_tool_output,
+                                  approve_callback=approve_callback)
+            pipe_results[i] = result
+            _append_tool_result(messages, tc, result, on_tool_end,
+                                recent_keys=recent_tool_keys)
+            all_results.append((tc, result))
+        else:
+            results_lock = threading.Lock()
+
+            def _run_piped(i: int) -> tuple[int, dict, "ToolResult"]:
+                tc = remaining[i]
+                _apply_pipe(tc, i, pipe_deps, pipe_results, _json)
+                return i, tc, execute_tool(tc, write_gate, read_gate,
+                                           on_output=on_tool_output,
+                                           approve_callback=approve_callback)
+
+            with ThreadPoolExecutor(max_workers=len(group)) as pool:
+                futures = {pool.submit(_run_piped, i): i for i in group}
+                for future in as_completed(futures):
+                    if cancel_event is not None and cancel_event.is_set():
+                        pool.shutdown(wait=False, cancel_futures=True)
+                        break
+                    i, tc, result = future.result()
+                    with results_lock:
+                        pipe_results[i] = result
+                    _append_tool_result(messages, tc, result, on_tool_end,
+                                        recent_keys=recent_tool_keys)
+                    all_results.append((tc, result))
+
+    return all_results
+
+
+def run_agent_turn(
+    messages: list[dict],
+    config: AgentConfig,
+    write_gate: WriteSafetyGate,
+    read_gate: ReadSafetyGate,
+    *,
+    on_token: Callable[[str], Any] | None = None,
+    on_tool_start: Callable[..., Any] | None = None,
+    on_tool_end: Callable[..., Any] | None = None,
+    on_tool_output: Callable[..., Any] | None = None,
+    approve_callback: Callable[..., Any] | None = None,
+    cancel_event: threading.Event | None = None,
+    max_turns: int = 100,
+    session: requests.Session | None = None,
+    memory_store: Any = None,
+) -> dict | None:
+    """Run one full agent turn — possibly multiple API calls if tools are used.
+
+    Calls the LLM, executes any tool calls, feeds results back, and repeats
+    until the model returns a plain text response or the turn is cancelled.
+
+    *messages* is mutated in place: assistant and tool messages are appended.
+    Returns the final assistant message dict, or ``None`` if cancelled.
+    *max_turns* is a hard safety cap (default 100).
+
+    If *memory_store* is provided, the scratchpad is read from it and
+    injected as context at the start of the turn.
+
+    Multiple independent tool calls are executed in parallel via a thread pool.
+    If *session* is a requests.Session, it is reused across API calls for
+    connection reuse. If None, the requests module is used (test-friendly).
+
+    Every 5 tool-using turns, a system reminder is injected to keep the agent
+    on track and let it decide whether to continue or wrap up.
+    """
+    global _scratchpad_injected, _git_diff_injected
+    _scratchpad_injected = False
+    _git_diff_injected = False
+
+    # Clear the incremental message-cleaning cache so it doesn't grow unbounded
+    _clean_messages_cache.clear()
+
+    total_usage: dict[str, int] = {}
+    turn_count: int = 0
+    recent_tool_keys: list[str] = []  # circuit breaker tracking
+    tool_keys_lock: threading.Lock = threading.Lock()
 
     _original_session = session  # track whether we own the session for cleanup
     if session is None:
         session = requests  # test-friendly: mockable via patch("llm.requests.post")
     clear_tool_cache()
+
     try:
         for _ in range(max_turns):
             turn_count += 1
             if cancel_event is not None and cancel_event.is_set():
                 return None
 
-            # --- poll user interjections ---
-            interjections = poll_interjections()
-            for msg_text in interjections:
-                messages.append({
-                    "role": "user",
-                    "content": (
-                        "[User interjection while you were working] " + msg_text
-                    ),
-                })
-
-            # Token budget awareness — inject context usage at turn start
-            from memory import _inject_token_budget
-            _inject_token_budget(messages, turn_count)
-
-            # Periodic progress check — inject a system reminder
-            if turn_count > 1 and turn_count % PROGRESS_INTERVAL == 0:
-                reminder = (
-                    f"You have been working for {turn_count} turns. "
-                    "Briefly assess your progress: are you making headway, "
-                    "stuck in a loop, or done? If you can wrap up now, "
-                    "give the final answer. If you truly need more turns, "
-                    "continue — but be specific about what remains."
-                )
-                messages.append({"role": "user", "content": reminder, "_transient": True})
-
-            # Pre-turn checkpoint — remind agent of files modified and tests to run
-            if turn_count == 2 and hasattr(read_gate, "workspace_root"):
-                if _MODIFIED_FILES:
-                    mod_list = "\n".join(f"  - {f}" for f in sorted(_MODIFIED_FILES))
-                    test_hint = ""
-                    for mf in _MODIFIED_FILES:
-                        base = os.path.basename(mf)
-                        if base.startswith("test_") and base.endswith(".py"):
-                            test_hint += f"\n  Relevant test: {base}"
-                        elif base.endswith(".py") and not base.startswith("test_"):
-                            candidate = f"test_{base}"
-                            dp = os.path.dirname(mf)
-                            test_path = os.path.join(dp, candidate) if dp else candidate
-                            if os.path.isfile(os.path.join(read_gate.workspace_root, test_path)):
-                                test_hint += f"\n  Relevant test: {test_path}"
-                    ckpt = (
-                        f"Files modified this session:\n{mod_list}\n"
-                        f"Running `verify` or `run_tests`{test_hint if test_hint else ''} "
-                        f"after changes is recommended."
-                    )
-                    messages.append({"role": "user", "content": ckpt, "_transient": True})
-
-            # Circuit breaker check — inject warning if identical tool calls repeat
-            warning = _check_circuit(recent_tool_keys)
-            if warning:
-                messages.append({"role": "user", "content": warning, "_transient": True})
-
-            # Scratchpad staleness nudge — warn if not updated in several turns
-            if turn_count > 4 and (turn_count - 1) % 3 == 0:
-                if not _TOOL_CONTEXT._scratchpad_updated:
-                    messages.append({
-                        "role": "user",
-                        "content": (
-                            "⚠️ Your scratchpad hasn't been updated in several turns. "
-                            "Consider using write_scratchpad to capture your current "
-                            "plan, progress, and decisions before continuing."
-                        ),
-                        "_transient": True,
-                    })
-                _TOOL_CONTEXT._scratchpad_updated = False
-
-            # Inject active plan status at turn start
-            plan_steps = _TOOL_CONTEXT._plan_steps
-            if plan_steps:
-                plan_done = _TOOL_CONTEXT._plan_done
-                lines = [f"Active plan ({len(plan_done)}/{len(plan_steps)} done):"]
-                for i, s in enumerate(plan_steps, 1):
-                    mark = "✓" if (i - 1) in plan_done else "○"
-                    lines.append(f"  [{mark}] {i}. {s}")
-                lines.append("Use plan_status to mark steps complete as you finish them.")
-                messages.append({
-                    "role": "user",
-                    "content": "\n".join(lines),
-                    "_transient": True,
-                })
+            # --- inject all context for this turn ---
+            _inject_context(
+                messages,
+                turn_count=turn_count,
+                memory_store=memory_store,
+                read_gate=read_gate,
+                recent_tool_keys=recent_tool_keys,
+                cancel_event=cancel_event,
+            )
 
             # Collect tools executed incrementally during the stream.
-            # Tool results MUST be appended AFTER the assistant message (which
-            # contains tool_calls), not before — otherwise DeepSeek returns 400
-            # ("Messages with role 'tool' must be a response to a preceding
-            # message with 'tool_calls'").
             executed_tool_indices: set[int] = set()
             deferred_stream_results: list[tuple] = []  # (tc, result)
 
             def _on_tool_ready(tc: dict) -> None:
                 """Execute a tool immediately when its args form valid JSON."""
-                # The parser tags each fired tool with its index
                 idx = tc.pop("_index", -1)
                 if idx in executed_tool_indices:
                     return
@@ -442,19 +677,14 @@ def run_agent_turn(
                 result = execute_tool(tc, write_gate, read_gate,
                                       on_output=on_tool_output,
                                       approve_callback=approve_callback)
-                # Defer message append — assistant msg with tool_calls must
-                # be inserted first to satisfy API message ordering rules.
                 deferred_stream_results.append((tc, result))
-                # Still fire the end callback immediately for UI updates
-                detail = result.content[:300]
-                if len(result.content) > 300:
-                    detail += "…"
+                detail = format_tool_detail(result, max_len=300)
                 if on_tool_end is not None:
                     on_tool_end(result.success, detail)
 
             msg = call_deepseek(messages, config, on_token=on_token,
-                               session=session, on_tool_ready=_on_tool_ready,
-                               cancel_event=cancel_event)
+                                session=session, on_tool_ready=_on_tool_ready,
+                                cancel_event=cancel_event)
 
             if cancel_event is not None and cancel_event.is_set():
                 return None
@@ -483,18 +713,12 @@ def run_agent_turn(
                 _save_turn_summary(turn_count, msg, [], messages)
                 return msg
 
-            # Keep ALL tool_calls on the assistant message for valid API
-            # ordering.  Deferred results are flushed right after this, and
-            # remaining tools execute next, so every tool_call gets a result.
             raw_tool_calls = msg["tool_calls"]
             remaining = [
                 tc for i, tc in enumerate(raw_tool_calls)
                 if i not in executed_tool_indices
             ]
-            # Do NOT filter tool_calls on the assistant — keep them all intact
-            # so deferred tool results have a preceding tool_calls reference.
-            # Flush deferred tool results after the assistant message
-            # (which keeps ALL tool_calls for valid API ordering).
+
             if not remaining:
                 messages.append(msg)
                 for tc, result in deferred_stream_results:
@@ -513,170 +737,21 @@ def run_agent_turn(
                                     recent_keys=recent_tool_keys,
                                     lock=tool_keys_lock)
 
-            # --- Tool piping: extract _pipe deps from remaining tools ---
-            # _pipe format: {"from": <source_index_in_remaining>, "into": "<param_name>"}
-            # Source index is relative to `remaining` list.
-            import json as _json
-            pipe_deps: dict[int, tuple[int, str]] = {}  # target_idx -> (source_idx, param)
-            pipe_results: dict[int, "ToolResult"] = {}   # idx -> result (for substitution)
-            for i, tc in enumerate(remaining):
-                raw = tc["function"].get("arguments", "{}")
-                try:
-                    ad = _json.loads(raw) if isinstance(raw, str) else dict(raw)
-                except Exception:
-                    continue
-                pipe_cfg = ad.pop("_pipe", None)
-                if isinstance(pipe_cfg, dict) and "from" in pipe_cfg:
-                    pipe_deps[i] = (int(pipe_cfg["from"]), pipe_cfg.get("into", ""))
-                tc["function"]["arguments"] = _json.dumps(ad)
-
-            def _apply_pipe(tc, i, pipe_deps, pipe_results, _json):
-                """Substitute piped result into tc's arguments in-place."""
-                if i not in pipe_deps:
-                    return
-                src_idx, into_param = pipe_deps[i]
-                src_result = pipe_results.get(src_idx)
-                if src_result is None:
-                    return
-                args_dict = _json.loads(tc["function"]["arguments"])
-                if not into_param:
-                    for k, v in args_dict.items():
-                        if isinstance(v, str):
-                            into_param = k
-                            break
-                if into_param and into_param in args_dict:
-                    args_dict[into_param] = src_result.content.strip()
-                    tc["function"]["arguments"] = _json.dumps(args_dict)
-
-            if not pipe_deps:
-                # No piping — original behavior
-                if len(remaining) == 1:
-                    tc = remaining[0]
-                    if cancel_event is not None and cancel_event.is_set():
-                        return None
-                    if on_tool_start is not None:
-                        on_tool_start(tool_summary(tc))
-                    result = execute_tool(tc, write_gate, read_gate,
-                                          on_output=on_tool_output,
-                                          approve_callback=approve_callback)
-                    _append_tool_result(messages, tc, result, on_tool_end,
-                                        recent_keys=recent_tool_keys,
-                                        lock=tool_keys_lock)
-                    _save_turn_summary(turn_count, msg, [(tc, result)], messages)
-                    continue
-
-                if on_tool_start is not None:
-                    for tc in remaining:
-                        on_tool_start(tool_summary(tc), True)
-
-                def _run_tool(tc):
-                    return tc, execute_tool(tc, write_gate, read_gate,
-                                            on_output=on_tool_output,
-                                            approve_callback=approve_callback)
-
-                parallel_results: list[tuple] = []
-                with ThreadPoolExecutor(max_workers=len(remaining)) as pool:
-                    futures = {pool.submit(_run_tool, tc): tc for tc in remaining}
-                    for future in as_completed(futures):
-                        if cancel_event is not None and cancel_event.is_set():
-                            pool.shutdown(wait=False, cancel_futures=True)
-                            return None
-                        tc, result = future.result()
-                        _append_tool_result(messages, tc, result, on_tool_end,
-                                            recent_keys=recent_tool_keys,
-                                            lock=tool_keys_lock)
-                        parallel_results.append((tc, result))
-
-                _save_turn_summary(turn_count, msg, parallel_results, messages)
-                continue
-
-            # --- Piping: topological sort into execution groups ---
-            # Build adjacency: source_idx -> [target indices that depend on it]
-            children: dict[int, list[int]] = {i: [] for i in range(len(remaining))}
-            indeg: dict[int, int] = {i: 0 for i in range(len(remaining))}
-            for tgt, (src, _) in pipe_deps.items():
-                children.setdefault(src, []).append(tgt)
-                indeg[tgt] = indeg.get(tgt, 0) + 1
-
-            # Kahn's algorithm → ordered groups
-            import collections
-            queue = collections.deque([i for i in range(len(remaining)) if indeg[i] == 0])
-            groups: list[list[int]] = []
-            seen = 0
-            while queue:
-                group = list(queue)
-                groups.append(group)
-                queue.clear()
-                for node in group:
-                    seen += 1
-                    for child in children.get(node, []):
-                        indeg[child] -= 1
-                        if indeg[child] == 0:
-                            queue.append(child)
-
-            if seen != len(remaining):
-                # Cycle detected — fall back to sequential execution
-                if on_tool_start is not None:
-                    for tc in remaining:
-                        on_tool_start(tool_summary(tc))
-                for i, tc in enumerate(remaining):
-                    if cancel_event is not None and cancel_event.is_set():
-                        break
-                    result = execute_tool(tc, write_gate, read_gate,
-                                          on_output=on_tool_output,
-                                          approve_callback=approve_callback)
-                    pipe_results[i] = result
-                    _append_tool_result(messages, tc, result, on_tool_end,
-                                        recent_keys=recent_tool_keys)
-                _save_turn_summary(turn_count, msg, [], messages)
-                continue
-
-            # Execute groups in order (parallel within group, sequential across groups)
-            all_results: list[tuple] = []
-            for group in groups:
-                if on_tool_start is not None:
-                    for i in group:
-                        on_tool_start(tool_summary(remaining[i]),
-                                      parallel=len(group) > 1)
-
-                if len(group) == 1:
-                    i = group[0]
-                    tc = remaining[i]
-                    # Substitute pipe input if this tool has a dep
-                    _apply_pipe(tc, i, pipe_deps, pipe_results, _json)
-                    if cancel_event is not None and cancel_event.is_set():
-                        break
-                    result = execute_tool(tc, write_gate, read_gate,
-                                          on_output=on_tool_output,
-                                          approve_callback=approve_callback)
-                    pipe_results[i] = result
-                    _append_tool_result(messages, tc, result, on_tool_end,
-                                        recent_keys=recent_tool_keys)
-                    all_results.append((tc, result))
-                else:
-                    results_lock = threading.Lock()
-
-                    def _run_piped(i):
-                        tc = remaining[i]
-                        _apply_pipe(tc, i, pipe_deps, pipe_results, _json)
-                        return i, tc, execute_tool(tc, write_gate, read_gate,
-                                                   on_output=on_tool_output,
-                                                   approve_callback=approve_callback)
-
-                    with ThreadPoolExecutor(max_workers=len(group)) as pool:
-                        futures = {pool.submit(_run_piped, i): i for i in group}
-                        for future in as_completed(futures):
-                            if cancel_event is not None and cancel_event.is_set():
-                                pool.shutdown(wait=False, cancel_futures=True)
-                                break
-                            i, tc, result = future.result()
-                            with results_lock:
-                                pipe_results[i] = result
-                            _append_tool_result(messages, tc, result, on_tool_end,
-                                                recent_keys=recent_tool_keys)
-                            all_results.append((tc, result))
-
-            _save_turn_summary(turn_count, msg, all_results, messages)
+            # Execute remaining tools with piping support
+            tool_results = _execute_tools(
+                remaining,
+                messages,
+                write_gate,
+                read_gate,
+                on_tool_start=on_tool_start,
+                on_tool_end=on_tool_end,
+                on_tool_output=on_tool_output,
+                approve_callback=approve_callback,
+                cancel_event=cancel_event,
+                recent_tool_keys=recent_tool_keys,
+                tool_keys_lock=tool_keys_lock,
+            )
+            _save_turn_summary(turn_count, msg, tool_results, messages)
 
         # Exceeded max_turns — return last assistant message (still has tool_calls)
         if 'msg' not in locals():
@@ -696,15 +771,14 @@ def run_agent_turn(
 def _append_tool_result(
     messages: list[dict],
     tc: dict,
-    result,
-    on_tool_end: callable = None,
+    result: "ToolResult",
+    on_tool_end: Callable[..., Any] | None = None,
     recent_keys: list[str] | None = None,
     lock: threading.Lock | None = None,
 ) -> None:
     """Append a tool result message and fire the on_tool_end callback."""
-    detail = result.content[:300]
-    if len(result.content) > 300:
-        detail += "…"
+    from tools import ToolResult as TR
+    detail = format_tool_detail(result, max_len=300)
     if on_tool_end is not None:
         on_tool_end(result.success, detail)
     messages.append({
