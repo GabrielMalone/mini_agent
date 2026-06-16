@@ -242,7 +242,7 @@ html, body {
    --------------------------------------------------------------------------- */
 .header {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
   padding: 4px 16px 8px 70px;  /* left padding clears macOS traffic lights */
   user-select: none;
   -webkit-app-region: drag;
@@ -258,6 +258,59 @@ html, body {
 }
 #header-model.clickable:hover {
   opacity: 0.75;
+}
+
+/* ---------------------------------------------------------------------------
+  Status bar metrics (Reasonix-style: balance, cost, cache, subagents)
+  --------------------------------------------------------------------------- */
+.statusbar-metrics {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  -webkit-app-region: no-drag;
+  margin-right: 12px;
+}
+.statusbar-metric {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--dim);
+  white-space: nowrap;
+}
+.statusbar-metric-icon {
+  font-size: 11px;
+  color: var(--dim);
+  opacity: 0.7;
+}
+.statusbar-metric-value {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.statusbar-balance .statusbar-metric-value {
+  color: var(--green);
+  font-weight: 600;
+}
+.statusbar-cache .statusbar-metric-value {
+  color: var(--accent);
+}
+.statusbar-turn-cost .statusbar-metric-value {
+  color: var(--accent);
+}
+.statusbar-session-cost .statusbar-metric-value {
+  color: var(--accent);
+}
+.statusbar-subagents {
+  color: var(--yellow);
+}
+.statusbar-subagents .statusbar-metric-icon {
+  color: var(--yellow);
+  font-weight: 700;
+}
+.statusbar-subagents .statusbar-metric-value {
+  color: var(--yellow);
+  font-weight: 700;
 }
 
 /* ---------------------------------------------------------------------------
@@ -726,6 +779,15 @@ html, body {
 
 .status-bar span { margin-right: 12px; }
 
+/* Status bar -- Reasonix-style metrics in bottom bar */
+#turn-cost {
+  color: var(--accent);
+}
+#subagent-count {
+  color: var(--yellow);
+  font-weight: 700;
+}
+
 /* Status bar SVG icons */
 .status-bar svg.icon-sm {
   vertical-align: -2px;
@@ -742,18 +804,11 @@ html, body {
   gap: 3px;
   margin-right: 4px;
   opacity: 0.85;
-}
-.bot-dot {
-  font-size: 10px;
-  padding: 1px 5px;
-  border-radius: 3px;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: opacity 0.15s;
   user-select: none;
 }
-.bot-dot:hover { opacity: 0.8; }
-.bot-on  { background: #22c55e33; color: #22c55e; }
-.bot-off { background: #ef444433; color: #ef4444; }
+.discord-label:hover { opacity: 1; }
 
 /* Bot action menu (popup on bot dot click) */
 .bot-menu {
@@ -775,16 +830,37 @@ html, body {
   border-bottom: 1px solid var(--border, #2a2d3f);
   margin-bottom: 4px;
   color: #5865F2;
+  font-weight: 600;
+  font-size: 11px;
 }
 .bot-menu-name {
   font-weight: 600;
   color: var(--text, #c8ccd4);
 }
+/* Per-bot row in the unified Discord dropdown */
+.bot-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 10px;
+  gap: 8px;
+}
+.bot-menu-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.bot-menu-item-name {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text, #c8ccd4);
+}
 .bot-menu-status {
-  margin-left: auto;
   font-size: 9px;
   padding: 1px 5px;
   border-radius: 3px;
+  width: fit-content;
 }
 .bot-menu-on  { background: #22c55e33; color: #22c55e; }
 .bot-menu-off { background: #ef444433; color: #ef4444; }

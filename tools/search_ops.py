@@ -344,7 +344,12 @@ _SEM_MODEL_NAME = "isuruwijesiri/all-MiniLM-L6-v2-code-search-512"
 
 
 def _sem_save_cache(root: str) -> None:
-    """Persist semantic store to disk (JSON metadata + numpy .npz embeddings)."""
+    """Persist semantic store to disk (JSON metadata + numpy .npz embeddings).
+
+    Each chunk's embedding is stored under a per-chunk key
+    (``fpath::chunk_index``) so lazy-encoded chunks (None embeddings)
+    are simply omitted from the .npz.  On load, missing keys become None.
+    """
     global _SEM_CACHE_DIRTY
     import numpy as np
     try:
@@ -354,13 +359,14 @@ def _sem_save_cache(root: str) -> None:
             if not chunks:
                 meta[fpath] = {"mtime": mtime, "chunks": []}
                 continue
-            chunk_meta = []
-            arrs = []
-            for start, end, text, emb in chunks:
-                chunk_meta.append([start, end, text])
-                arrs.append(np.asarray(emb))
+            chunk_meta: list[list] = []
+            for i, (start, end, text, emb) in enumerate(chunks):
+                # has_emb=1 if embedding present, 0 if lazy (None)
+                has_emb = 1 if emb is not None else 0
+                chunk_meta.append([start, end, text, has_emb])
+                if emb is not None:
+                    emb_arrays[f"{fpath}::{i}"] = np.asarray(emb)
             meta[fpath] = {"mtime": mtime, "chunks": chunk_meta}
-            emb_arrays[fpath] = np.stack(arrs) if arrs else np.zeros((0, 384))
 
         meta_path = os.path.join(root, _SEM_META_FILE)
         npz_path = os.path.join(root, _SEM_CACHE_FILE)
@@ -403,6 +409,8 @@ def _sem_load_cache(root: str) -> bool:
             return False
         stale = False
         for fpath, info in meta.items():
+            if fpath == "_model":
+                continue
             if not os.path.exists(fpath):
                 stale = True
                 break
@@ -420,24 +428,44 @@ def _sem_load_cache(root: str) -> bool:
         store: dict[str, tuple[float, list]] = {}
         max_mtime = 0.0
         for fpath, info in meta.items():
+            if fpath == "_model":
+                continue
             mtime = info["mtime"]
             max_mtime = max(max_mtime, mtime)
             chunk_meta = info.get("chunks", [])
             if not chunk_meta:
                 store[fpath] = (mtime, [])
                 continue
-            # Reconstruct chunks with loaded embeddings
-            emb_arr = data[fpath]  # shape (N, 384)
-            if emb_arr.shape[0] != len(chunk_meta):
-                return False  # mismatch
-            chunks = []
-            for i, (start, end, text) in enumerate(chunk_meta):
-                emb = emb_arr[i]
-                # Re-normalize (should already be normalized, but belt-and-suspenders)
-                norm = np.linalg.norm(emb)
-                if norm > 0:
-                    emb = emb / norm
-                chunks.append((start, end, text, emb))
+            # Reconstruct chunks with loaded embeddings.
+            # New format: chunk = [start, end, text, has_emb], embeddings
+            # stored per-chunk as f"{fpath}::{i}".
+            # Old format (backward compat): chunk = [start, end, text],
+            # embeddings stored as single array under fpath.
+            chunks: list = []
+            first_entry = chunk_meta[0]
+            is_new_format = isinstance(first_entry, list) and len(first_entry) == 4
+            if is_new_format:
+                for i, (start, end, text, has_emb) in enumerate(chunk_meta):
+                    key = f"{fpath}::{i}"
+                    if has_emb and key in data:
+                        emb = data[key]
+                        norm = np.linalg.norm(emb)
+                        if norm > 0:
+                            emb = emb / norm
+                    else:
+                        emb = None  # lazy: not yet encoded
+                    chunks.append((start, end, text, emb))
+            else:
+                # Old format: single array for all chunks
+                emb_arr = data[fpath]
+                if emb_arr.shape[0] != len(chunk_meta):
+                    return False  # mismatch
+                for i, (start, end, text) in enumerate(chunk_meta):
+                    emb = emb_arr[i]
+                    norm = np.linalg.norm(emb)
+                    if norm > 0:
+                        emb = emb / norm
+                    chunks.append((start, end, text, emb))
             store[fpath] = (mtime, chunks)
 
         _SEMANTIC_STORE = store
@@ -852,24 +880,13 @@ def _sem_index(root: str) -> None:
                     _BM25_DOCUMENTS.pop(fpath, None)
                 continue
             texts = [t for _, _, t in chunks]
-            try:
-                model = _sem_get_model()
-                embeddings = model.encode(texts, show_progress_bar=False)
-            except (TimeoutError, OSError) as e:
-                import sys
-                print(f"  WARNING: semantic index: model load failed ({e}), "
-                      "skipping semantic encoding. Symbol/reference index still built.",
-                      file=sys.stderr, flush=True)
-                _SEMANTIC_STORE[fpath] = (mtime, [])
-                continue
-            # Pre-normalize embeddings for fast cosine via dot product later
-            norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
-            embeddings = embeddings / (norms + 1e-9)
+            # Lazy encoding: store None for embeddings; they'll be
+            # encoded on-demand during search (BM25 pre-filtered).
             _SEMANTIC_STORE[fpath] = (mtime, list(zip(
                 [s for s, e, _ in chunks],
                 [e for s, e, _ in chunks],
                 texts,
-                list(embeddings),
+                [None] * len(chunks),  # lazy: encode at search time
             )))
 
             # LRU eviction: if we exceed the cap, drop the oldest entry
@@ -933,44 +950,77 @@ def _semantic_search(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> To
     root = safety_result.resolved_path
     _sem_index(root)
 
-    # --- Vector search ---
-    try:
-        model = _sem_get_model()
-        query_emb = model.encode([query], show_progress_bar=False)[0]
-    except (TimeoutError, OSError) as e:
-        # Fall back to BM25-only if vector search unavailable
-        return _semantic_search_bm25_only(query)
-    query_emb = query_emb / (np.linalg.norm(query_emb) + 1e-9)
-
-    # Collect all chunk embeddings and metadata
-    metas: list[tuple[str, int, int, str]] = []
-    embs: list[np.ndarray] = []
-    chunk_ids: list[str] = []  # for BM25 fusion
+    # --- Collect chunk metadata (embeddings may be None — lazy) ---
+    metas: list[tuple[str, int, int, str, Any]] = []
+    chunk_ids: list[str] = []
     for fpath, value in _SEMANTIC_STORE.items():
         _, chunks = value
         for i, (start, end, text, emb) in enumerate(chunks):
-            metas.append((fpath, start, end, text))
-            embs.append(emb)
+            metas.append((fpath, start, end, text, emb))
             chunk_ids.append(f"{fpath}::{i}")
 
-    if not embs:
+    if not metas:
         return ToolResult(success=True, content="No indexed files found. Try search_files instead.")
 
-    # Vector scores
-    emb_matrix = np.asarray(embs)
-    vec_scores = np.dot(emb_matrix, query_emb)  # cosine similarities
+    N = len(chunk_ids)
 
-    # --- BM25 keyword search ---
+    # --- BM25 first (fast, no model needed) ---
     query_tokens = _tokenize(query)
-    bm25_scores = np.zeros(len(chunk_ids))
+    bm25_scores = np.zeros(N)
     if query_tokens and _BM25_INDEX:
         for i, cid in enumerate(chunk_ids):
             bm25_scores[i] = _bm25_score(query_tokens, cid)
 
+    # --- BM25 pre-filter: encode only top-K candidates on-demand ---
+    LAZY_K = min(50, N)
+    if np.max(bm25_scores) > 0:
+        top_bm25 = np.argsort(bm25_scores)[-LAZY_K:][::-1]
+    else:
+        top_bm25 = np.arange(N)[-LAZY_K:]
+
+    # Encode query embedding
+    try:
+        model = _sem_get_model()
+        query_emb = model.encode([query], show_progress_bar=False)[0]
+    except (TimeoutError, OSError):
+        return _semantic_search_bm25_only(query)
+    query_emb = query_emb / (np.linalg.norm(query_emb) + 1e-9)
+
+    # Lazy-encode candidates with missing embeddings, cache back to store
+    global _SEM_CACHE_DIRTY
+    texts_to_encode: list[str] = []
+    encode_indices: list[int] = []
+    for idx in top_bm25:
+        _, _, _, _, emb = metas[idx]
+        if emb is None:
+            texts_to_encode.append(metas[idx][3])  # text is index 3
+            encode_indices.append(idx)
+
+    if texts_to_encode:
+        new_embs = model.encode(texts_to_encode, show_progress_bar=False)
+        norms = np.linalg.norm(new_embs, axis=1, keepdims=True)
+        new_embs = new_embs / (norms + 1e-9)
+        for j, idx in enumerate(encode_indices):
+            fpath, start, end, text, _ = metas[idx]
+            metas[idx] = (fpath, start, end, text, new_embs[j])
+            # Cache back to _SEMANTIC_STORE
+            _, chunks = _SEMANTIC_STORE[fpath]
+            for ci, (cs, ce, ct, cemb) in enumerate(chunks):
+                if f"{fpath}::{ci}" == chunk_ids[idx]:
+                    chunks[ci] = (cs, ce, ct, new_embs[j])
+                    _SEM_CACHE_DIRTY = True
+                    break
+
+    # --- Vector scores (only for pre-filter candidates with embeddings) ---
+    vec_scores = np.zeros(N)
+    for idx in top_bm25:
+        _, _, _, _, emb = metas[idx]
+        if emb is not None:
+            vec_scores[idx] = float(np.dot(emb, query_emb))
+
     # --- Weighted Reciprocal Rank Fusion ---
-    # Get rankings from each method (descending by score)
-    vec_rank = np.zeros(len(chunk_ids), dtype=np.float64)
-    bm25_rank = np.zeros(len(chunk_ids), dtype=np.float64)
+    vec_rank = np.zeros(N, dtype=np.float64)
+    bm25_rank = np.zeros(N, dtype=np.float64)
 
     if np.max(vec_scores) > 0:
         vec_order = np.argsort(vec_scores)[::-1]
@@ -982,26 +1032,23 @@ def _semantic_search(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> To
         for rank, idx in enumerate(bm25_order):
             bm25_rank[idx] = 1.0 / (60 + rank + 1)
 
-    # Determine query type for adaptive weighting
-    # - Identifier queries (single symbol, camelCase/snake_case) → BM25 heavy
-    # - Natural language queries (multi-word, stopwords present) → semantic heavy
-    # - Default: semantic 0.6 / BM25 0.4 (research: embedding beats BM25 on nDCG)
+    # Adaptive weighting (same as before)
     _is_identifier = bool(
-        query and not any(c in query for c in " \t\n")  # single token
-        and not query[0].isupper()  # not a sentence
+        query and not any(c in query for c in " \t\n")
+        and not query[0].isupper()
     )
     _has_nl_markers = bool(
         query and (" " in query or len(query.split()) >= 2)
     )
     if _is_identifier and not _has_nl_markers:
-        w_sem, w_bm25 = 0.3, 0.7  # identifier → favor exact keyword match
+        w_sem, w_bm25 = 0.3, 0.7
     elif _has_nl_markers:
-        w_sem, w_bm25 = 0.7, 0.3  # natural language → favor semantic understanding
+        w_sem, w_bm25 = 0.7, 0.3
     else:
-        w_sem, w_bm25 = 0.6, 0.4  # balanced default (semantic-favored per benchmarks)
+        w_sem, w_bm25 = 0.6, 0.4
 
     fused = w_sem * vec_rank + w_bm25 * bm25_rank
-    top_indices = np.argsort(fused)[-15:][::-1]  # top 15
+    top_indices = np.argsort(fused)[-15:][::-1]
 
     # Filter to only results with any signal
     top: list[tuple[float, str, int, int, str, float, float]] = []
@@ -1009,7 +1056,7 @@ def _semantic_search(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> To
         fscore = fused[idx]
         if fscore <= 0:
             continue
-        fpath, start, end, text = metas[idx]
+        fpath, start, end, text, _ = metas[idx]
         top.append((float(fscore), fpath, start, end, text,
                     float(vec_scores[idx]), float(bm25_scores[idx])))
 
@@ -1069,6 +1116,16 @@ def _semantic_search_summary(args: dict) -> str:
     if len(query) > 60:
         preview += "..."
     return f"semantic_search({preview})"
+
+
+# --- Start embedding model preload in background at import time ---
+# The model (~80MB) loads on a daemon thread so it's ready (or nearly
+# ready) before the first semantic_search call.  Falls back to
+# synchronous load if preload hasn't finished yet.
+try:
+    _sem_preload()
+except Exception:
+    pass  # preload is best-effort; _sem_get_model() handles failures
 
 
 # ---------------------------------------------------------------------------

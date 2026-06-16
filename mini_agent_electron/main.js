@@ -205,19 +205,45 @@ function _startBot(script) {
   }
   const { spawn } = require('child_process');
   const wsPath = workspacePath || process.cwd();
-  const proc = spawn('python3', [script], {
+  const isWindows = process.platform === 'win32';
+  const venvPython = isWindows
+    ? path.join(__dirname, '..', 'venv', 'Scripts', 'python.exe')
+    : path.join(__dirname, '..', 'venv', 'bin', 'python3');
+  const pythonBin = fs.existsSync(venvPython) ? venvPython : (isWindows ? 'python' : 'python3');
+  // Diagnostic: log bot startup details
+  const envTokens = {};
+  for (const k of ['WORKSPACE_BOT_TOKEN','DISCORD_BOT_TOKEN','AGENT_WORKSPACE','MINI_AGENT_UI','DEEPSEEK_API_KEY']) {
+    envTokens[k] = process.env[k] ? `${process.env[k].slice(0,8)}...` : '(not set)';
+  }
+  console.log(`[bot] starting ${bot.name}: python=${pythonBin}, cwd=${wsPath}, tokens=${JSON.stringify(envTokens)}`);
+  const proc = spawn(pythonBin, ['-u', script], {
     cwd: wsPath,
     detached: true,
-    stdio: 'ignore',
+    windowsHide: true,  // prevent console window flash on Windows
+    stdio: ['ignore', 'pipe', 'pipe'],  // pipe stdout+stderr so errors are visible
     env: { ...process.env },
   });
+  // Collect stderr AND stdout for error diagnostics
+  let _stderr = '';
+  let _stdout = '';
+  proc.stdout.on('data', (chunk) => { _stdout += chunk.toString(); });
+  proc.stderr.on('data', (chunk) => { _stderr += chunk.toString(); });
   proc.on('error', (err) => {
     console.error(`[bot] ${bot.name} spawn error:`, err.message);
     delete _botProcesses[bot.name];
     _sendBotStatus(bot.name, false);
   });
   proc.on('exit', (code) => {
-    console.log(`[bot] ${bot.name} exited (code ${code})`);
+    if (code !== 0) {
+      const errText = (_stderr || _stdout).slice(0, 500).trim();
+      console.error(`[bot] ${bot.name} exited (code ${code})`, errText ? '|' : '', errText);
+      // Forward error to renderer so user sees it in the UI
+      const win = BrowserWindow.getAllWindows()[0];
+      if (win) win.webContents.send('backend:bot_status', { name: bot.name, label: bot.label, alive: false, error: errText });
+    } else {
+      console.log(`[bot] ${bot.name} exited (code ${code})`);
+      if (_stdout.trim()) console.log(`[bot] ${bot.name} stdout:`, _stdout.slice(0, 300).trim());
+    }
     delete _botProcesses[bot.name];
     _sendBotStatus(bot.name, false);
   });
@@ -259,6 +285,19 @@ function _startBotPolling() {
 
 function _stopBotPolling() {
   if (_botStatusTimer) { clearInterval(_botStatusTimer); _botStatusTimer = null; }
+}
+
+// Zebar status file: written on every title change so Zebar can read agent
+// running state instantly without waiting for GlazeWM to refresh its cache
+// (GlazeWM only refreshes window titles on focus-change events).
+const STATUS_FILE = path.join(HOMEDIR, '.glzr', 'zebar', 'mini_agent_status');
+
+function _writeAgentStatus(status) {
+  try {
+    const dir = path.dirname(STATUS_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(STATUS_FILE, status, 'utf-8');
+  } catch (_) { /* non-critical */ }
 }
 
 // Restart throttle: prevent infinite restart loops that spawn thousands of
@@ -567,15 +606,22 @@ function handlePythonMessage(msg) {
 
     case 'turn_complete':
       win.webContents.send('stream:turn_complete', data);
+      win.setTitle('\u25CB mini_agent');
+      _writeAgentStatus('idle');
       console.log('[main] Agent turn complete');
       break;
 
     case 'turn_start':
       win.webContents.send('backend:turn_start', data);
+      win.setTitle('\u25CF mini_agent [RUNNING]');
+      _writeAgentStatus('running');
+      console.log('[main] Agent turn started');
       break;
 
     case 'idle':
       win.webContents.send('backend:idle', data);
+      win.setTitle('\u25CB mini_agent');
+      _writeAgentStatus('idle');
       console.log('[main] Agent idle');
       break;
 
@@ -854,6 +900,15 @@ function createWindow() {
   // Diagnostic: log page load success/failure
   win.webContents.on('did-finish-load', () => {
     console.log('[main] renderer page loaded successfully');
+    // Force a title refresh after a short delay so that window managers
+    // (glazewm) pick up the window title even without a focus event.
+    // Without this, glazewm may report an empty/stale title until the
+    // window is focused, which breaks zebar agent detection.
+    setTimeout(() => {
+      if (win && !win.isDestroyed()) {
+        win.setTitle(win.getTitle());
+      }
+    }, 600);
   });
   win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
     console.error(`[main] renderer FAILED to load: ${errorDescription} (code ${errorCode}) URL: ${validatedURL}`);

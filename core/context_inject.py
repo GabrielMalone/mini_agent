@@ -6,6 +6,29 @@ Injects scratchpad, git diff, orchestration status, progress reminders,
 circuit breaker warnings, self-critique, and strategy hints into the
 message list before each LLM API call.
 
+ARCHITECTURE (Reasonix Pillar 1: Cache-First Loop)
+--------------------------------------------------
+Messages are partitioned into three zones:
+
+  ZONE 1: IMMUTABLE PREFIX (system + tool_specs)
+    - The system message at index 0 + tool specs are hashed once
+      at session start and never change.
+    - Any mutation here resets the fingerprint (core/prefix.py).
+
+  ZONE 2: APPEND-ONLY LOG (conversation turns)
+    - Assistant + tool messages grow monotonically.
+    - Never insert at index 0; never reorder.
+    - Pruned content is appended, not prepended.
+
+  ZONE 3: VOLATILE SCRATCH (transient context)
+    - Messages marked _transient are stripped before the API call
+      (api.py _clean_message) and never sent upstream.
+    - Injected items: scratchpad, git diff, progress reminders,
+      circuit breaker warnings, strategy hints, cache degradation
+      alerts.
+    - The volatile scratch lives OUTSIDE the cached prefix, so it
+      doesn't bloat or invalidate DeepSeek's prefix cache.
+
 Extracted from llm.py to keep the orchestrator focused on the main loop.
 """
 

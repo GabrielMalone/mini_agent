@@ -449,6 +449,20 @@ def _execute_tools(
 # Helpers for run_agent_turn
 # ---------------------------------------------------------------------------
 
+def _set_console_title(title: str) -> None:
+    """Set the console/terminal window title via ANSI escape.
+
+    Used by glazewm/zebar workspace detection to show when the agent is
+    actively processing a turn.  Has no effect on headless backends.
+    """
+    try:
+        import sys as _sys
+        # OSC 0 ; title BEL  — sets both window and icon title
+        _sys.stderr.write(f"\x1b]0;{title}\x07")
+        _sys.stderr.flush()
+    except Exception:
+        pass
+
 def _accumulate_usage(total: dict[str, int], msg: dict) -> dict[str, int]:
     """Merge ``_usage`` from *msg* into the running *total* dict."""
     usage: dict[str, int] = msg.get("_usage", {})
@@ -647,9 +661,9 @@ def run_agent_turn(
     agent on track and let it decide whether to continue or wrap up.
     """
     # One-time injection flags are reset in bootstrap.init_session() once per
-    # session, NOT here -- resetting them per turn would cause HANDOFF.md,
-    # STATE.txt, scratchpad, and git diff to be re-injected on every user
-    # message, wasting thousands of tokens.
+    # session, NOT here -- resetting them per turn would cause STATE.txt,
+    # scratchpad, and git diff to be re-injected on every user message,
+    # wasting thousands of tokens.
 
     # Store provider on context for subsystem access (system reminder interval, etc.)
     _TOOL_CONTEXT._provider = config.api_provider
@@ -659,6 +673,11 @@ def run_agent_turn(
     # message-cleaning cache in api.py survives across turns since the same
     # messages list is mutated. Clearing it every turn defeats the optimization.
     clear_tool_cache()
+
+    # --- Console title hint for glazewm/zebar workspace detection ---
+    # Set the terminal/console title so glazewm can detect when the agent is
+    # actively processing a turn (via the "[RUNNING]" marker in the title).
+    _set_console_title("mini_agent [RUNNING]")
 
     total_usage: dict[str, int] = {}
     turn_count: int = 0
@@ -720,7 +739,7 @@ def run_agent_turn(
                     messages.append({"role": "user", "content": recovery})
                     continue  # retry the turn loop
 
-                # Return the result directly -- no Flash->Pro handoff.
+                # Return the result directly.
                 if total_usage:
                     msg["_total_usage"] = total_usage
                 if turn_count > 1:
@@ -763,6 +782,13 @@ def run_agent_turn(
                 else:
                     _TOOL_CONTEXT._consecutive_read_only_turns += 1
 
+            # --- Pillar 3: Compaction at turn boundary (Reasonix cache-first loop) ---
+            # Truncate oversized tool results so subsequent turns don't drag
+            # 12KB through every future prompt.  All compaction is append-only
+            # to preserve the DeepSeek prefix cache.
+            from core.compaction import compact_tool_results_at_turn_end
+            compact_tool_results_at_turn_end(messages)
+
             if not continue_loop:
                 continue
 
@@ -779,6 +805,8 @@ def run_agent_turn(
             msg["_turn_count"] = turn_count
         return msg
     finally:
+        # Restore console title (glazewm detection marker)
+        _set_console_title("mini_agent")
         # Only close the session if we created it; caller-managed sessions
         # (passed via the session parameter) are the caller's responsibility.
         if session is not _original_session and hasattr(session, "close"):

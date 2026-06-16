@@ -1,63 +1,96 @@
-# Python packages for mini_agent
-# ------------------------------------------------
-# Install: pip install -r requirements.txt
-# Tested on Python 3.12, Windows 11
+# mini_agent — Python package dependencies
+# ================================================
+# Quick start (all platforms):
+#   pip install -r requirements.txt
+# Minimal (skip semantic search):
+#   pip install requests numpy tomli
+# Tested: Python 3.12 on Windows 11, macOS 15, Ubuntu 24.04
 
-# Core runtime
-requests>=2.20
-tomli>=2.0; python_version < "3.11"
+# --- Core runtime (always needed) ---
+requests>=2.20              # HTTP client (LLM API calls, web requests)
+numpy>=1.21                 # array ops (embeddings, knowledge graph, dedup)
+tomli>=2.0; python_version < "3.11"  # TOML config parser (stdlib tomllib on 3.11+)
 
-# Agent tools
-exa-py>=2.0              # Exa web search (optional, needs EXA_API_KEY)
-numpy>=1.21              # embedding similarity, semantic search
-sentence-transformers>=3.0  # semantic code search (~80MB model, downloads on first use)
-pyperclip                # clipboard access (macOS/Windows)
-textual>=1.0             # terminal UI
-prompt-toolkit>=3.0      # interactive input
-Pygments>=2.0            # syntax highlighting
-playwright>=1.40         # headless browser automation
-python-lsp-server>=1.14  # LSP support (pylsp)
-flake8>=7.0              # Python linting
+# --- Semantic search (~2 GB torch + ~80 MB model auto-downloaded on first use) ---
+sentence-transformers>=3.0  # pulls torch (CPU wheels available for all platforms)
 
-# Testing
-pytest>=9.0              # test runner
-pytest-timeout>=2.0      # prevents hanging tests (critical on Windows)
+# --- Web search ---
+exa-py>=2.0                 # Exa search (falls back to DuckDuckGo if EXA_API_KEY unset)
 
-# ------------------------------------------------
+# --- Testing ---
+pytest>=9.0
+pytest-timeout>=2.0         # prevents hanging tests (all platforms; especially Windows)
+
+# ================================================
+# Optional — uncomment what you need:
+# ================================================
+
+# --- Code parsing via tree-sitter (falls back to regex/AST if missing) ---
+# tree-sitter>=0.21
+# tree-sitter-python
+# tree-sitter-javascript
+
+# --- Browser automation (web skill, all platforms) ---
+# playwright>=1.40
+# (one-time setup: python -m playwright install chromium)
+
+# --- LSP support (lsp skill) ---
+# python-lsp-server>=1.14
+
+# --- Code linting (verify tool — run as subprocess) ---
+# ruff>=0.3                  # fast linter (preferred, all platforms)
+# pyflakes>=3.2              # dead-import detection (fallback, all platforms)
+# flake8>=7.0                # additional linting (all platforms)
+
+# --- Clipboard (all platforms) ---
+# pyperclip>=1.8             # macOS/Windows/Linux (Linux needs xclip/xsel)
+
+# --- Screenshots (desktop skill, all platforms) ---
+# mss>=9.0
+
+# --- macOS desktop automation ---
+# atomacos                   # macOS accessibility API
+# pyobjc-framework-Quartz
+# pyobjc-framework-AppKit
+# pyobjc-framework-Foundation
+# pyobjc-framework-CoreFoundation
+
+# --- Windows desktop automation ---
+# uiautomation               # Windows UI Automation API
+
+# --- Discord bot ---
+# discord.py>=2.3
+# elevenlabs>=1.0            # TTS voice synthesis (needs ELEVENLABS_API_KEY)
+
+# --- SWE-bench evaluation ---
+# datasets>=2.14
+# swebench
+# PyYAML>=6.0                # eval runner config parsing
+
+# ================================================
 # System dependencies (NOT pip-installable):
+# ================================================
 #
-#   ripgrep (rg) -- fast search, used by search_files
+#   ripgrep (rg) — fast code search
+#     macOS:   brew install ripgrep
+#     Linux:   apt install ripgrep / dnf install ripgrep
 #     Windows: winget install BurntSushi.ripgrep.MSVC
-#     Or download from: https://github.com/BurntSushi/ripgrep/releases
 #
-#   Node.js v22+ -- for Electron desktop app
-#     Windows: https://nodejs.org (LTS)
-#
-#   git -- for git tools, branch detection
+#   git — branch detection, git tools
+#     macOS:   brew install git
+#     Linux:   apt install git / dnf install git
 #     Windows: winget install Git.Git
-#     Or download from: https://git-scm.com/download/win
 #
-#   Python 3.10+ -- from python.org (NOT the Microsoft Store stub)
+#   Node.js v22+ — Electron desktop app (all platforms)
+#     https://nodejs.org (LTS installer or nvm)
+#
+#   Python 3.10+ — from python.org (NOT Microsoft Store on Windows)
+#     macOS:   brew install python@3.12
+#     Linux:   apt install python3.12 python3.12-venv
 #     Windows: https://www.python.org/downloads/
-#     Check "Add Python to PATH" during install.
-#     Disable App Execution Aliases for python.exe in Windows Settings.
+#     On Windows, check "Add Python to PATH" and disable App Execution Aliases.
 #
-# ------------------------------------------------
-# Optional: SWE-bench evaluation
-#   pip install datasets    # for loading SWE-bench from HuggingFace
-#   pip install swebench    # for official Docker-based evaluation harness
-
-# ------------------------------------------------
-# Windows notes:
-#
-# - sentence-transformers pulls PyTorch (~2GB for cpu-only).
-#   If you're on a metered connection, consider installing torch manually first:
-#     pip install torch --index-url https://download.pytorch.org/whl/cpu
-#
-# - Playwright browsers are installed separately (handled by setup.bat):
-#     python -m playwright install chromium
-#
-# - Windows Defender real-time scanning can block file reads.
-#   Add your workspace folder to exclusion list if you see timeouts:
-#     Settings > Privacy & Security > Virus & threat protection >
-#     Manage settings > Exclusions > Add folder
+#   FFmpeg — Discord bot voice
+#     macOS:   brew install ffmpeg
+#     Linux:   apt install ffmpeg / dnf install ffmpeg
+#     Windows: winget install Gyan.FFmpeg

@@ -27,6 +27,7 @@ from retry import _request_with_retry
 from stream import _parse_stream
 from tools.skills import get_active_tools
 from tools.semantic_cache import get_semantic_cache
+from core.repair import repair_tool_calls
 from logging_setup import log_api_error
 
 # ---------------------------------------------------------------------------
@@ -425,6 +426,13 @@ def call_llm(
         usage = body.get("usage", {})
         if usage:
             msg["_usage"] = usage
+
+    # --- Pillar 2: Tool-call repair (DeepSeek-specific) ---
+    # Repair malformed tool calls before returning to the orchestrator.
+    # Pass 1: scavenge from <thinking>, Pass 2: flatten nested params,
+    # Pass 3: repair truncated JSON, Pass 4: storm detection.
+    if msg.get("tool_calls"):
+        msg = repair_tool_calls(msg)
 
     # --- Cache hit monitoring ---
     # DeepSeek returns prompt_cache_hit_tokens / prompt_cache_miss_tokens in

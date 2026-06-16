@@ -969,7 +969,11 @@ class MemoryStore:
                 summary = _summarize_pruned(pruned)
                 if summary:
                     summary_msg = {"role": "user", "content": summary}
-                    kept.insert(0, summary_msg)
+                    # APPEND instead of insert(0) to preserve DeepSeek's
+                    # prefix cache.  The immutable system prefix stays at
+                    # index 0, so cache hits survive compaction.
+                    # (Reasonix Pillar 1: Cache-First Loop)
+                    kept.append(summary_msg)
                     self._token_count += _estimate_tokens(summary_msg)
                     self.last_prune_summary = summary
             self._prune_cooldown = _PRUNE_COOLDOWN
@@ -1115,7 +1119,8 @@ class MemoryStore:
                 summary = _summarize_pruned(pruned)
                 if summary:
                     summary_msg = {"role": "user", "content": summary}
-                    kept.insert(0, summary_msg)
+                    # APPEND instead of insert(0) to preserve DeepSeek prefix cache
+                    kept.append(summary_msg)
                     self.last_prune_summary = summary
 
             # Re-inject persisted project knowledge so key facts survive pruning
@@ -1125,7 +1130,7 @@ class MemoryStore:
                     f"- [{k['category']}] {k['summary']}"
                     for k in knowledge
                 )
-                kept.insert(0, {
+                kept.append({
                     "role": "user",
                     "content": f"[Project learnings from past sessions:\n{facts}]",
                 })

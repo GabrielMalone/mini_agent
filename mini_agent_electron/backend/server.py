@@ -66,6 +66,8 @@ from core.llm import run_agent_turn
 from stream import THINKING_START, THINKING_END
 from core.safety import ReadSafetyGate, WriteSafetyGate
 from core.prompt import build_system_prompt, build_startup_context, build_session_header
+from core.balance import fetch_balance
+from core.cost_tracking import SessionCost, format_cost_cny
 from api import clear_api_cache
 
 
@@ -239,6 +241,17 @@ class AgentRunner:
         self._pending_subagents: set[str] = set()
         self._auto_report_flag: bool = False
 
+        # Running sub-agent count for status bar display.
+        self._running_subagent_count: int = 0
+        self._total_subagents: int = 0
+
+        # Session cost tracking (Reasonix-style per-turn + cumulative).
+        self._session_cost = SessionCost()
+
+        # Balance — fetched once at startup, refreshed on demand.
+        self._balance: dict | None = None
+        self._fetch_balance_async()
+
         # Git status
         self._git_branch = ""
         self._git_dirty = False
@@ -247,13 +260,13 @@ class AgentRunner:
     # -- status ---------------------------------------------------------
 
     def send_status(self) -> None:
-        """Send current status to Electron."""
+        """Send current status to Electron (includes balance, cost, subagent count)."""
         # Derive session name from memory db path
         session_name = "default"
         db_path = getattr(self.memory, '_db_path', '')
         if db_path:
             import re
-            m = re.search(r'_session_(.+)\.db$', db_path)
+            m = re.search(r'_session_(.+)\\.db$', db_path)
             if m:
                 session_name = m.group(1)
         status = {
@@ -266,7 +279,60 @@ class AgentRunner:
             "git_dirty": self._git_dirty,
         }
         status["restored_count"] = max(0, len(self.messages) - 2)
+
+        # -- Reasonix-style status bar fields --
+        # Balance
+        if self._balance:
+            status["balance"] = self._balance
+
+        # Cost
+        sc = self._session_cost
+        status["session_cost"] = format_cost_cny(sc.total_cost)
+        status["session_turns"] = sc.turn_count
+        status["session_tokens"] = sc.total_prompt_tokens + sc.total_completion_tokens
+        status["cache_hit_rate"] = round(sc.cache_hit_rate * 100) if sc.cache_hit_rate is not None else None
+        if sc.last_turn:
+            status["turn_cost"] = format_cost_cny(sc.last_turn.total_cost)
+            status["turn_tokens"] = sc.last_turn.prompt_tokens + sc.last_turn.completion_tokens
+            last_rate = sc.last_cache_hit_rate
+            status["turn_cache_hit_rate"] = round(last_rate * 100) if last_rate is not None else None
+
+        # Subagent count
+        status["subagent_running"] = self._running_subagent_count
+        status["subagent_total"] = self._total_subagents
+
         send_msg(status)
+
+    def _fetch_balance_async(self) -> None:
+        """Fetch DeepSeek wallet balance in a background thread.
+
+        Does not block startup — the balance appears when the HTTP
+        call completes.  Results are stored in self._balance for
+        inclusion in the next status message.
+        """
+        def _fetch() -> None:
+            try:
+                b = fetch_balance(
+                    self.config.api_url,
+                    self.config.api_key,
+                    timeout=10,
+                )
+            except Exception:
+                b = None
+
+            if b is not None:
+                self._balance = {
+                    "available": b.available,
+                    "display": b.display,
+                    "currency": b.infos[0].currency if b.infos else "CNY",
+                }
+            else:
+                self._balance = None
+            # Push updated status so the UI gets the balance
+            self.send_status()
+
+        t = threading.Thread(target=_fetch, daemon=True, name="balance-fetch")
+        t.start()
 
     def _refresh_git_status(self) -> None:
         try:
@@ -359,18 +425,23 @@ class AgentRunner:
                 if event_type == "start":
                     task_id = data.get("task_id", "")
                     self._pending_subagents.add(task_id)
+                    self._running_subagent_count += 1
+                    self._total_subagents += 1
                     self._callbacks.on_subagent_start(
                         task_id, data.get("parent_id", ""),
                         data.get("name", ""), data.get("desc", ""))
+                    self.send_status()  # push updated sub-agent count to UI
                 elif event_type == "output":
                     self._callbacks.on_subagent_output(
                         data.get("task_id", ""), data.get("line", ""))
                 elif event_type == "end":
                     task_id = data.get("task_id", "")
                     self._pending_subagents.discard(task_id)
+                    self._running_subagent_count = max(0, self._running_subagent_count - 1)
                     self._callbacks.on_subagent_end(
                         task_id, data.get("ok", False),
                         data.get("content", ""))
+                    self.send_status()  # push updated sub-agent count to UI
                     # Auto-report: if all sub-agents from this turn
                     # have finished, queue a synthesis prompt so the
                     # orchestrator processes and reports their results.
@@ -424,7 +495,10 @@ class AgentRunner:
                 session=self.session,
             )
         except Exception as e:
-            # Safety: reset thinking flag so a stuck marker doesn't persist
+            # Safety: reset thinking flag and close any open thinking block
+            # so the renderer doesn't route subsequent tokens to the wrong panel.
+            if self._callbacks._in_thinking:
+                send_msg({"type": "thinking_end"})
             self._callbacks._in_thinking = False
             if not self._cancel_event.is_set():
                 send_msg({"type": "error", "message": str(e)})
@@ -452,6 +526,15 @@ class AgentRunner:
             usage = msg.get("_total_usage") or {}
             self._total_tokens += usage.get("total_tokens", 0)
 
+            # -- Reasonix-style cost tracking --
+            self._session_cost.record_turn(
+                model=self.config.model,
+                prompt_tokens=usage.get("prompt_tokens", 0),
+                completion_tokens=usage.get("completion_tokens", 0),
+                cache_hit_tokens=usage.get("prompt_cache_hit_tokens", 0),
+                cache_miss_tokens=usage.get("prompt_cache_miss_tokens", 0),
+            )
+
         # Persist
         self.messages = self.memory.save(self.messages)
 
@@ -463,11 +546,28 @@ class AgentRunner:
             send_msg({"type": "response", "lines": [summary]})
 
         # Notify Electron
+        sc = self._session_cost
+        turn_usage = {
+            "total_tokens": self._total_tokens,
+            "prompt_tokens": sc.last_turn.prompt_tokens if sc.last_turn else 0,
+            "completion_tokens": sc.last_turn.completion_tokens if sc.last_turn else 0,
+            "turn_cost": format_cost_cny(sc.last_turn.total_cost) if sc.last_turn else "-",
+            "session_cost": format_cost_cny(sc.total_cost),
+            "session_turns": sc.turn_count,
+            "cache_hit_rate": round(sc.cache_hit_rate * 100) if sc.cache_hit_rate is not None else None,
+            "subagent_running": self._running_subagent_count,
+            # Include current cached balance so the status bar updates immediately.
+            # The async re-fetch below will push the latest balance when it completes.
+            "balance": self._balance,
+        }
         send_msg({
             "type": "turn_complete",
-            "usage": {"total_tokens": self._total_tokens, "prompt_tokens": 0, "completion_tokens": 0},
+            "usage": turn_usage,
             "turn_count": self._total_turns,
         })
+
+        # Re-fetch balance after every turn so the wallet display stays current.
+        self._fetch_balance_async()
 
     # -- commands -------------------------------------------------------
 
@@ -487,15 +587,25 @@ class AgentRunner:
             self.memory.clear()
             self._total_turns = 0
             self._total_tokens = 0
+            self._session_cost = SessionCost()
+            self._total_subagents = 0
+            self._running_subagent_count = 0
             send_msg({"type": "response", "lines": ["--- conversation cleared ---"]})
             return
 
         if cmd == "/stats":
+            sc = self._session_cost
+            bal = ""
+            if self._balance and self._balance.get("available"):
+                bal = f", wallet: {self._balance['display']}"
             send_msg({
                 "type": "response",
                 "lines": [
-                    f"Session: {len(self.messages)} msgs, {self._total_turns} turns, "
-                    f"{self._total_tokens} tokens, {self.config.model}"
+                    f"Model: {self.config.model}  |  Session: {sc.turn_count} turns, "
+                    f"{sc.total_prompt_tokens + sc.total_completion_tokens} tokens, "
+                    f"cost: {format_cost_cny(sc.total_cost)}{bal}",
+                    f"Cache hit: {round(sc.cache_hit_rate * 100) if sc.cache_hit_rate is not None else 'N/A'}%  |  "
+                    f"Sub-agents: {self._total_subagents} total, {self._running_subagent_count} running",
                 ]
             })
             return

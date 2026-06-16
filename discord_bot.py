@@ -22,7 +22,17 @@ import threading
 from copy import deepcopy
 from typing import Any
 
-import discord
+try:
+    import discord
+except ModuleNotFoundError as e:
+    if __name__ == "__main__":
+        print(f"[discord_bot] FATAL: {e}")
+        print("[discord_bot] The 'discord' package is not installed.")
+        print("[discord_bot] Install it with: pip install discord.py")
+        sys.exit(1)
+    else:
+        # Let the importing module handle the missing dependency
+        raise
 
 # Ensure the mini_agent package is importable (this script lives in the
 # mini_agent root, but belt-and-suspenders).
@@ -43,6 +53,10 @@ from api import clear_api_cache
 DISCORD_MAX_MSG = 1900  # Discord limit is 2000; leave margin
 
 # Discord bot intents -- only what we need
+# NOTE: message_content, members, presences are PRIVILEGED intents.
+# They must be enabled in the Discord Developer Portal or the bot will
+# fail to connect. workspace_bot.py has retry logic to fall back to
+# non-privileged intents automatically.
 INTENTS = discord.Intents.default()
 INTENTS.message_content = True   # needed to read @mention content
 INTENTS.messages = True          # needed for on_message events

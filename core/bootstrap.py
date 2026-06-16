@@ -344,7 +344,9 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
         if pruned:
             summary = _summarize_pruned(pruned)
             if summary:
-                saved.insert(0, {"role": "user", "content": summary})
+                # APPEND instead of insert(0) to preserve DeepSeek prefix cache
+                # (Reasonix Pillar 1: Cache-First Loop)
+                saved.append({"role": "user", "content": summary})
                 memory.last_prune_summary = summary
     knowledge = memory.get_top_knowledge(limit=15) if memory else []
     core_memory = memory.get_core_memory() if memory else ""
@@ -352,8 +354,9 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
 
     startup_ctx = build_startup_context(workspace, knowledge=knowledge)
     session_header = build_session_header(config)
+    system_prompt = build_system_prompt(config)
     messages: list[dict] = [
-        {"role": "system", "content": build_system_prompt(config)},
+        {"role": "system", "content": system_prompt},
         {"role": "user", "content": session_header},
     ]
     if memory_snapshot:
@@ -361,6 +364,19 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
     messages.append({"role": "user", "content": startup_ctx})
     if saved:
         messages.extend(saved)
+
+    # --- Pillar 1: Establish immutable prefix fingerprint ---
+    # The system prompt + tool specs form the cacheable prefix.
+    # We hash this once and pin it for the entire session, so we can
+    # detect drift (e.g. tool specs changing mid-session would
+    # invalidate DeepSeek's prefix cache).
+    from core.prefix import get_session_prefix_cache
+    from tools.skills import get_active_tools
+    prefix_cache = get_session_prefix_cache()
+    prefix_cache.establish(
+        system=system_prompt,
+        tool_specs=get_active_tools(),
+    )
 
     # Reset one-time injection flags for this session (per-session, not per-turn).
     # These gates prevent HANDOFF.md, STATE.txt, scratchpad, and git diff from

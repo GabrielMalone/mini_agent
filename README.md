@@ -55,6 +55,13 @@ Or use Claude: `ANTHROPIC_API_KEY=sk-ant-...` or xAI: `XAI_API_KEY=xai-...`
 
 Keys can also be entered in the desktop app's settings panel (persisted to `~/.mini_agent_env`).
 
+## Linux
+
+See [LINUX_INSTALL.md](LINUX_INSTALL.md) for the comprehensive Linux setup guide
+(prerequisites, step-by-step manual install, troubleshooting Wayland, Electron deps, and more).
+
+Quick start: `bash setup.sh` → `cd mini_agent_electron && npm start`
+
 ## Windows
 
 See [WINDOWS_INSTALL.md](WINDOWS_INSTALL.md) for the comprehensive Windows 11 setup guide

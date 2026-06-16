@@ -133,9 +133,16 @@ function AppShell() {
   const [inputDisabled, setInputDisabled] = useState(false);
   const [thinkingBlocks, setThinkingBlocks] = useState([]);
   const [botStatus, setBotStatus] = useState({});
-  const [botMenuOpen, setBotMenuOpen] = useState(null); // null | 'mini-agent' | 'emotion-game'
+  const [botMenuOpen, setBotMenuOpen] = useState(false);
   const botMenuToggleRef = useRef(null);
   const [botMenuPos, setBotMenuPos] = useState(null);
+
+  // Reasonix-style status bar state
+  const [balanceDisplay, setBalanceDisplay] = useState(null);
+  const [sessionCost, setSessionCost] = useState('-');
+  const [turnCost, setTurnCost] = useState('-');
+  const [cacheHitRate, setCacheHitRate] = useState(null);
+  const [subagentRunning, setSubagentRunning] = useState(0);
 
   const inputRef = useRef(null);
   const thinkingLogRef = useRef(null);
@@ -263,7 +270,7 @@ function AppShell() {
       return;
     }
     const rect = botMenuToggleRef.current.getBoundingClientRect();
-    const menuW = 180;
+    const menuW = 200;
     let left = rect.left;
     if (left + menuW > window.innerWidth - 8) {
       left = Math.max(4, window.innerWidth - menuW - 8);
@@ -278,8 +285,8 @@ function AppShell() {
   useEffect(() => {
     if (!botMenuOpen) return;
     const close = (e) => {
-      if (!e.target.closest('.bot-menu') && !e.target.closest('.bot-dot')) {
-        setBotMenuOpen(null);
+      if (!e.target.closest('.bot-menu') && !e.target.closest('.discord-label')) {
+        setBotMenuOpen(false);
       }
     };
     document.addEventListener('click', close);
@@ -317,6 +324,12 @@ function AppShell() {
         setGitDirty(!!data.git_dirty);
       }
       if (data.restored_count != null) setRestoredCount(data.restored_count);
+      // Reasonix-style status bar fields
+      if (data.balance != null) setBalanceDisplay(data.balance);
+      if (data.session_cost != null) setSessionCost(data.session_cost);
+      if (data.turn_cost != null) setTurnCost(data.turn_cost);
+      if (data.cache_hit_rate != null) setCacheHitRate(data.cache_hit_rate);
+      if (data.subagent_running != null) setSubagentRunning(data.subagent_running);
       if (data.ready) {
         addToolLine({ text: 'backend ready', cls: 'dim' });
       }
@@ -429,23 +442,32 @@ function AppShell() {
     unsubs.push(api.on('stream:turn_complete', (data) => {
       clearTimeout(submitTimeoutRef.current);
       const agentText = chatStream.flush();
-      if (agentText) {
-        setChatLines((prev) => {
-          const updated = [...prev];
-          if (updated.length > 0 && updated[updated.length - 1].cls === 'msg-agent-pending') {
-            updated[updated.length - 1] = { id: updated[updated.length - 1].id, text: agentText, cls: 'msg-agent', markdown: true };
-          } else {
-            updated.push({ id: nextLineId(), text: agentText, cls: 'msg-agent', markdown: true });
-          }
-          return updated;
-        });
-        chatStream.reset();
-      }
+      // Always resolve the pending placeholder, even when the model
+      // produced no text content (e.g. reasoning-only + tool_calls).
+      // Otherwise the placeholder stays as an empty line in chat forever,
+      // and the user sees no output summary.
+      setChatLines((prev) => {
+        const updated = [...prev];
+        if (updated.length > 0 && updated[updated.length - 1].cls === 'msg-agent-pending') {
+          updated[updated.length - 1] = { id: updated[updated.length - 1].id, text: agentText || '', cls: 'msg-agent', markdown: true };
+        } else if (agentText) {
+          updated.push({ id: nextLineId(), text: agentText, cls: 'msg-agent', markdown: true });
+        }
+        return updated;
+      });
+      chatStream.reset();
       if (data.usage?.total_tokens) {
         const tok = data.usage.total_tokens;
         setTokenCountVal(tok >= 1000 ? `${(tok / 1000).toFixed(1)}k` : String(tok));
       }
       if (data.turn_count) setTurnCountVal(data.turn_count);
+      // Reasonix-style cost updates from turn_complete
+      if (data.usage?.turn_cost) setTurnCost(data.usage.turn_cost);
+      if (data.usage?.session_cost) setSessionCost(data.usage.session_cost);
+      if (data.usage?.cache_hit_rate != null) setCacheHitRate(data.usage.cache_hit_rate);
+      if (data.usage?.subagent_running != null) setSubagentRunning(data.usage.subagent_running);
+      // Balance -- pushed on every turn_complete so the wallet display updates live
+      if (data.usage?.balance != null) setBalanceDisplay(data.usage.balance);
       // NOTE: Do NOT set isLive=false here.  The agent may start another
       // turn immediately (sub-agent auto-report, tool continuations, etc.).
       // Only the 'idle' message (sent when _turn_loop truly drains the
@@ -455,9 +477,17 @@ function AppShell() {
     unsubs.push(api.on('stream:error', (data) => {
       clearTimeout(submitTimeoutRef.current);
       stopTimer();
-      chatStream.flush();
+      const agentText = chatStream.flush();
       chatStream.reset();
-      setChatLines((prev) => [...prev, { id: nextLineId(), text: `Error: ${data.message}`, cls: 'msg-error' }]);
+      setChatLines((prev) => {
+        const updated = [...prev];
+        // Flush any pending agent text before showing the error
+        if (agentText && updated.length > 0 && updated[updated.length - 1].cls === 'msg-agent-pending') {
+          updated[updated.length - 1] = { id: updated[updated.length - 1].id, text: agentText, cls: 'msg-agent', markdown: true };
+        }
+        updated.push({ id: nextLineId(), text: `Error: ${data.message}`, cls: 'msg-error' });
+        return updated;
+      });
       setIsLive(false);
       setInputDisabled(false);
       inputRef.current?.focus();
@@ -489,6 +519,21 @@ function AppShell() {
     unsubs.push(api.on('backend:idle', () => {
       clearTimeout(submitTimeoutRef.current);
       stopTimer();
+      // Safety: flush any remaining streaming text and resolve the pending
+      // placeholder.  If turn_complete was skipped or chatStream.flush()
+      // returned empty, the placeholder would otherwise stay as an empty
+      // line in the chat log.
+      const leftover = chatStream.flush();
+      if (leftover || chatStream.displayedText) {
+        setChatLines((prev) => {
+          const updated = [...prev];
+          if (updated.length > 0 && updated[updated.length - 1].cls === 'msg-agent-pending') {
+            updated[updated.length - 1] = { id: updated[updated.length - 1].id, text: leftover || chatStream.displayedText, cls: 'msg-agent', markdown: true };
+          }
+          return updated;
+        });
+      }
+      chatStream.reset();
       setIsLive(false);
       setInputDisabled(false);
       inputRef.current?.focus();
@@ -496,6 +541,7 @@ function AppShell() {
 
     // --- Sub-agent events ---
     unsubs.push(api.on('stream:subagent_start', (data) => {
+      setSubagentRunning((c) => c + 1);
       setSubagentData((prev) => ({
         ...prev,
         [data.task_id]: {
@@ -565,6 +611,7 @@ function AppShell() {
     }));
 
     unsubs.push(api.on('stream:subagent_end', (data) => {
+      setSubagentRunning((c) => Math.max(0, c - 1));
       setSubagentData((prev) => {
         const agent = prev[data.task_id];
         if (!agent) return prev;
@@ -801,6 +848,25 @@ function AppShell() {
     <div id="app">
       {/* Header */}
       <div id="header" className="header">
+        {/* Reasonix-style status bar items (left of model) */}
+        <span className="statusbar-metrics">
+          {balanceDisplay && balanceDisplay.available && (
+            <span className="statusbar-metric statusbar-balance" title="Wallet balance">
+              <span className="statusbar-metric-value">{balanceDisplay.display}</span>
+            </span>
+          )}
+          {cacheHitRate != null && (
+            <span className="statusbar-metric statusbar-cache" title={`Cache hit rate: ${cacheHitRate}%`}>
+              <span className="statusbar-metric-value">{cacheHitRate}%</span>
+            </span>
+          )}
+          {subagentRunning > 0 && (
+            <span className="statusbar-metric statusbar-subagents" title={`${subagentRunning} sub-agents running`}>
+              <span className="statusbar-metric-icon">∥</span>
+              <span className="statusbar-metric-value">{subagentRunning}</span>
+            </span>
+          )}
+        </span>
         <span className="dim"> mini_agent -- </span>
         <span
           id="header-model"
@@ -939,34 +1005,34 @@ function AppShell() {
           {gitBranch && (<><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.5" className="icon-sm"><path d="M3 4v6a2 2 0 0 0 2 2h2M7 12l-2-2 2-2M11 5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM3 4.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"/></svg>{gitBranch}{gitDirty ? '*' : ''}</>)}
         </span>
         <span className="bot-indicators" ref={botMenuToggleRef}>
-          <span className="discord-label"><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" className="icon-sm"><path d="M19.27 5.33C17.94 4.71 16.5 4.26 15 4a.09.09 0 0 0-.07.03c-.18.33-.39.76-.53 1.09a16.09 16.09 0 0 0-4.8 0c-.14-.34-.35-.76-.54-1.09-.01-.02-.04-.03-.07-.03-1.5.26-2.93.71-4.27 1.33-.01 0-.02.01-.03.02-2.72 4.07-3.47 8.03-3.1 11.95 0 .02.01.04.03.05 1.8 1.32 3.53 2.12 5.24 2.65.03.01.06 0 .07-.02.4-.55.76-1.13 1.07-1.74.02-.04 0-.08-.04-.09-.57-.22-1.11-.48-1.64-.78-.04-.02-.04-.08-.01-.11.11-.08.22-.17.33-.25.02-.02.05-.02.07-.01 3.44 1.57 7.15 1.57 10.55 0 .02-.01.05-.01.07.01.11.09.22.17.33.26.04.03.04.09-.01.11-.52.31-1.07.56-1.64.78-.04.01-.05.06-.04.09.32.61.68 1.19 1.07 1.74.03.01.06.02.09.01 1.72-.53 3.45-1.33 5.25-2.65.02-.01.03-.03.03-.05.44-4.53-.73-8.46-3.1-11.95-.01-.01-.02-.02-.04-.02zM8.52 14.91c-1.03 0-1.89-.95-1.89-2.12s.84-2.12 1.89-2.12c1.06 0 1.9.96 1.89 2.12 0 1.17-.84 2.12-1.89 2.12zm6.97 0c-1.03 0-1.89-.95-1.89-2.12s.84-2.12 1.89-2.12c1.06 0 1.9.96 1.89 2.12 0 1.17-.83 2.12-1.89 2.12z"/></svg>Discord</span>
           <span
-            className={`bot-dot ${botStatus['mini-agent'] ? 'bot-on' : 'bot-off'}`}
-            title={`mini-agent — click for menu`}
-            onClick={(e) => { e.stopPropagation(); setBotMenuOpen(botMenuOpen === 'mini-agent' ? null : 'mini-agent'); }}
-          >{botStatus['mini-agent'] !== undefined ? (botStatus['mini-agent'] ? 'on' : 'off') : '...'}</span>
-          <span
-            className={`bot-dot ${botStatus['emotion-game'] ? 'bot-on' : 'bot-off'}`}
-            title={`emotion-game — click for menu`}
-            onClick={(e) => { e.stopPropagation(); setBotMenuOpen(botMenuOpen === 'emotion-game' ? null : 'emotion-game'); }}
-          >{botStatus['emotion-game'] !== undefined ? (botStatus['emotion-game'] ? 'on' : 'off') : '...'}</span>
-          {/* Bot action menu */}
+            className="discord-label clickable"
+            title="Discord bots"
+            onClick={(e) => { e.stopPropagation(); setBotMenuOpen((p) => !p); }}
+          ><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" className="icon-sm"><path d="M19.27 5.33C17.94 4.71 16.5 4.26 15 4a.09.09 0 0 0-.07.03c-.18.33-.39.76-.53 1.09a16.09 16.09 0 0 0-4.8 0c-.14-.34-.35-.76-.54-1.09-.01-.02-.04-.03-.07-.03-1.5.26-2.93.71-4.27 1.33-.01 0-.02.01-.03.02-2.72 4.07-3.47 8.03-3.1 11.95 0 .02.01.04.03.05 1.8 1.32 3.53 2.12 5.24 2.65.03.01.06 0 .07-.02.4-.55.76-1.13 1.07-1.74.02-.04 0-.08-.04-.09-.57-.22-1.11-.48-1.64-.78-.04-.02-.04-.08-.01-.11.11-.08.22-.17.33-.25.02-.02.05-.02.07-.01 3.44 1.57 7.15 1.57 10.55 0 .02-.01.05-.01.07.01.11.09.22.17.33.26.04.03.04.09-.01.11-.52.31-1.07.56-1.64.78-.04.01-.05.06-.04.09.32.61.68 1.19 1.07 1.74.03.01.06.02.09.01 1.72-.53 3.45-1.33 5.25-2.65.02-.01.03-.03.03-.05.44-4.53-.73-8.46-3.1-11.95-.01-.01-.02-.02-.04-.02zM8.52 14.91c-1.03 0-1.89-.95-1.89-2.12s.84-2.12 1.89-2.12c1.06 0 1.9.96 1.89 2.12 0 1.17-.84 2.12-1.89 2.12zm6.97 0c-1.03 0-1.89-.95-1.89-2.12s.84-2.12 1.89-2.12c1.06 0 1.9.96 1.89 2.12 0 1.17-.83 2.12-1.89 2.12z"/></svg>Discord</span>
+          {/* Bot action menu — shows both bots */}
           {botMenuOpen && botMenuPos && (
             <div className="bot-menu" style={botMenuPos} onClick={(e) => e.stopPropagation()}>
-              <div className="bot-menu-header">
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M19.27 5.33C17.94 4.71 16.5 4.26 15 4a.09.09 0 0 0-.07.03c-.18.33-.39.76-.53 1.09a16.09 16.09 0 0 0-4.8 0c-.14-.34-.35-.76-.54-1.09-.01-.02-.04-.03-.07-.03-1.5.26-2.93.71-4.27 1.33-.01 0-.02.01-.03.02-2.72 4.07-3.47 8.03-3.1 11.95 0 .02.01.04.03.05 1.8 1.32 3.53 2.12 5.24 2.65.03.01.06 0 .07-.02.4-.55.76-1.13 1.07-1.74.02-.04 0-.08-.04-.09-.57-.22-1.11-.48-1.64-.78-.04-.02-.04-.08-.01-.11.11-.08.22-.17.33-.25.02-.02.05-.02.07-.01 3.44 1.57 7.15 1.57 10.55 0 .02-.01.05-.01.07.01.11.09.22.17.33.26.04.03.04.09-.01.11-.52.31-1.07.56-1.64.78-.04.01-.05.06-.04.09.32.61.68 1.19 1.07 1.74.03.01.06.02.09.01 1.72-.53 3.45-1.33 5.25-2.65.02-.01.03-.03.03-.05.44-4.53-.73-8.46-3.1-11.95-.01-.01-.02-.02-.04-.02zM8.52 14.91c-1.03 0-1.89-.95-1.89-2.12s.84-2.12 1.89-2.12c1.06 0 1.9.96 1.89 2.12 0 1.17-.84 2.12-1.89 2.12zm6.97 0c-1.03 0-1.89-.95-1.89-2.12s.84-2.12 1.89-2.12c1.06 0 1.9.96 1.89 2.12 0 1.17-.83 2.12-1.89 2.12z"/></svg>
-                <span className="bot-menu-name">{botMenuOpen}</span>
-                <span className={`bot-menu-status ${botStatus[botMenuOpen] ? 'bot-menu-on' : 'bot-menu-off'}`}>
-                  {botStatus[botMenuOpen] !== undefined ? (botStatus[botMenuOpen] ? 'Running' : 'Stopped') : 'Unknown'}
-                </span>
-              </div>
+              <div className="bot-menu-header">Discord Bots</div>
+              {['mini-agent', 'emotion-game'].map((bn) => {
+                const running = botStatus[bn];
+                return (
+                  <div key={bn} className="bot-menu-item">
+                    <div className="bot-menu-item-info">
+                      <span className="bot-menu-item-name">{bn}</span>
+                      <span className={`bot-menu-status ${running ? 'bot-menu-on' : 'bot-menu-off'}`}>
+                        {running !== undefined ? (running ? 'Running' : 'Stopped') : '...'}
+                      </span>
+                    </div>
+                    <button
+                      className={`bot-menu-btn ${running ? 'bot-menu-stop' : 'bot-menu-start'}`}
+                      onClick={() => { handleBotToggle(bn); }}
+                    >{running ? 'Stop' : 'Start'}</button>
+                  </div>
+                );
+              })}
               <div className="bot-menu-actions">
-                {botStatus[botMenuOpen] ? (
-                  <button className="bot-menu-btn bot-menu-stop" onClick={() => { handleBotToggle(botMenuOpen); setBotMenuOpen(null); }}>Stop Bot</button>
-                ) : (
-                  <button className="bot-menu-btn bot-menu-start" onClick={() => { handleBotToggle(botMenuOpen); setBotMenuOpen(null); }}>Start Bot</button>
-                )}
-                <button className="bot-menu-btn bot-menu-close" onClick={() => setBotMenuOpen(null)}>Close</button>
+                <button className="bot-menu-btn bot-menu-close" onClick={() => setBotMenuOpen(false)}>Close</button>
               </div>
             </div>
           )}
@@ -1000,6 +1066,12 @@ function AppShell() {
         )}
         {tokenCountVal != null && (
           <span id="token-counter"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.5" className="icon-sm"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="1.5" fill="currentColor"/></svg> <span id="token-count">{tokenCountVal}</span> tok</span>
+        )}
+        {turnCost !== '-' && (
+          <span id="turn-cost" title="Last turn cost">{turnCost}</span>
+        )}
+        {subagentRunning > 0 && (
+          <span id="subagent-count" title={`${subagentRunning} sub-agents running`}>\u2225{subagentRunning}</span>
         )}
         <div className="status-right">
           {restoredCount != null && (

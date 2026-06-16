@@ -25,6 +25,8 @@ SUB_AGENT_TOOLS: set[str] = {
     "run_shell", "run_tests", "verify",
     # Web
     "web_search", "fetch_url",
+    # Image analysis
+    "read_image",
     # Agent coordination (blocked at max_depth by sub_agent.py runtime check)
     "spawn_agent", "agent_status", "collect_agent", "collect_any",
     "agent_extend", "agent_cancel", "agent_message", "agent_read",
@@ -1132,13 +1134,17 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "read_image",
-            "description": "Read an image file, send it to GPT-4o, and return a text description of what the model sees. Use this to understand images, screenshots, diagrams, or photos.",
+            "description": "Read an image file, send it to GPT-4o, and return a text description of what the model sees. Use this to understand images, screenshots, diagrams, or photos. Use the 'prompt' parameter to ask a specific question about the image.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "path": {
                         "type": "string",
                         "description": "Path to the image file to describe."
+                    },
+                    "prompt": {
+                        "type": "string",
+                        "description": "Optional: a specific question or instruction about the image (e.g. 'What error message is shown?', 'Read all text in this screenshot'). Default: general description."
                     }
                 },
                 "required": ["path"]

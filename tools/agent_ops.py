@@ -1441,7 +1441,7 @@ def _read_image(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolRes
                         "type": "text",
 
 
-                        "text": "Describe this image in detail. What do you see?",
+                        "text": args.get("prompt", "Describe this image in detail. What do you see?"),
 
 
                     },
