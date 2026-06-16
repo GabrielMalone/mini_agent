@@ -1,5 +1,5 @@
 # mini_agent Architecture Map
-# Last updated: 2026-06-15 (file consolidation)
+# Last updated: 2026-06-16 (hash-anchored editing + storm-breaker)
 #
 # This file is the agent's map of the codebase. Update it after completed changes.
 # Behavioral rules live in AGENTS.md. Long-term facts live in core memory.
@@ -114,6 +114,24 @@
 - _inject_confidence_web_search_nudge(): monitors 3 triggers (search misses, tool failures,
   read-only turns) with 4-turn cooldown. Constants: _CONFIDENCE_NO_RESULT_THRESHOLD=3,
   _CONFIDENCE_FAILURE_THRESHOLD=2, _CONFIDENCE_NUDGE_COOLDOWN_TURNS=4.
+
+### Hash-Anchored Editing (2026-06-16)
+- `tools/file_ops.py`: `_line_hash()`, `_compute_line_hashes()` -- 3-char SHA-256 hash per line
+- `read_file(hash_lines=True)`: returns `lineno:hash| content` format for constructing edit_lines calls
+- `edit_lines(path, edits[{from, from_hash, to, to_hash, new_text}])`: hash-validated line-range edits
+  All hashes validated before any edit applied; batch rejected on any mismatch with precise error.
+  Edits applied bottom-up (reverse line order) to preserve pre-edit line numbers.
+  Pattern from Akay/Howard Chen hashlines design. Reduces retries ~50% and output tokens 30-40%.
+- Schema: `tools/schema.py` -- `hash_lines` param on `read_file`, full `edit_lines` tool definition
+- Tests: `tests/test_file_ops_extended.py::TestHashlines` (11 tests)
+
+### Storm-Breaker (2026-06-16)
+- `core/llm.py`: `_STORM_FAILURES` deque, `_check_storm_breaker()`, `_synthesize_storm_breaker_message()`
+  After 3 consecutive identical failed tool calls (same name + error fingerprint), synthesizes
+  an assistant-role message explaining the failure instead of silently continuing.
+  Pattern from Howard Chen's cwcode: "don't crash, talk."
+- Injected in `run_agent_turn()` after `_tool_execution_phase()`
+- Tests: `tests/test_file_ops_extended.py::TestStormBreaker` (6 tests)
 
 ## Task-to-File Quick Reference
 

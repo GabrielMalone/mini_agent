@@ -2,6 +2,37 @@
 
 Self-modification audit trail -- what the agent changed and why.
 
+## 2026-06-16 -- Hash-Anchored Editing + Storm-Breaker Synthesis
+
+### Added
+- **Hash-anchored editing (Hashlines pattern)**:
+  - `_line_hash()` and `_compute_line_hashes()` in `tools/file_ops.py` -- 3-char
+    SHA-256 hash per line (trailing whitespace stripped)
+  - `read_file(hash_lines=True)` -- returns `lineno:hash| content` format
+  - `edit_lines(path, edits[{from, from_hash, to, to_hash, new_text}])` --
+    hash-validated line-range edits. All hashes validated before any edit applied;
+    batch rejected on any mismatch with precise error. Edits applied bottom-up.
+  - Schema entry in `tools/schema.py` with `hash_lines` param on read_file
+  - Added to `SUB_AGENT_TOOLS`
+  - Pattern from Akay/Howard Chen -- reduces retries ~50%, output tokens 30-40%
+- **Storm-breaker synthesized responses**:
+  - `_STORM_FAILURES` deque, `_check_storm_breaker()`,
+    `_synthesize_storm_breaker_message()` in `core/llm.py`
+  - After 3 consecutive identical failed tool calls, synthesizes an assistant-role
+    message explaining the failure instead of silently continuing
+  - Pattern from Howard Chen's cwcode: "don't crash, talk"
+  - Wired into `run_agent_turn()` after `_tool_execution_phase()`
+
+### Changed
+- `tools/file_ops.py`: added `hashlib` import, `hash_lines` parameter flow
+- `tools/schema.py`: `hash_lines` param on read_file, new `edit_lines` tool schema
+- `core/llm.py`: added storm-breaker tracking and synthesis (50 lines)
+
+### Tested
+- 17 new tests in `tests/test_file_ops_extended.py` (11 Hashlines, 6 StormBreaker)
+- All 76 tests in test_file_ops_extended.py pass
+- 1092/1109 total tests pass (17 pre-existing failures unrelated)
+
 ## 2026-06-14 -- Workspace Organization Audit & Doc Drift Fix
 
 ### Changed

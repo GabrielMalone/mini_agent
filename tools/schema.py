@@ -17,7 +17,7 @@ from __future__ import annotations
 # ---------------------------------------------------------------------------
 SUB_AGENT_TOOLS: set[str] = {
     # File & directory
-    "read_file", "write_file", "edit_file", "list_directory", "file_info",
+    "read_file", "write_file", "edit_file", "edit_lines", "list_directory", "file_info",
     "restore_file",
     # Search & navigation
     "search_files", "find_symbol", "find_usages", "semantic_search",
@@ -37,6 +37,38 @@ SUB_AGENT_TOOLS: set[str] = {
 }
 
 TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "edit_lines",
+            "description": "Edit a file by replacing line ranges with hash anchors for reliable matching. Use read_file(hash_lines=True) first to get hash-prefixed output, then construct edits with {from, from_hash, to, to_hash, new_text}. All hash anchors are validated before any edit is applied -- any mismatch rejects the entire batch with a precise error. Edits are applied bottom-up so line numbers refer to the pre-edit file.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the file to edit"
+                    },
+                    "edits": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "from": {"type": "integer", "description": "Starting line number (1-indexed, inclusive)"},
+                                "from_hash": {"type": "string", "description": "Expected 3-char hash of the 'from' line"},
+                                "to": {"type": "integer", "description": "Ending line number (1-indexed, inclusive)"},
+                                "to_hash": {"type": "string", "description": "Expected 3-char hash of the 'to' line"},
+                                "new_text": {"type": "string", "description": "Replacement text (can be multiple lines)"}
+                            },
+                            "required": ["from", "from_hash", "to", "to_hash", "new_text"]
+                        },
+                        "description": "List of edits to apply"
+                    }
+                },
+                "required": ["path", "edits"]
+            }
+        }
+    },
     {
         "type": "function",
         "function": {
@@ -181,6 +213,10 @@ TOOLS = [
                     "line_numbers": {
                         "type": "boolean",
                         "description": "Optional: prefix each line with its line number (e.g. '42: content'). Default: false."
+                    },
+                    "hash_lines": {
+                        "type": "boolean",
+                        "description": "Optional: prefix each line with line number and 3-char content hash (e.g. '42:a1f| content'). Use this before edit_lines to get hash anchors. Default: false."
                     }
                 },
                 "required": [

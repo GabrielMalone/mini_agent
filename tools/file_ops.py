@@ -6,6 +6,7 @@ Tools: read_file, write_file, edit_file, list_directory, file_info
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import platform
 import re
@@ -110,6 +111,7 @@ def _read_file_windows_worker(
 
 def _read_file_direct(
     resolved: str, offset: int, limit: int, line_numbers: bool,
+    hash_lines: bool = False,
 ) -> ToolResult:
     """Direct file read -- used on Unix and as fallback on Windows."""
     try:
@@ -122,7 +124,10 @@ def _read_file_direct(
                     continue
                 if len(collected) < limit:
                     stripped = line.rstrip("\n")
-                    if line_numbers:
+                    if hash_lines:
+                        h = _line_hash(stripped)
+                        stripped = f"{total_lines}:{h}| {stripped}"
+                    elif line_numbers:
                         stripped = f"{total_lines}: {stripped}"
                     collected.append(stripped)
                 if len(collected) >= limit and lineno + 1 >= offset + limit:
@@ -331,6 +336,25 @@ _DEFAULT_READ_LINES = 300
 _ABSOLUTE_MAX_LINES = 1000
 
 
+# ---------------------------------------------------------------------------
+# Hashline helpers -- used by read_file(hash_lines=True) and edit_lines
+# ---------------------------------------------------------------------------
+
+def _line_hash(line: str) -> str:
+    '''3-char hex hash of a line with trailing whitespace trimmed.
+
+    Uses first 3 hex chars of SHA-256 for collision resistance in
+    practical file sizes.  Trailing whitespace is stripped because
+    it is invisible in most editors and causes matching failures.
+    '''
+    return hashlib.sha256(line.rstrip().encode()).hexdigest()[:3]
+
+
+def _compute_line_hashes(content: str) -> list[str]:
+    '''Compute hashline hashes for every line in *content*.'''
+    return [_line_hash(line) for line in content.split("\n")]
+
+
 @_register("read_file")
 def _read_file(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
     path = args["path"]
@@ -351,6 +375,7 @@ def _read_file(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResu
         limit = _DEFAULT_READ_LINES
     limit = min(limit, _ABSOLUTE_MAX_LINES)
     line_numbers = args.get("line_numbers", False)
+    hash_lines = args.get("hash_lines", False)
 
     # Cross-turn cache: if file mtime hasn't changed, return cached content directly.
     # Only used when no offset/limit/line_numbers are specified (full reads).
@@ -368,7 +393,7 @@ def _read_file(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResu
     if False:  # _WINDOWS bypassed - subprocess hangs on this system
         result = _read_file_windows_worker(resolved, offset, limit, line_numbers)
     else:
-        result = _read_file_direct(resolved, offset, limit, line_numbers)
+        result = _read_file_direct(resolved, offset, limit, line_numbers, hash_lines=hash_lines)
 
     if not result.success:
         return result
@@ -1086,6 +1111,176 @@ def _edit_file_summary(args: dict) -> str:
     preview_flag = args.get("preview", False)
     suffix = " [preview]" if preview_flag else ""
     return f"edit_file({path}, \"{old_preview}\"){suffix}"
+
+
+# ---------------------------------------------------------------------------
+# edit_lines -- hash-anchored editing (Hashlines pattern from Akay/Howard Chen)
+# ---------------------------------------------------------------------------
+
+@_register("edit_lines")
+def _edit_lines(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
+    '''Replace line ranges using hash anchors for reliable first-attempt edits.
+
+    Each edit specifies {from, from_hash, to, to_hash, new_text}.
+    The file is re-read fresh; hashes are recomputed and validated before
+    any edit is applied.  Edits are applied bottom-up so line numbers
+    in the edits array can refer to the pre-edit file.
+
+    On any hash mismatch the ENTIRE batch is rejected with a precise error.
+    '''
+    path = args["path"]
+    edits = args["edits"]
+
+    safety_result = wg.check(path)
+    if not safety_result.allowed:
+        return ToolResult(
+            success=False,
+            content=f"Edit blocked by safety layer: {safety_result.reason}",
+        )
+    resolved = safety_result.resolved_path
+
+    if not isinstance(edits, list) or not edits:
+        return ToolResult(success=False, content="'edits' must be a non-empty list.")
+
+    # --- Read-before-edit enforcement ---
+    if resolved not in _READ_FILES:
+        return ToolResult(
+            success=False,
+            content=(
+                f"Edit blocked: '{resolved}' has not been read yet in this session.\n"
+                f"Use read_file(hash_lines=True) first to see the current content "
+                f"with hash anchors before constructing edit_lines calls."
+            ),
+        )
+
+    # File reservation check
+    agent_id = getattr(_current_agent_id, "task_id", None)
+    if agent_id is not None:
+        from tools import reserve_file
+        ok, msg = reserve_file(path, agent_id)
+        if not ok:
+            return ToolResult(success=False, content=msg)
+
+    try:
+        with open(resolved, "r", encoding="utf-8", errors="replace") as f:
+            original = f.read()
+    except Exception as e:
+        return ToolResult(success=False, content=f"Error reading '{resolved}': {e}")
+
+    lines = original.split("\n")
+    hashes = _compute_line_hashes(original)
+
+    # --- Validate all hash anchors first ---
+    for i, edit in enumerate(edits):
+        for endpoint, label in [("from", "from"), ("to", "to")]:
+            line_num = edit.get(endpoint)
+            claimed_hash = edit.get(f"{label}_hash")
+            if line_num is None or claimed_hash is None:
+                return ToolResult(
+                    success=False,
+                    content=f"edit_lines: edit[{i}] missing '{endpoint}' or '{label}_hash'.",
+                )
+            # 1-indexed -> 0-indexed
+            idx = line_num - 1
+            if idx < 0 or idx >= len(lines):
+                return ToolResult(
+                    success=False,
+                    content=(
+                        f"edit_lines: edit[{i}] {label}={line_num} is out of range "
+                        f"(file has {len(lines)} lines)."
+                    ),
+                )
+            actual_hash = hashes[idx]
+            if claimed_hash != actual_hash:
+                return ToolResult(
+                    success=False,
+                    content=(
+                        f"edit_lines: edit[{i}] {label} line {line_num} hash mismatch "
+                        f"-- claimed '{claimed_hash}', actual '{actual_hash}'.\n"
+                        f"Current line {line_num}: {lines[idx][:120]}"
+                    ),
+                )
+
+    # --- Apply edits bottom-up (reverse order by line number) ---
+    sorted_edits = sorted(enumerate(edits), key=lambda x: x[1]["from"], reverse=True)
+    updated_lines = list(lines)
+
+    for orig_idx, edit in sorted_edits:
+        from_line = edit["from"] - 1  # 0-indexed
+        to_line = edit["to"] - 1      # 0-indexed
+        new_text = edit["new_text"]
+        new_lines = new_text.split("\n")
+
+        # Validate: from must be <= to
+        if from_line > to_line:
+            return ToolResult(
+                success=False,
+                content=(
+                    f"edit_lines: edit[{orig_idx}] from={from_line + 1} > to={to_line + 1}. "
+                    f"'from' must be <= 'to'."
+                ),
+            )
+
+        updated_lines[from_line:to_line + 1] = new_lines
+
+    updated = "\n".join(updated_lines)
+
+    # --- Syntax validation for .py files ---
+    syntax_error = None
+    if resolved.endswith(".py"):
+        try:
+            compile(original, resolved, "exec")
+        except SyntaxError:
+            pass  # Existing content isn't valid Python -- skip gate
+        else:
+            syntax_error = _validate_python_syntax(updated, resolved)
+    if syntax_error:
+        return ToolResult(
+            success=False,
+            content=(
+                f"Syntax validation failed -- edit NOT applied to prevent broken code.\n"
+                f"{syntax_error}\n"
+                f"The file is unchanged."
+            ),
+        )
+
+    # --- Write ---
+    try:
+        diff = wg.generate_diff("edit_lines", args)
+        _backup_before_write(resolved)
+        with open(resolved, "w", encoding="utf-8") as f:
+            f.write(updated)
+    except Exception as e:
+        return ToolResult(success=False, content=f"Error writing '{resolved}': {e}")
+
+    from tools import add_modified_file
+    add_modified_file(resolved)
+    clear_tool_cache()
+    _FILE_CACHE.pop(resolved, None)
+
+    if path.endswith(".py"):
+        from tools.search_ops import _reindex_file
+        _reindex_file(resolved, wg.workspace_root)
+
+    _auto_advance_plan(resolved)
+
+    added = len(updated_lines) - len(lines)
+    label = "s" if len(edits) != 1 else ""
+    return ToolResult(
+        success=True,
+        content=(
+            f"OK: applied {len(edits)} edit{label} to {resolved}"
+            + (f" (+{added} lines)" if added > 0 else f" ({added} lines)" if added < 0 else "")
+        ),
+        diff_preview=diff.preview_text if diff.changed else None,
+    )
+
+
+@_summarize("edit_lines")
+def _edit_lines_summary(args: dict) -> str:
+    path = args.get("path", "?")
+    edits = args.get("edits", [])
+    return f"edit_lines({path}, {len(edits)} edits)"
 
 
 # ---------------------------------------------------------------------------
