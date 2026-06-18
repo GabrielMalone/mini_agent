@@ -123,6 +123,27 @@ _strip_orphaned_tool_calls = _strip_orphaned_tool_messages
 _strip_orphaned_tool_results = _strip_orphaned_tool_messages
 
 
+def _inject_strict_tools(tools: list[dict]) -> list[dict]:
+    """Inject ``\"strict\": true`` into each tool's function definition.
+
+    DeepSeek's Strict Function Calling (Beta) validates tool call arguments
+    against the JSON schema server-side, defending against hallucinated
+    parameters.  Each tool's ``function`` dict gets ``\"strict\": true``.
+    The caller must use the beta endpoint (``https://api.deepseek.com/beta``)
+    or ``strict`` will be rejected.
+
+    Returns a new list; does not mutate the input.
+    """
+    result = []
+    for tool in tools:
+        t2 = dict(tool)
+        fn = dict(t2["function"])
+        fn["strict"] = True
+        t2["function"] = fn
+        result.append(t2)
+    return result
+
+
 def _build_payload(
     config: AgentConfig,
     messages: list[dict],
@@ -167,6 +188,16 @@ def _build_payload(
         # on the same inference engine, reusing cached KV state.
         _cache_seed = str(len(tools)) if tools else "0"
         payload["prompt_cache_key"] = f"mini_agent-v1-{_cache_seed}"
+        # Strict Function Calling (Beta): server-side enforcement of tool
+        # call JSON schema compliance.  Requires the beta endpoint
+        # (https://api.deepseek.com/beta) and ``additionalProperties: false``
+        # on all tool schemas.  Opt-in via config.use_strict_function_calling.
+        if getattr(config, "use_strict_function_calling", False):
+            payload["tools"] = _inject_strict_tools(tools)
+        # Tool choice: "auto" (default), "required" (must call a tool),
+        # or "none" (text-only, no tool calls).
+        if config.tool_choice:
+            payload["tool_choice"] = config.tool_choice
 
     elif provider == "claude":
         # Claude OpenAI-compat: no temperature, top_p, freq/presence penalties,

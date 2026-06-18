@@ -267,6 +267,9 @@ class AgentConfig:
     unrestricted: bool = False
     frontend: str = "terminal"  # "terminal", "electron" -- injected into system prompt
     mcp_servers: dict = field(default_factory=dict)  # {name: {command: [...], env: {...}}}
+    tool_choice: str = ""  # "auto" (default), "required", "none", or "" (unset = API default)
+    use_strict_function_calling: bool = False  # DeepSeek Strict Function Calling (Beta) -- opt-in
+    budget_limit: float = 0.0  # Hard stop after estimated cost exceeds this USD amount (0 = disabled)
 
     # ------------------------------------------------------------------
     # Factory

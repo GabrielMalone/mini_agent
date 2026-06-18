@@ -60,3 +60,6 @@ _*.bat
 nul
 list_pkgs_temp.py
 _cleanup_temp.py
+.discord_bot.pid
+.workspace_bot.pid
+discord_uploads/
