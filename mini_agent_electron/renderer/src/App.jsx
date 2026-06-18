@@ -128,7 +128,6 @@ function AppShell() {
   const [restoredCount, setRestoredCount] = useState(null);
   const [isLive, setIsLive] = useState(false);
   const [turnCountVal, setTurnCountVal] = useState(null);
-  const [tokenCountVal, setTokenCountVal] = useState(null);
   const [elapsedSec, setElapsedSec] = useState(null);
   const [inputDisabled, setInputDisabled] = useState(false);
   const [thinkingBlocks, setThinkingBlocks] = useState([]);
@@ -456,10 +455,6 @@ function AppShell() {
         return updated;
       });
       chatStream.reset();
-      if (data.usage?.total_tokens) {
-        const tok = data.usage.total_tokens;
-        setTokenCountVal(tok >= 1000 ? `${(tok / 1000).toFixed(1)}k` : String(tok));
-      }
       if (data.turn_count) setTurnCountVal(data.turn_count);
       // Reasonix-style cost updates from turn_complete
       if (data.usage?.turn_cost) setTurnCost(data.usage.turn_cost);
@@ -850,11 +845,6 @@ function AppShell() {
       <div id="header" className="header">
         {/* Reasonix-style status bar items (left of model) */}
         <span className="statusbar-metrics">
-          {balanceDisplay && balanceDisplay.available && (
-            <span className="statusbar-metric statusbar-balance" title="Wallet balance">
-              <span className="statusbar-metric-value">{balanceDisplay.display}</span>
-            </span>
-          )}
           {cacheHitRate != null && (
             <span className="statusbar-metric statusbar-cache" title={`Cache hit rate: ${cacheHitRate}%`}>
               <span className="statusbar-metric-value">{cacheHitRate}%</span>
@@ -867,7 +857,6 @@ function AppShell() {
             </span>
           )}
         </span>
-        <span className="dim"> mini_agent -- </span>
         <span
           id="header-model"
           className="text clickable"
@@ -1001,6 +990,11 @@ function AppShell() {
 
       {/* Status bar */}
       <div id="status-bar" className="status-bar dim">
+        {balanceDisplay && balanceDisplay.available && (
+          <span className="statusbar-metric statusbar-balance" title="Wallet balance">
+            <span className="statusbar-metric-value">{balanceDisplay.display}</span>
+          </span>
+        )}
         <span id="git-status">
           {gitBranch && (<><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.5" className="icon-sm"><path d="M3 4v6a2 2 0 0 0 2 2h2M7 12l-2-2 2-2M11 5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM3 4.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"/></svg>{gitBranch}{gitDirty ? '*' : ''}</>)}
         </span>
@@ -1063,9 +1057,6 @@ function AppShell() {
         </span>
         {turnCountVal != null && (
           <span id="turn-counter"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.5" className="icon-sm"><path d="M2 8a6 6 0 0 1 6-6 5.5 5.5 0 0 1 5 3.5M14 8a6 6 0 0 1-6 6"/><polyline points="11,3 13,1 15,3"/></svg> turn <span id="turn-count">{turnCountVal}</span></span>
-        )}
-        {tokenCountVal != null && (
-          <span id="token-counter"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.5" className="icon-sm"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="1.5" fill="currentColor"/></svg> <span id="token-count">{tokenCountVal}</span> tok</span>
         )}
         {turnCost !== '-' && (
           <span id="turn-cost" title="Last turn cost">{turnCost}</span>

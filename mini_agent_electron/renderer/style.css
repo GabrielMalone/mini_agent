@@ -892,6 +892,19 @@ html, body {
   50% { opacity: 0.35; }
 }
 
+/* Align header icon buttons consistently */
+#live-indicator,
+#timer,
+#turn-counter,
+#turn-cost,
+#subagent-count {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+}
+
+#live-indicator { cursor: pointer; }
+
 .status-right {
   margin-left: auto;
   display: flex;
@@ -909,11 +922,14 @@ html, body {
    Theme toggle
    --------------------------------------------------------------------------- */
 #theme-toggle {
+  display: inline-flex;
+  align-items: center;
   cursor: pointer;
   user-select: none;
   opacity: 0.6;
   transition: opacity 0.15s;
   position: relative;
+  vertical-align: middle;
 }
 #theme-toggle:hover {
   opacity: 1;
