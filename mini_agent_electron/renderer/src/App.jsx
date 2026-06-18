@@ -175,7 +175,11 @@ function AppShell() {
   }, []);
   const [showSettings, setShowSettings] = useState(false);
   const [inputValue, setInputValue] = useState('');
-  const [theme, setTheme] = useState(() => localStorage.getItem('mini_agent_theme') || 'dark');
+  const [theme, setTheme] = useState(() => {
+    const stored = localStorage.getItem('mini_agent_theme');
+    if (stored && THEMES.some((t) => t.id === stored)) return stored;
+    return 'dark';
+  });
   const [themePickerOpen, setThemePickerOpen] = useState(false);
   const themeToggleRef = useRef(null);
   const [dropdownPos, setDropdownPos] = useState(null);
@@ -193,6 +197,8 @@ function AppShell() {
     setTheme(id);
     setThemeDom(id);
     setThemePickerOpen(false);
+    // Persist to disk so theme survives localStorage clears
+    window.miniAgent?.saveTheme?.(id);
   }, []);
 
   // Cycle to next theme
@@ -208,6 +214,21 @@ function AppShell() {
   useEffect(() => {
     setThemeDom(theme);
   }, [theme]);
+
+  // On mount, pull the file-persisted theme.  localStorage can be cleared
+  // when Electron's partition/origin shifts; the file (~/.mini_agent_theme)
+  // is the durable source of truth.
+  useEffect(() => {
+    (async () => {
+      try {
+        const result = await window.miniAgent?.getTheme?.();
+        const fileTheme = result?.theme;
+        if (fileTheme && THEMES.some((t) => t.id === fileTheme) && fileTheme !== theme) {
+          applyTheme(fileTheme);
+        }
+      } catch (_) { /* preload not available yet */ }
+    })();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Close theme picker on outside click
   useEffect(() => {

@@ -783,6 +783,29 @@ function setupIPC() {
     return { ok: true };
   });
 
+  // --- Theme persistence ---
+  // Writes to ~/.mini_agent_theme so theme survives localStorage clears
+  // (which can happen when Electron's partition/origin shifts).
+  const THEME_FILE = path.join(HOMEDIR, '.mini_agent_theme');
+
+  ipcMain.handle('settings:getTheme', async () => {
+    try {
+      if (fs.existsSync(THEME_FILE)) {
+        return { theme: fs.readFileSync(THEME_FILE, 'utf-8').trim() };
+      }
+    } catch (_) { /* ignore */ }
+    return { theme: null };
+  });
+
+  ipcMain.handle('settings:saveTheme', async (_event, themeId) => {
+    try {
+      fs.writeFileSync(THEME_FILE, themeId, 'utf-8');
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  });
+
   ipcMain.handle('settings:restartBackend', async () => {
     // Kill existing backend if running
     if (pythonProcess && !pythonProcess.killed) {

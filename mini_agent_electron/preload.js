@@ -67,6 +67,10 @@ contextBridge.exposeInMainWorld('miniAgent', {
   // Switch the LLM model on the fly (no restart needed).
   setModel: (model) => ipcRenderer.invoke('settings:setModel', model),
 
+  // Theme persistence to disk (~/.mini_agent_theme)
+  getTheme: () => ipcRenderer.invoke('settings:getTheme'),
+  saveTheme: (themeId) => ipcRenderer.invoke('settings:saveTheme', themeId),
+
   // Kill and restart the Python backend (called after saving a new API key).
   restartBackend: () => ipcRenderer.invoke('settings:restartBackend'),
 
