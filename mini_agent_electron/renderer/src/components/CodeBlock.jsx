@@ -1,6 +1,24 @@
 import { useState, useEffect, useRef } from 'react';
 import { createHighlighter, createJavaScriptRegexEngine } from 'shiki';
 
+// -- app theme to Shiki theme mapping ---------------------------------------
+
+const APP_THEME_TO_SHIKI = {
+  dark:         'dark-plus',
+  light:        'light-plus',
+  dracula:      'dracula',
+  nord:         'nord',
+  catppuccin:   'catppuccin-mocha',
+  'rose-pine':  'rose-pine',
+  gruvbox:      'gruvbox-dark-medium',
+  solarized:    'solarized-dark',
+  'tokyo-night':'tokyo-night',
+  monokai:      'monokai',
+};
+
+// Collect all unique Shiki theme names
+const ALL_SHIKI_THEMES = [...new Set(Object.values(APP_THEME_TO_SHIKI))];
+
 // -- language detection ------------------------------------------------------
 
 const TOOL_LANG_MAP = {
@@ -56,7 +74,7 @@ function getHighlighter() {
       // Only the languages a coding agent actually encounters.
       // Each grammar is a WASM blob -- fewer = less memory.
       langs: ['python', 'javascript', 'typescript', 'bash', 'json', 'diff'],
-      themes: ['dark-plus'],
+      themes: ALL_SHIKI_THEMES,
       engine: createJavaScriptRegexEngine(),
     });
   }
@@ -87,6 +105,7 @@ export default function CodeBlock({
   highlight = true,
   fontSize,
   toolName,
+  theme = 'dark',
 }) {
   const source = code ?? children;
 
@@ -119,7 +138,7 @@ export default function CodeBlock({
   }
 
   // Shiki highlighting -- async codeToHtml
-  return <ShikiBlock source={source} lang={lang} fontSize={fontSize} />;
+  return <ShikiBlock source={source} lang={lang} fontSize={fontSize} theme={theme} />;
 }
 
 // Strip the background color that shiki injects on the <pre>
@@ -130,7 +149,7 @@ function stripBg(html) {
 
 // -- ShikiBlock (handles the async highlighter lifecycle) --------------------
 
-function ShikiBlock({ source, lang, fontSize }) {
+function ShikiBlock({ source, lang, fontSize, theme = 'dark' }) {
   const [html, setHtml] = useState(null);
   const mountedRef = useRef(true);
 
@@ -141,15 +160,16 @@ function ShikiBlock({ source, lang, fontSize }) {
     getHighlighter().then((h) => {
       if (cancelled) return;
       // Shiki v4: codeToHtml is synchronous, returns a string directly
+      const shikiTheme = APP_THEME_TO_SHIKI[theme] || 'dark-plus';
       const htmlStr = h.codeToHtml(source, {
         lang,
-        theme: 'dark-plus',
+        theme: shikiTheme,
       });
       if (!cancelled && mountedRef.current) setHtml(stripBg(htmlStr));
     });
 
     return () => { cancelled = true; };
-  }, [source, lang]);
+  }, [source, lang, theme]);
 
   useEffect(() => {
     return () => { mountedRef.current = false; };
