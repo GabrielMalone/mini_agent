@@ -163,15 +163,27 @@ make coverage       # With HTML coverage report
 - Benchmark tests require `--run-benchmarks` flag
 - `conftest.py` at root provides shared fixtures, mocks, and test helpers
 
-## Self-Modification
+## Agent Self-Modification
 
 mini_agent is self-modifying: it can observe its own behavior, diagnose issues, and improve
 itself. This is governed by safety gates:
+
+### Safety Boundaries
 
 - **Read-before-edit** — won't edit `.py` files it hasn't read this session
 - **Syntax validation** — Python files compiled before every write; syntax errors rejected
 - **Workspace isolation** — all reads/writes bounded to the workspace directory
 - **Backup before write** — every `edit_file` / `write_file` creates a backup
+
+### Self-Review Cycle
+
+After completing a significant change, the agent follows a structured review cycle:
+
+1. **Observe** — What did I just do? What files did I touch?
+2. **Diagnose** — Did I encounter any new failure modes, edge cases, or patterns?
+3. **Improve** — Should this be crystallized as a project rule, knowledge entry, or fix strategy?
+4. **Verify** — Run relevant tests. If they fail, stop and diagnose before continuing.
+5. **Document** — Update STATE.txt (architecture), HANDOFF.md (session), CHANGELOG.md (audit).
 
 ### Tracking Files
 

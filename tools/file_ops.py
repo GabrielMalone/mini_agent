@@ -378,8 +378,8 @@ def _read_file(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResu
     hash_lines = args.get("hash_lines", False)
 
     # Cross-turn cache: if file mtime hasn't changed, return cached content directly.
-    # Only used when no offset/limit/line_numbers are specified (full reads).
-    if offset == 0 and limit == _DEFAULT_READ_LINES and not line_numbers:
+    # Only used when no offset/limit/line_numbers/hash_lines are specified (full reads).
+    if offset == 0 and limit == _DEFAULT_READ_LINES and not line_numbers and not hash_lines:
         try:
             current_mtime = os.path.getmtime(resolved)
             if resolved in _FILE_CACHE:

@@ -4,6 +4,14 @@
 # This file is the agent's map of the codebase. Update it after completed changes.
 # Behavioral rules live in AGENTS.md. Long-term facts live in core memory.
 
+## Active Decisions
+
+- **Hash-anchored editing (2026-06-16)** — edit_lines with 3-char SHA-256 validation per Akay/Howard Chen pattern
+- **Storm-breaker (2026-06-16)** — after 3 consecutive identical failures, synthesize explanation instead of silent loop
+- **Self-modifying architecture** — agent observes, diagnoses, and improves its own codebase via STATE.txt/CHANGELOG.md/HANDOFF.md
+- **Context injection ZONE model** — ZONE 1 (immutable prefix), ZONE 2 (append-only log), ZONE 3 (volatile scratch)
+- **Read-before-edit enforcement** — all .py edits require prior read_file this session; syntax validated via compile()
+
 ## Module Map
 
 ### Core Orchestration
@@ -66,6 +74,8 @@
 - `tools/mcp_client.py` -- MCP client (stdio JSON-RPC)
 - `tools/semantic_cache.py` -- two-tier response cache: exact SHA-256 + cosine similarity.
   Adaptive per-entry thresholds. 128 entries, 1-hour TTL.
+- `tools/failure_learning.py` -- failure pattern store (SQLite), self-critique (MistakeNotebook),
+  experience context injection. Tracks tool failures, learns fix strategies.
 - `tools/browser_ops.py` -- Playwright headless browser
 - `tools/desktop_ops.py` -- desktop automation
 - `tools/macos_ops.py` -- macOS-specific desktop ops
@@ -132,6 +142,13 @@
   Pattern from Howard Chen's cwcode: "don't crash, talk."
 - Injected in `run_agent_turn()` after `_tool_execution_phase()`
 - Tests: `tests/test_file_ops_extended.py::TestStormBreaker` (6 tests)
+
+## Known Issues
+
+- No known critical bugs as of 2026-06-18. Minor issues:
+  - test_bash_diag.py parametrize fixture issue (non-functional test harness)
+  - Some Windows path handling edge cases with MSYS2 bash wrappers
+  - Desktop app WebSocket reconnection on network change needs improvement
 
 ## Task-to-File Quick Reference
 

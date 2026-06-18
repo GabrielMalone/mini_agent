@@ -2,6 +2,52 @@
 
 Self-modification audit trail -- what the agent changed and why.
 
+## 2026-06-18 -- Documentation Drift Fixes
+
+### Fixed
+- **STATE.txt**: Added missing `## Active Decisions` and `## Known Issues` sections. Added
+  `tools/failure_learning.py` to the Tools module map entry.
+- **TASKS.md**: Created file (was missing entirely). Contains `## Core System Changes`,
+  `## Tools`, `## Memory & Persistence`, `## Testing` sections, referencing all key modules
+  (core/prompt.py, core/llm.py, tools/schema.py, memory/memory.py).
+- **README.md**: Renamed `## Self-Modification` to `## Agent Self-Modification`, added
+  `### Safety Boundaries` subsection, added `### Self-Review Cycle` with Observe/Diagnose/
+  Improve/Verify/Document steps. All 8 documentation tests now pass (45/45 in
+  test_agent_self_tracking.py).
+
+## 2026-06-18 -- Code Audit: context_inject.py (Strategy Hint Bugs)
+
+### Fixed
+- **Strategy hint missing `_transient` flag**: `_inject_strategy_hint` (line 1362) was
+  inserting a non-transient system-role message into the message list. This contradicted
+  the ZONE 3 (volatile scratch) architecture — the hint got persisted to the conversation
+  log and sent to the API. Fixed by appending with `_transient: True` and switching from
+  `role: "system"` to `role: "user"` for consistency with all other injections.
+- **Strategy hint dedup set leaked across sessions**: `_inject_strategy_hint._injected`
+  function attribute was never reset between sessions, preventing hints from being
+  re-injected in long-running processes (Discord bot). Fixed by clearing it in
+  `_reset_pattern_rules()`.
+
+### Verified Clean
+- All 25+ other injection functions correctly use `_transient: True` and `role: "user"`
+- One-time gating flags (`_handoff_injected`, `_scratchpad_injected`, etc.) reset correctly
+  in `bootstrap.py` for new sessions
+- Compaction (`_compact_if_needed`) runs FIRST before all injections — correct ordering
+- Callers in `core/llm.py` (`_inject_context` at turn start, `_inject_pre_execution_context`
+  before tool execution) wired correctly
+- 52/52 context-injection tests pass; 8 pre-existing doc-only failures unchanged
+
+## 2026-06-17 -- Code Audit: hash_lines Cache Bypass Fix
+
+### Fixed
+- **hash_lines cache bypass**: `_read_file()` cross-turn cache (line 382) didn't exclude
+  `hash_lines` from the cache-hit condition. Calling `read_file(hash_lines=True)` could
+  return cached plain content without hash prefixes. Added `and not hash_lines` to the
+  guard. (tools/file_ops.py)
+
+### Updated
+- HANDOFF.md: corrected stale plan progress (steps 4 & 6 were done but marked incomplete)
+
 ## 2026-06-16 -- Hash-Anchored Editing + Storm-Breaker Synthesis
 
 ### Added

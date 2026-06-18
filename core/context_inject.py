@@ -788,6 +788,9 @@ def _reset_pattern_rules() -> None:
     _PATTERN_RULES_INJECTED.clear()
     global _PATTERN_RULES
     _PATTERN_RULES = None  # force re-load on next session
+    # Also reset strategy hint dedup so hints can be re-injected in new sessions
+    if hasattr(_inject_strategy_hint, '_injected'):
+        _inject_strategy_hint._injected.clear()
 
 
 def _load_pattern_rules(workspace_root: str) -> list[tuple[str, str]]:
@@ -1357,9 +1360,9 @@ def _inject_strategy_hint(messages: list[dict]) -> None:
                 if messages[i].get("role") == "system":
                     insert_at = i + 1
                     break
-            # Avoid inserting beyond list bounds
-            if insert_at <= len(messages):
-                messages.insert(insert_at, {"role": "system", "content": hint})
+            # Append as transient (Zone 3 volatile scratch), consistent with all
+            # other injection messages.  Never insert into the append-only log.
+            messages.append({"role": "user", "content": hint, "_transient": True})
     except (KeyError, IndexError, TypeError, ValueError):
         pass
 
