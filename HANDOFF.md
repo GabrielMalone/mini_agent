@@ -1,19 +1,17 @@
 # Session Handoff
 # Auto-generated at session end. Read at next session start for continuity.
 
-## Last Session: 2026-06-18 13:38 UTC
+## Last Session: 2026-06-18 13:41 UTC
 
 ### What I Changed
 ### Commits
 ```
-a468fdb feat: Windows desktop automation via win_ops.py
+2011a61 fix: hide default File/Edit/View menu bar in Electron window via Menu.setApplicationMenu(null)
 ```
 ```
-HANDOFF.md              |  14 +-
- skills/desktop/SKILL.md |   3 +-
- tools/macos_ops.py      |  58 ++++
- tools/win_ops.py        | 846 ++++++++++++++++++++++++++++++++++++++++++++++++
- 4 files changed, 915 insertions(+), 6 deletions(-)
+HANDOFF.md                  | 19 ++++++++++++++++---
+ mini_agent_electron/main.js |  3 ++-
+ 2 files changed, 18 insertions(+), 4 deletions(-)
 ```
 
 ### What's Pending
@@ -31,6 +29,4 @@ Plan (7/7 complete):
 
 ### Modified Files
 - HANDOFF.md
-- skills/desktop/SKILL.md
-- tools/macos_ops.py
-- tools/win_ops.py
+- mini_agent_electron/main.js
