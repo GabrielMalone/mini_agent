@@ -901,9 +901,11 @@ class TestHashlines(unittest.TestCase):
         set_context(workspace=self.workspace)
         # Clear cross-test state
         from tools import file_ops, _TOOL_CACHE
+        from tools.idempotency import clear_idempotent
         file_ops._READ_FILES.clear()
         file_ops._FILE_CACHE.clear()
         _TOOL_CACHE.clear()
+        clear_idempotent()
 
     def tearDown(self):
         import shutil

@@ -16,7 +16,8 @@ import uuid
 import threading
 
 from core.safety import ReadSafetyGate, WriteSafetyGate
-from tools import _register, _summarize, ToolResult, _TASK_REGISTRY
+from tools.result import ToolResult, ErrorClass
+from tools import _register, _summarize, _TASK_REGISTRY
 
 _WINDOWS = platform.system() == "Windows"
 _WINDOWS_POPEN_KWARGS = {"creationflags": subprocess.CREATE_NO_WINDOW} if _WINDOWS else {}
@@ -272,7 +273,7 @@ def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: 
     # ACI upgrade: check for dangerous commands before executing
     danger_warning = _check_dangerous_command(command, force)
     if danger_warning and not force:
-        return ToolResult(success=False, content=danger_warning)
+        return ToolResult.authorization_error(danger_warning, hint="Use force=True to bypass this safety check, or choose a non-destructive alternative.")
     # If force=True, retain the warning to prepend to final output
     _danger_prefix = danger_warning + "\n\n" if danger_warning else ""
     # Windows: note when bash is unavailable (cmd.exe has different pipe/redirect syntax)
@@ -435,8 +436,8 @@ def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: 
                 if kill_fired.is_set():
                     _unregister_proc(proc)
                     _TOOL_CONTEXT._active_proc = None
-                    return ToolResult(success=False,
-                                      content=f"Command timed out after {timeout}s (process tree killed)")
+                    return ToolResult.transient_error(
+                        f"Command timed out after {timeout}s (process tree killed)", retry_after_ms=2000)
                 try:
                     proc.wait(timeout=5)
                 except subprocess.TimeoutExpired:
@@ -450,7 +451,7 @@ def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: 
                     t_err.join(timeout=2)
                     _unregister_proc(proc)
                     _TOOL_CONTEXT._active_proc = None
-                    return ToolResult(success=False, content=f"Command timed out after {timeout}s")
+                    return ToolResult.transient_error(f"Command timed out after {timeout}s", retry_after_ms=2000)
                 finally:
                     _TOOL_CONTEXT._active_proc = None
 
@@ -477,7 +478,7 @@ def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: 
                     if partial:
                         return ToolResult(success=False,
                                           content=f"Command timed out after {timeout}s\n\n{partial}")
-                    return ToolResult(success=False, content=f"Command timed out after {timeout}s")
+                    return ToolResult.transient_error(f"Command timed out after {timeout}s", retry_after_ms=2000)
             else:
                 try:
                     out, err = proc.communicate(timeout=timeout)
@@ -486,7 +487,7 @@ def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: 
                     out, err = proc.communicate()
                     _unregister_proc(proc)
                     _TOOL_CONTEXT._active_proc = None
-                    return ToolResult(success=False, content=f"Command timed out after {timeout}s")
+                    return ToolResult.transient_error(f"Command timed out after {timeout}s", retry_after_ms=2000)
                 stdout = out
                 stderr = err
 
@@ -859,9 +860,9 @@ def _run_tests(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResu
             err = getattr(exc, "stderr", None) or ""
         output = (out + err).strip()
         if output:
-            return ToolResult(success=False,
-                              content=f"Tests timed out after {timeout}s\n\n{output}")
-        return ToolResult(success=False, content=f"Tests timed out after {timeout}s")
+            return ToolResult.transient_error(
+                f"Tests timed out after {timeout}s\n\n{output}", retry_after_ms=2000)
+        return ToolResult.transient_error(f"Tests timed out after {timeout}s", retry_after_ms=2000)
 
     output = (out + err).strip()
 
@@ -881,7 +882,7 @@ def _run_tests(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResu
             else:
                 out, err = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
-            return ToolResult(success=False, content=f"Tests timed out after {timeout}s")
+            return ToolResult.transient_error(f"Tests timed out after {timeout}s", retry_after_ms=2000)
         output = (out + err).strip()
 
     _persist_test_output(output)

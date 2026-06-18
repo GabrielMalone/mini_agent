@@ -516,6 +516,7 @@ def execute_tool(
     fn = tool_call["function"]
     name = fn["name"]
     raw_args = fn["arguments"]
+    import sys as _sys
     try:
         args, _repaired = _repair_json(raw_args)
     except json.JSONDecodeError as exc:
@@ -595,6 +596,12 @@ def execute_tool(
                 content=f"{name} not approved by user.",
                 hint=f"Tool '{name}' requires user approval and was denied. Consider an alternative approach or ask the user to approve.",
             )
+
+    # --- Idempotency check: return cached result for repeated write ops ---
+    from tools.idempotency import check_idempotent
+    cached_idem = check_idempotent(name, args)
+    if cached_idem is not None:
+        return cached_idem
 
     # Pass on_output to the tool if it accepts it (P0.1: cached signature check)
     accepts_on_output = _DISPATCH_SIGNATURES.get(name)
@@ -695,12 +702,19 @@ def execute_tool(
         raise raw
     result = raw
 
+    # --- Structured error classification (2026 best practice) ---
+    # Annotate every failed result with error_class, retryable, retry_after_ms
+    # so the LLM can choose the right recovery strategy without guessing.
+    if not result.success:
+        from tools.error_hints import _classify_result
+        _classify_result(result, name)
+
     # --- console: success / failure status ---
     _turn = getattr(_TOOL_CONTEXT, '_turn_count', 0)
     if result.success:
         _sys.stderr.write(f"[turn {_turn}] '{name}' OK\n")
     else:
-        _sys.stderr.write(f"[turn {_turn}] '{name}' ERR -- {result.content[:120]}\n")
+        _sys.stderr.write(f"[turn {_turn}] '{name}' ERR [{result.error_class.value if result.error_class else '?'}] -- {result.content[:120]}\n")
     _sys.stderr.flush()
 
     # Normalize: every failed result gets a _build_error_hint so the LLM
@@ -721,6 +735,10 @@ def execute_tool(
         _learn_from_failure(name, result)
     else:
         log_tool_success(name)
+        # --- Store idempotent result for write tools (2026 best practice) ---
+        from tools.idempotency import store_idempotent, _IDEMPOTENT_TOOLS as _IDEM_TOOLS
+        if name in _IDEM_TOOLS:
+            store_idempotent(name, args, result)
         # Only record success when this tool has known failure patterns;
         # skips unnecessary DB queries for the vast majority of successful calls.
         in_memory = _TOOL_CONTEXT.__dict__.get("_failure_patterns", {})

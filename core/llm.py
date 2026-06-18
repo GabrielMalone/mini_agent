@@ -683,7 +683,7 @@ def run_agent_turn(
     on_tool_output: Callable[..., Any] | None = None,
     approve_callback: Callable[..., Any] | None = None,
     cancel_event: threading.Event | None = None,
-    max_turns: int = 500,
+    max_turns: int = 100,
     session: requests.Session | None = None,
     memory_store: Any = None,
 ) -> dict | None:
@@ -694,7 +694,9 @@ def run_agent_turn(
 
     *messages* is mutated in place: assistant and tool messages are appended.
     Returns the final assistant message dict, or ``None`` if cancelled.
-    *max_turns* is a hard safety cap (default 500).
+    *max_turns* is a hard safety cap (default 100, absolute max 200).
+    When the cap is hit, a wrap-up nudge is injected and the agent gets one
+    final turn to summarize before returning.
 
     If *memory_store* is provided, the scratchpad is read from it and
     injected as context at the start of the turn.
@@ -719,6 +721,8 @@ def run_agent_turn(
     # message-cleaning cache in api.py survives across turns since the same
     # messages list is mutated. Clearing it every turn defeats the optimization.
     clear_tool_cache()
+    from tools.idempotency import clear_idempotent
+    clear_idempotent()
 
     # --- Console title hint for glazewm/zebar workspace detection ---
     # Set the terminal/console title so glazewm can detect when the agent is
@@ -851,18 +855,40 @@ def run_agent_turn(
             if not continue_loop:
                 continue
 
-        # Auto-extend when close to budget (like sub-agent auto-extend)
-        if turn_count >= max_turns - 3 and turn_count < max_turns + 10:
-            max_turns += 10
-
-        # Exceeded max_turns -- return last assistant message (still has tool_calls)
-        if 'msg' not in locals():
-            return None  # max_turns was 0, no API call made
-        if total_usage:
-            msg["_total_usage"] = total_usage
-        if turn_count > 1:
+        # Hard cap check: inject wrap-up nudge and give one final turn
+        _ABSOLUTE_MAX_TURNS = 200
+        if turn_count >= min(max_turns, _ABSOLUTE_MAX_TURNS):
+            if 'msg' not in locals():
+                return None  # max_turns was 0, no API call made
+            # Inject a wrap-up nudge instead of returning raw tool_calls
+            wrap_up = (
+                f"You have reached the turn limit ({turn_count} turns). "
+                "Summarize what you've accomplished so far, note any unfinished "
+                "work, and recommend next steps for the user. Do NOT call any more tools."
+            )
+            messages.append({"role": "user", "content": wrap_up})
+            # Allow one final API call for the summary
+            try:
+                final_msg = call_llm(messages, config, session=session, cancel_event=cancel_event)
+                if total_usage:
+                    _accumulate_usage(total_usage, final_msg)
+                    final_msg["_total_usage"] = total_usage
+                final_msg["_turn_count"] = turn_count
+                final_msg.setdefault("content", (
+                    f"Turn limit reached ({turn_count} turns). "
+                    "Please continue in a new message with a more focused task."
+                ))
+                return final_msg
+            except Exception:
+                pass
+            if total_usage:
+                msg["_total_usage"] = total_usage
             msg["_turn_count"] = turn_count
-        return msg
+            msg.setdefault("content", (
+                f"Turn limit reached ({turn_count} turns). "
+                "Please continue in a new message with a more focused task."
+            ))
+            return msg
     finally:
         # Restore console title (glazewm detection marker)
         _set_console_title("mini_agent")

@@ -16,9 +16,9 @@ import subprocess
 import sys
 import time
 
-from core.safety import ReadSafetyGate, WriteSafetyGate
+from tools.result import ToolResult, ErrorClass
 from tools import clear_tool_cache
-from tools import _register, _summarize, ToolResult, _TOOL_CONTEXT
+from tools import _register, _summarize, _TOOL_CONTEXT
 
 # Thread-local: current sub-agent task_id (set by agent_ops before tool execution)
 import threading
