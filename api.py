@@ -196,7 +196,7 @@ def _build_payload(
             payload["tools"] = _inject_strict_tools(tools)
         # Tool choice: "auto" (default), "required" (must call a tool),
         # or "none" (text-only, no tool calls).
-        if config.tool_choice:
+        if getattr(config, "tool_choice", ""):
             payload["tool_choice"] = config.tool_choice
 
     elif provider == "claude":

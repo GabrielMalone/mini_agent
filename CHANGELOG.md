@@ -2,6 +2,41 @@
 
 Self-modification audit trail -- what the agent changed and why.
 
+## 2026-06-18 -- Code Audit: Full Codebase Health Check
+
+### Verified Clean
+- **Syntax**: All 134 `.py` files parse successfully -- zero syntax errors.
+- **Anti-patterns**: No bare `except:` clauses, no mutable default arguments,
+  no `exec()`/`eval()` calls.
+- **Circular imports**: None. `core.* -> tools` (4 modules) and
+  `tools.* -> core` (14 modules) are clean directional dependencies.
+- **Empty tests**: No empty or `pass`-only test functions.
+- **Test suite**: 1,116 passed, 38 skipped, 1 pre-existing error
+  (`test_bash_diag.py` -- see Known Issues).
+
+### Recent Changes (pre-audit)
+- **api.py**: Changed `if config.tool_choice:` to
+  `if getattr(config, "tool_choice", ""):` -- defensive guard against mock
+  configs missing the attribute. No behavioral change (both falsy on `""`).
+- **conftest.py**: Added `"tool_choice": ""` to `make_mock_config` defaults
+  for test consistency with the above guard.
+
+### Structural Notes (not bugs)
+- **41 files >= 500 lines** (largest: `tools/agent_ops.py` at 1,905 lines,
+  `core/context_inject.py` at 1,725 lines).
+- **64 functions >= 80 lines** (largest: `run_sub_agent()` at 680 lines,
+  `_spawn_agent()` at 571 lines, `init_session()` at 407 lines).
+- These are maintenance complexity indicators, not bugs. Consider factoring
+  future additions into smaller modules/functions.
+
+### Known Issues
+- **`tests/test_bash_diag.py`**: Standalone Windows diagnostic script with a
+  top-level `def test(label, cmd, stdin_mode, ...)` that pytest discovers as
+  a test function. Since `label`, `cmd`, `stdin_mode` are not fixtures,
+  collection fails with `fixture 'label' not found`. The script was never
+  intended as a pytest test. Fix: rename function to `run_diag` or add
+  `pytestmark = pytest.mark.skip`.
+
 ## 2026-06-18 -- Documentation Drift Fixes
 
 ### Fixed
