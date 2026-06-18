@@ -1,6 +1,6 @@
 # mini_agent
 
-A terminal AI coding assistant powered by LLMs (DeepSeek, Claude, xAI/Grok) with 76+ tools,
+A terminal AI coding assistant powered by LLMs (DeepSeek, Claude, xAI/Grok) with 138 tools (81 core + 57 over 9 skills),
 multi-agent orchestration, SQLite memory, headless browser, desktop automation, and an Electron
 desktop app. The agent observes, diagnoses, and improves its own codebase — it's self-modifying.
 
@@ -8,8 +8,8 @@ desktop app. The agent observes, diagnoses, and improves its own codebase — it
 
 - **Multi-provider LLM support** — DeepSeek V3/R1, Claude Opus/Sonnet, xAI Grok 3, plus a
   provider fallback chain (primary fails → automatic failover)
-- **76+ tools** across 11 skill groups: file ops, shell, search, LSP, browser automation,
-  desktop control, git, testing, planning, multi-agent orchestration, and MCP
+- **138 tools** across 9 skill groups: file ops, shell, search, LSP, browser automation,
+  desktop control, testing, multi-agent orchestration, web, and more
 - **Multi-agent orchestration** — spawn sub-agents with turn budgets, typed inter-agent
   messaging (handoff, broadcast inbox), and parallel patterns (fan-out/in, pipeline, barrier,
   scatter-gather)
@@ -110,7 +110,7 @@ mini_agent/
 │   ├── memory.py           # MemoryStore: conversations, knowledge, scratchpad
 │   ├── memory_prune.py     # Content-aware compression, orphan stripping
 │   └── session.py          # Session lifecycle
-├── tools/                  # Tool implementations (76+ tools)
+├── tools/                  # Tool implementations (138 tools: 81 core + 57 skill)
 │   ├── file_ops.py         # read/write/edit/list/info/scratchpad/diff
 │   ├── shell_ops.py        # run_shell, search_files, run_tests, verify
 │   ├── search_ops.py       # find_symbol, web_search, semantic_search

@@ -22,7 +22,11 @@ Changes to the agent loop, system prompt, configuration, or context injection:
 Adding, modifying, or removing tools:
 
 - `tools/schema.py` — TOOLS definitions sent to LLM (all tool schemas)
-- `tools/__init__.py` — tool dispatch, cache, ToolResult, JSON repair
+- `tools/__init__.py` — tool dispatch, cache, ToolResult
+- `tools/json_repair.py` — JSON repair and parse-error recovery
+- `tools/memory_core.py` — persistent core memory (read/add/replace/remove)
+- `tools/memory_consolidation.py` — memory consolidation and summarization
+- `tools/reservations.py` — edit reservation system (reserve, release, list)
 - `tools/file_ops.py` — read, write, edit, list, info, scratchpad, diff, plan
 - `tools/shell_ops.py` — run_shell, search_files, run_tests, verify
 - `tools/search_ops.py` — find_symbol, find_usages, web_search, semantic_search

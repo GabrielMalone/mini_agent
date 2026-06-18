@@ -360,10 +360,13 @@ _TOOL_DISPATCH["skill_list"] = _skill_list
 _TOOL_SUMMARIES["skill_list"] = lambda args: "skill_list()"
 _TOOL_DISPATCH["skill_view"] = _skill_view
 _TOOL_SUMMARIES["skill_view"] = lambda args: f"skill_view({args.get('name', '?')})"
-# Inject schemas so they're always in TOOLS (core tools, always visible)
-TOOLS.append(USE_SKILL_SCHEMA)
-TOOLS.append(SKILL_LIST_SCHEMA)
-TOOLS.append(SKILL_VIEW_SCHEMA)
+# Inject schemas so they're always in TOOLS (core tools, always visible).
+# Guarded against double-import: if tools/__init__.py is evaluated more than
+# once (e.g. via "from tools.__init__ import ..."), skip re-append.
+_EXISTING_TOOL_NAMES = {td["function"]["name"] for td in TOOLS}
+for _schema in (USE_SKILL_SCHEMA, SKILL_LIST_SCHEMA, SKILL_VIEW_SCHEMA):
+    if _schema["function"]["name"] not in _EXISTING_TOOL_NAMES:
+        TOOLS.append(_schema)
 
 
 def clear_tool_cache() -> None:
