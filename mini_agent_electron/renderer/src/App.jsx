@@ -201,6 +201,14 @@ function AppShell() {
     applyTheme(THEMES[nextIndex].id);
   }, [themeIndex, applyTheme]);
 
+  // Keep data-theme attribute + localStorage in sync with React state.
+  // This is the single declarative sync point -- applyTheme() and the
+  // index.html inline script both set the same key, but this effect
+  // guarantees consistency even if one of them races or gets skipped.
+  useEffect(() => {
+    setThemeDom(theme);
+  }, [theme]);
+
   // Close theme picker on outside click
   useEffect(() => {
     if (!themePickerOpen) return;
