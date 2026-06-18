@@ -1,10 +1,20 @@
 # Session Handoff
 # Auto-generated at session end. Read at next session start for continuity.
 
-## Last Session: 2026-06-18 13:35 UTC
+## Last Session: 2026-06-18 13:38 UTC
 
 ### What I Changed
-(no git changes detected)
+### Commits
+```
+a468fdb feat: Windows desktop automation via win_ops.py
+```
+```
+HANDOFF.md              |  14 +-
+ skills/desktop/SKILL.md |   3 +-
+ tools/macos_ops.py      |  58 ++++
+ tools/win_ops.py        | 846 ++++++++++++++++++++++++++++++++++++++++++++++++
+ 4 files changed, 915 insertions(+), 6 deletions(-)
+```
 
 ### What's Pending
 (none recorded)
@@ -20,4 +30,7 @@ Plan (7/7 complete):
   [V] 7. Wire all tools through platform dispatch and test imports
 
 ### Modified Files
-(none tracked)
+- HANDOFF.md
+- skills/desktop/SKILL.md
+- tools/macos_ops.py
+- tools/win_ops.py

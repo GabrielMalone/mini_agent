@@ -5,7 +5,7 @@
  * between the renderer (via IPC) and the Python process (via JSON-lines
  * on stdin/stdout).
  */
-const { app, BrowserWindow, ipcMain, dialog, protocol, net } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, protocol, net, Menu } = require('electron');
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
@@ -992,6 +992,7 @@ app.whenReady().then(() => {
   });
 
   setupIPC();
+  Menu.setApplicationMenu(null);  // hide default File/Edit/View menu bar
   createWindow();
   _startBotPolling();
 
