@@ -26,6 +26,9 @@ keys
 .mini_agent.toml
 .env
 
+# Session artifacts (auto-generated)
+HANDOFF.md
+
 # Session backups
 .mini_agent_backups/
 .mini_agent_scratchpad.md
