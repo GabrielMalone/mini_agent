@@ -291,7 +291,7 @@ html, body {
 .statusbar-balance .statusbar-metric-value {
   color: var(--green);
   font-weight: 500;
-  font-size: 12px;
+  font-size: 10px;
 }
 .statusbar-cache .statusbar-metric-value {
   color: var(--accent);
