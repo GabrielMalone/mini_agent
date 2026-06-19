@@ -30,6 +30,12 @@ from tools._file_utils import (
     _current_agent_id,
 )
 
+from core.anchor_manager import (
+    AnchorStateManager,
+    content_hash as anchor_content_hash,
+    format_lines_for_model,
+)
+
 # Edit operations (triggers @_register for edit_file, edit_lines)
 # Also re-exports symbols that external consumers import from tools.file_ops directly
 # (shell_ops, ast_tools, agent_ops, tests)
