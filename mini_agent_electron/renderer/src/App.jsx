@@ -192,8 +192,6 @@ function AppShell() {
         toolName = summary;
         toolArgs = '';
       }
-      addToolLine({ toolName, toolArgs, cls: 'tool-summary' });
-
       const cardId = ++toolCardIdRef.current;
       startTransition(() => {
         setToolCards((prev) => [...prev, {
@@ -562,9 +560,6 @@ function AppShell() {
             <div className="frame-content">
               {toolCards.map((card) => (
                 <ToolCard key={card.id} card={card} />
-              ))}
-              {deferredToolsLines.map((line, i) => (
-                <LogLine key={i} line={line} />
               ))}
             </div>
           </div>
