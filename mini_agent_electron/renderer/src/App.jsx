@@ -431,18 +431,8 @@ function AppShell() {
         toolName = summary;
         toolArgs = '';
       }
-      // Pick an icon prefix based on the tool category
-      const toolIcons = {
-        read_file: '\u{1F4D6}', lsp_definition: '\u{1F50D}', lsp_references: '\u{1F50D}',
-        lsp_hover: '\u{1F50D}', lsp_diagnostics: '\u{1F50D}',
-        write_file: '\u{270F}\u{FE0F}', edit_file: '\u{270F}\u{FE0F}', edit_lines: '\u{270F}\u{FE0F}',
-        run_shell: '\u{2699}\u{FE0F}', run_tests: '\u{1F9EA}',
-        search_files: '\u{1F50D}', find_symbol: '\u{1F50D}', web_search: '\u{1F310}',
-        remember: '\u{1F9E0}', list_directory: '\u{1F4C1}', file_info: '\u{1F4C4}',
-      };
-      const icon = toolIcons[toolName] || '';
       addToolLine({
-        toolName: icon ? `${icon} ${toolName}` : toolName,
+        toolName,
         toolArgs,
         cls: '',
       });
@@ -462,7 +452,7 @@ function AppShell() {
     }));
 
     unsubs.push(api.on('stream:tool_end', (data) => {
-      const status = data.ok ? '\u2713' : '\u2717';
+      const status = data.ok ? 'OK' : 'ERR';
       const cls = data.ok ? 'msg-tool-ok' : 'msg-tool-err';
       // Pop this tool's buffer from the stack (supports parallel calls)
       const entry = toolOutputStack.current.pop() || { lines: [], toolName: '' };
