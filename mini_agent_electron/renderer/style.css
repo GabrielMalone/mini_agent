@@ -1705,3 +1705,132 @@ html, body {
   opacity: 0.4;
   cursor: not-allowed;
 }
+
+/* ==========================================================================
+  Smooth Transitions & Animations
+  ========================================================================== */
+
+/* --- Entry animations for tool calls --- */
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+    filter: blur(1px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+    filter: blur(0);
+  }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes panelGlow {
+  0%, 100% {
+    border-color: var(--border);
+    box-shadow: 0 0 0 0 rgb(var(--accent-rgb) / 0);
+  }
+  50% {
+    border-color: rgb(var(--accent-rgb) / 0.3);
+    box-shadow: 0 0 8px rgb(var(--accent-rgb) / 0.04);
+  }
+}
+
+/* Tool call entries -- each new line slides in */
+#tools-log > div,
+#chat-log > div {
+  animation: slideInLeft 0.25s ease-out;
+}
+
+/* Only animate the last few entries to avoid re-animating the entire log */
+#tools-log > div:nth-last-child(-n+6),
+#chat-log > div:nth-last-child(-n+6) {
+  animation: slideInLeft 0.3s ease-out;
+}
+#tools-log > div:nth-last-child(n+7),
+#chat-log > div:nth-last-child(n+7) {
+  animation: none;
+}
+
+/* Agent messages -- subtle fade-up */
+.msg-agent {
+  animation: fadeInUp 0.35s ease-out;
+}
+
+/* Thinking blocks -- gentle reveal */
+.msg-thinking {
+  animation: fadeIn 0.3s ease-out;
+}
+
+/* Tool separators -- quick fade */
+.tool-separator {
+  animation: fadeIn 0.15s ease-out;
+}
+
+/* Status messages -- subtle fade */
+.msg-status {
+  animation: fadeIn 0.2s ease-out;
+}
+
+/* Panel border transition on all panels */
+#left-pane,
+#right-pane,
+#agent-tree-panel,
+#input-frame {
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+/* Highlight the tool pane when tools are actively streaming */
+#left-pane.tools-active {
+  border-color: rgb(var(--accent-rgb) / 0.25);
+  box-shadow: 0 0 12px rgb(var(--accent-rgb) / 0.04);
+}
+
+/* Highlight the chat pane when the agent is responding */
+#right-pane.chat-active {
+  border-color: rgb(var(--accent-rgb) / 0.3);
+  box-shadow: 0 0 12px rgb(var(--accent-rgb) / 0.04);
+}
+
+/* Smooth color transitions for tool result status */
+.msg-tool-ok,
+.msg-tool-err {
+  transition: color 0.25s ease, opacity 0.25s ease;
+}
+
+/* Code blocks -- smooth appearance */
+.shiki-block {
+  animation: fadeIn 0.4s ease-out;
+}
+
+.shiki-block pre {
+  transition: background 0.2s ease;
+}
+
+/* @starting-style for smooth entry on first paint */
+@starting-style {
+  #tools-log > div,
+  #chat-log > div {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+  .msg-agent {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}

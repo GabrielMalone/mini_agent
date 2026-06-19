@@ -1,10 +1,18 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 
 /**
  * useSmoothStream -- buffer incoming text chunks and animate them
- * with a smooth exponential catch-up at ~60 fps.  Each tick advances
- * by ceil(behind / 4), so the animation is fast when far behind and
- * slows naturally as it catches up -- no jarring discrete thresholds.
+ * with vsync-locked rendering via requestAnimationFrame (~60 fps).
+ *
+ * Uses exponential catch-up: each frame advances by ceil(behind / 4),
+ * so the animation is fast when far behind and slows naturally as it
+ * catches up -- no jarring discrete thresholds.
+ *
+ * rAF advantages over setTimeout:
+ *  - Vsync-locked to display refresh rate (smoother)
+ *  - Automatically pauses when the tab is hidden
+ *  - Browser batches rAF callbacks before paint (less jank)
+ *  - Better battery life on laptops
  *
  * Returns:
  *   displayedText  -- current visible text (animating)
@@ -16,48 +24,42 @@ export default function useSmoothStream() {
   const [displayedText, setDisplayedText] = useState('');
   const fullRef = useRef('');
   const indexRef = useRef(0);
-  const timerRef = useRef(null);
-
-  // ~60 fps -- smooth to the eye
-  const TICK_MS = 16;
-
-  // Use a ref to hold the latest tick function so addChunk can always
-  // schedule the current version without stale-closure issues.
+  const rafRef = useRef(null);
   const tickRef = useRef(null);
 
   tickRef.current = () => {
     const full = fullRef.current;
     const behind = full.length - indexRef.current;
     if (behind <= 0) {
-      timerRef.current = null;
+      rafRef.current = null;
       return;
     }
     // Smooth exponential catch-up: advance by ceil(behind / 4).
-    // Far behind -> big jumps.  Close -> 1 char per tick.
+    // Far behind -> big jumps.  Close -> 1 char per frame.
     const step = Math.max(1, Math.ceil(behind / 4));
     indexRef.current = Math.min(indexRef.current + step, full.length);
     setDisplayedText(full.slice(0, indexRef.current));
 
-    // Schedule next tick if still behind
+    // Schedule next frame if still behind
     if (indexRef.current < full.length) {
-      timerRef.current = setTimeout(tickRef.current, TICK_MS);
+      rafRef.current = requestAnimationFrame(tickRef.current);
     } else {
-      timerRef.current = null;
+      rafRef.current = null;
     }
   };
 
   const addChunk = useCallback((text) => {
     if (!text) return;
     fullRef.current += text;
-    if (!timerRef.current) {
-      timerRef.current = setTimeout(tickRef.current, TICK_MS);
+    if (!rafRef.current) {
+      rafRef.current = requestAnimationFrame(tickRef.current);
     }
   }, []);
 
   const reset = useCallback(() => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
     }
     fullRef.current = '';
     indexRef.current = 0;
@@ -65,9 +67,9 @@ export default function useSmoothStream() {
   }, []);
 
   const flush = useCallback(() => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
     }
     indexRef.current = fullRef.current.length;
     setDisplayedText(fullRef.current);
@@ -77,9 +79,9 @@ export default function useSmoothStream() {
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
-        timerRef.current = null;
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
       }
     };
   }, []);

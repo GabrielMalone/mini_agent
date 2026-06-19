@@ -1,5 +1,5 @@
 # mini_agent Architecture Map
-# Last updated: 2026-06-16 (hash-anchored editing + storm-breaker)
+# Last updated: 2026-06-19 (React 19 UI modernization — startTransition, rAF streaming, CSS animations)
 #
 # This file is the agent's map of the codebase. Update it after completed changes.
 # Behavioral rules live in AGENTS.md. Long-term facts live in core memory.
@@ -85,8 +85,22 @@
 - `mini_agent_electron/main.js` -- Electron main process, restart throttle (max 3/30s), taskkill
 - `mini_agent_electron/preload.js` -- IPC bridge
 - `mini_agent_electron/backend/server.py` -- Python backend WebSocket server
-- `mini_agent_electron/renderer/src/App.jsx` -- React UI
-- `mini_agent_electron/renderer/style.css` -- Styles
+- `mini_agent_electron/renderer/src/App.jsx` -- React 19 UI with startTransition + useDeferredValue
+- `mini_agent_electron/renderer/src/hooks/useSmoothStream.js` -- requestAnimationFrame-based streaming
+- `mini_agent_electron/renderer/style.css` -- themeable styles with CSS animations
+
+### React UI Modernization (2026-06-19)
+- React 19 `startTransition`: all chat/tool/thinking array updates wrapped for non-blocking UI
+- React 19 `useDeferredValue`: toolsLines, chatLines, thinkingBlocks, subagentData deferred
+  to keep scroll and input responsive during heavy streaming (400+ line arrays)
+- `useSmoothStream`: switched from setTimeout(16ms) to requestAnimationFrame for vsync-locked
+  60fps text streaming. Automatically pauses when tab hidden, better battery life.
+- CSS animations: slideInLeft for tool/chat entries (last 6 only), fadeInUp for agent messages,
+  fadeIn for thinking blocks and status lines, border transitions on panels with
+  .tools-active / .chat-active conditional classes
+- Panel highlighting: left pane gets .tools-active border glow when agent is running,
+  right pane gets .chat-active when responding
+- @starting-style for smooth first-paint entry (Chromium 117+ / Electron 42+)
 
 ## Architecture Notes
 

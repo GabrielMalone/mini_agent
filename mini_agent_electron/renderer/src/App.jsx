@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, startTransition, useDeferredValue, useMemo } from 'react';
 import useSmoothStream from './hooks/useSmoothStream';
 import LogLine from './components/LogLine';
 import CodeBlock from './components/CodeBlock';
@@ -112,8 +112,13 @@ function AppShell() {
   const [toolsLines, setToolsLines] = useState([]);
   const [chatLines, setChatLines] = useState([]);
 
+  // Deferred values keep the UI responsive during heavy streaming
+  const deferredToolsLines = useDeferredValue(toolsLines);
+  const deferredChatLines = useDeferredValue(chatLines);
+
   // Sub-agent data -- { [task_id]: { name, desc, toolCalls: [], thoughts: [], output: "", ok: null } }
   const [subagentData, setSubagentData] = useState({});
+  const deferredSubagentData = useDeferredValue(subagentData);
 
   // Smooth streaming for thinking & chat
   const thinking = useSmoothStream();
@@ -131,6 +136,7 @@ function AppShell() {
   const [elapsedSec, setElapsedSec] = useState(null);
   const [inputDisabled, setInputDisabled] = useState(false);
   const [thinkingBlocks, setThinkingBlocks] = useState([]);
+  const deferredThinkingBlocks = useDeferredValue(thinkingBlocks);
   const [botStatus, setBotStatus] = useState({});
   const [botMenuOpen, setBotMenuOpen] = useState(false);
   const botMenuToggleRef = useRef(null);
@@ -321,9 +327,11 @@ function AppShell() {
     return () => document.removeEventListener('click', close);
   }, [botMenuOpen]);
 
-  // Helper to add a line to any log
+  // Helper to add a line to any log -- uses startTransition for non-blocking UI
   const addLine = useCallback((setter) => (line) => {
-    setter((prev) => [...prev, line]);
+    startTransition(() => {
+      setter((prev) => [...prev, line]);
+    });
   }, []);
 
   const addToolLine = useCallback((line) => addLine(setToolsLines)(line), [addLine]);
@@ -407,7 +415,7 @@ function AppShell() {
     unsubs.push(api.on('stream:thinking_end', () => {
       inThinkingRef.current = false;
       const flushed = thinking.flush();
-      if (flushed) setThinkingBlocks((prev) => [...prev, flushed]);
+      if (flushed) startTransition(() => setThinkingBlocks((prev) => [...prev, flushed]));
     }));
 
     unsubs.push(api.on('stream:tool_start', (data) => {
@@ -481,14 +489,16 @@ function AppShell() {
       // produced no text content (e.g. reasoning-only + tool_calls).
       // Otherwise the placeholder stays as an empty line in chat forever,
       // and the user sees no output summary.
-      setChatLines((prev) => {
-        const updated = [...prev];
-        if (updated.length > 0 && updated[updated.length - 1].cls === 'msg-agent-pending') {
-          updated[updated.length - 1] = { id: updated[updated.length - 1].id, text: agentText || '', cls: 'msg-agent', markdown: true };
-        } else if (agentText) {
-          updated.push({ id: nextLineId(), text: agentText, cls: 'msg-agent', markdown: true });
-        }
-        return updated;
+      startTransition(() => {
+        setChatLines((prev) => {
+          const updated = [...prev];
+          if (updated.length > 0 && updated[updated.length - 1].cls === 'msg-agent-pending') {
+            updated[updated.length - 1] = { id: updated[updated.length - 1].id, text: agentText || '', cls: 'msg-agent', markdown: true };
+          } else if (agentText) {
+            updated.push({ id: nextLineId(), text: agentText, cls: 'msg-agent', markdown: true });
+          }
+          return updated;
+        });
       });
       chatStream.reset();
       if (data.turn_count) setTurnCountVal(data.turn_count);
@@ -510,14 +520,16 @@ function AppShell() {
       stopTimer();
       const agentText = chatStream.flush();
       chatStream.reset();
-      setChatLines((prev) => {
-        const updated = [...prev];
-        // Flush any pending agent text before showing the error
-        if (agentText && updated.length > 0 && updated[updated.length - 1].cls === 'msg-agent-pending') {
-          updated[updated.length - 1] = { id: updated[updated.length - 1].id, text: agentText, cls: 'msg-agent', markdown: true };
-        }
-        updated.push({ id: nextLineId(), text: `Error: ${data.message}`, cls: 'msg-error' });
-        return updated;
+      startTransition(() => {
+        setChatLines((prev) => {
+          const updated = [...prev];
+          // Flush any pending agent text before showing the error
+          if (agentText && updated.length > 0 && updated[updated.length - 1].cls === 'msg-agent-pending') {
+            updated[updated.length - 1] = { id: updated[updated.length - 1].id, text: agentText, cls: 'msg-agent', markdown: true };
+          }
+          updated.push({ id: nextLineId(), text: `Error: ${data.message}`, cls: 'msg-error' });
+          return updated;
+        });
       });
       setIsLive(false);
       setInputDisabled(false);
@@ -525,14 +537,22 @@ function AppShell() {
     }));
 
     unsubs.push(api.on('stream:status', (data) => {
-      setChatLines((prev) => [...prev, { id: nextLineId(), text: data.message, cls: 'msg-status' }]);
+      startTransition(() => {
+        setChatLines((prev) => [...prev, { id: nextLineId(), text: data.message, cls: 'msg-status' }]);
+      });
     }));
 
     unsubs.push(api.on('backend:response', (data) => {
       if (data.lines) {
-        for (const line of data.lines) {
-          setChatLines((prev) => [...prev, { id: nextLineId(), text: line, cls: 'msg-status' }]);
-        }
+        startTransition(() => {
+          setChatLines((prev) => {
+            const updated = [...prev];
+            for (const line of data.lines) {
+              updated.push({ id: nextLineId(), text: line, cls: 'msg-status' });
+            }
+            return updated;
+          });
+        });
       }
     }));
 
@@ -556,12 +576,14 @@ function AppShell() {
       // line in the chat log.
       const leftover = chatStream.flush();
       if (leftover || chatStream.displayedText) {
-        setChatLines((prev) => {
-          const updated = [...prev];
-          if (updated.length > 0 && updated[updated.length - 1].cls === 'msg-agent-pending') {
-            updated[updated.length - 1] = { id: updated[updated.length - 1].id, text: leftover || chatStream.displayedText, cls: 'msg-agent', markdown: true };
-          }
-          return updated;
+        startTransition(() => {
+          setChatLines((prev) => {
+            const updated = [...prev];
+            if (updated.length > 0 && updated[updated.length - 1].cls === 'msg-agent-pending') {
+              updated[updated.length - 1] = { id: updated[updated.length - 1].id, text: leftover || chatStream.displayedText, cls: 'msg-agent', markdown: true };
+            }
+            return updated;
+          });
         });
       }
       chatStream.reset();
@@ -709,9 +731,11 @@ function AppShell() {
       setInputValue('');
       // /clear also wipes the renderer's chat & tool logs immediately
       if (text.trim().toLowerCase() === '/clear') {
-        setChatLines([]);
-        setToolsLines([]);
-        setSubagentData({});
+        startTransition(() => {
+          setChatLines([]);
+          setToolsLines([]);
+          setSubagentData({});
+        });
         chatStream.reset();
         thinking.reset();
         setThinkingBlocks([]);
@@ -719,13 +743,15 @@ function AppShell() {
       return;
     }
 
-    setChatLines((prev) => [
-      ...prev,
-      ...(prev.length > 0 ? [{ id: nextLineId(), text: '', cls: 'msg-separator' }] : []),
-      { id: nextLineId(), text, cls: 'msg-user' },
-      { id: nextLineId(), text: '', cls: 'msg-separator' },
-      { id: nextLineId(), text: '', cls: 'msg-agent-pending' },
-    ]);
+    startTransition(() => {
+      setChatLines((prev) => [
+        ...prev,
+        ...(prev.length > 0 ? [{ id: nextLineId(), text: '', cls: 'msg-separator' }] : []),
+        { id: nextLineId(), text, cls: 'msg-user' },
+        { id: nextLineId(), text: '', cls: 'msg-separator' },
+        { id: nextLineId(), text: '', cls: 'msg-agent-pending' },
+      ]);
+    });
     chatStream.reset();
 
     setIsLive(true);
@@ -807,15 +833,17 @@ function AppShell() {
     inThinkingRef.current = false;
     const agentText = chatStream.flush();
     const thinkText = thinking.flush();
-    if (thinkText) setThinkingBlocks((prev) => [...prev, thinkText]);
+    if (thinkText) startTransition(() => setThinkingBlocks((prev) => [...prev, thinkText]));
     thinking.reset();
     if (agentText) {
-      setChatLines((prev) => {
-        const updated = [...prev];
-        if (updated.length > 0 && updated[updated.length - 1].cls === 'msg-agent-pending') {
-          updated[updated.length - 1] = { id: updated[updated.length - 1].id, text: agentText, cls: 'msg-agent' };
-        }
-        return updated;
+      startTransition(() => {
+        setChatLines((prev) => {
+          const updated = [...prev];
+          if (updated.length > 0 && updated[updated.length - 1].cls === 'msg-agent-pending') {
+            updated[updated.length - 1] = { id: updated[updated.length - 1].id, text: agentText, cls: 'msg-agent' };
+          }
+          return updated;
+        });
       });
       chatStream.reset();
     }
@@ -957,31 +985,31 @@ function AppShell() {
       <div id="body-panels">
         {/* Left stack: Tools & Thinking + Agent Tree */}
         <div id="left-stack">
-          <RoundedFrame id="left-pane">
-            <LogPanel id="tools-log" className="scrollable dim" lines={toolsLines.slice(-MAX_RENDERED_TOOL_LINES)} />
+          <RoundedFrame id="left-pane" className={isLive ? 'tools-active' : ''}>
+            <LogPanel id="tools-log" className="scrollable dim" lines={deferredToolsLines.slice(-MAX_RENDERED_TOOL_LINES)} />
             <div className="hr" />
             <div id="thinking-log" ref={thinkingLogRef} className="log thinking-log thinking">
               {thinking.displayedText && (
                 <CharStream text={thinking.displayedText} className="msg-thinking" />
               )}
-              {!thinking.displayedText && thinkingBlocks.map((block, i) => (
+              {!thinking.displayedText && deferredThinkingBlocks.map((block, i) => (
                 <div key={i} className="msg-thinking">
                   <DeferredMarkdown text={block} markdown={false} />
                 </div>
               ))}
             </div>
           </RoundedFrame>
-          {Object.keys(subagentData).length > 0 && (
+          {Object.keys(deferredSubagentData).length > 0 && (
             <div id="agent-tree-panel">
-              <AgentTree agents={subagentData} />
+              <AgentTree agents={deferredSubagentData} />
             </div>
           )}
         </div>
 
         {/* Right pane: Chat */}
-        <RoundedFrame id="right-pane">
+        <RoundedFrame id="right-pane" className={isLive ? 'chat-active' : ''}>
           <div id="chat-log" ref={chatLogRef} className="log scrollable text">
-            {chatLines.slice(-MAX_RENDERED_CHAT_LINES).map((line) => {
+            {deferredChatLines.slice(-MAX_RENDERED_CHAT_LINES).map((line) => {
               if (line.cls === 'msg-agent') {
                 return (
                   <div key={line.id} className="msg-agent">
