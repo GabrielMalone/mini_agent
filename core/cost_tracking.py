@@ -9,7 +9,7 @@ Display currency conversion happens at the UI boundary.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 # ---------------------------------------------------------------------------
 # DeepSeek V4 pricing (USD per 1M tokens)

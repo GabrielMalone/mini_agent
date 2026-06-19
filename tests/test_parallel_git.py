@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Test parallel git + list_directory execution."""
-import concurrent.futures, time, sys
+import concurrent.futures
+import time
+import sys
 from tools import execute_tool
 from core.safety import ReadSafetyGate, WriteSafetyGate
 

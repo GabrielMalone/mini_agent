@@ -72,11 +72,6 @@ class TestTwoTierCache(unittest.TestCase):
 
     def test_adaptive_threshold_feedback(self):
         """Report feedback and verify threshold adjustment."""
-        from tools.semantic_cache import (
-            ADAPTIVE_THRESHOLD_DECAY,
-            ADAPTIVE_THRESHOLD_PENALTY,
-            DEFAULT_SIMILARITY_THRESHOLD,
-        )
 
         query = "Explain recursion in programming"
         response = {"role": "assistant", "content": "Recursion is when a function calls itself..."}
@@ -313,8 +308,8 @@ class TestEndToEnd(unittest.TestCase):
     def test_semantic_cache_import_works(self):
         """Module imports and singleton is available."""
         from tools.semantic_cache import (
-            get_semantic_cache, clear_semantic_cache, semantic_cache_stats,
-            CacheEntry, SemanticCache,
+            get_semantic_cache, semantic_cache_stats,
+            SemanticCache,
         )
         cache = get_semantic_cache()
         self.assertIsInstance(cache, SemanticCache)
@@ -352,7 +347,6 @@ class TestDeadToolPruning(unittest.TestCase):
 
     def test_usage_tracking_increments(self):
         """get_tool_usage should reflect tool call counting."""
-        import sys
         tmod = sys.modules["tools"]  # canonical module (same as execute_tool uses)
 
         tmod.reset_tool_usage()
@@ -369,7 +363,6 @@ class TestDeadToolPruning(unittest.TestCase):
 
     def test_get_unused_tools_excludes_essential(self):
         """Unprunable tools (read_file, write_file, etc.) never appear as unused."""
-        import sys
         tmod = sys.modules["tools"]
 
         tmod.reset_tool_usage()

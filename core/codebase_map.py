@@ -16,24 +16,17 @@ from __future__ import annotations
 
 import ast
 import os
-import platform
 import re
 import threading
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Any
 
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
-# Directories to skip entirely during the walk
-SKIP_DIRS: set[str] = {
-    ".git", "__pycache__", ".venv", "venv", "node_modules", ".mypy_cache",
-    ".pytest_cache", ".ruff_cache", "dist", "build", ".tox", ".eggs",
-    "*.egg-info",
-}
+from .constants import SKIP_DIRS  # noqa: E402  — canonical skip-dirs set
 
 # Windows reserved device names -- os.walk can encounter files/dirs with
 # these names (nul, con, prn, aux, com1-9, lpt1-9) which resolve to

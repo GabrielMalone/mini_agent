@@ -22,11 +22,9 @@ Usage inside a discord.Client subclass::
 from __future__ import annotations
 
 import asyncio
-import io
 import os
 import subprocess
 import tempfile
-import time
 from dataclasses import dataclass
 from typing import Optional
 

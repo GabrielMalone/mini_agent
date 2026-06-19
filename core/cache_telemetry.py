@@ -14,7 +14,6 @@ reading those stats and displaying them.
 
 from __future__ import annotations
 
-from typing import Any
 
 
 def get_cache_stats() -> dict:

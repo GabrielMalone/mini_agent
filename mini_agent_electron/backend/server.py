@@ -96,7 +96,6 @@ def _start_heartbeat(stop_event: threading.Event) -> threading.Thread:
     Returns:
         The started thread (daemon=True, so it won't block process exit).
     """
-    import time as _time
 
     def _loop() -> None:
         while not stop_event.wait(_HEARTBEAT_INTERVAL):

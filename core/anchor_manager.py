@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import difflib
 import hashlib
-import math
 import os
 import random
 import threading

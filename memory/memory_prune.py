@@ -18,7 +18,6 @@ _strip_orphaned_tool_results -- remove tool results with no matching call
 from __future__ import annotations
 
 import json
-import os
 import threading
 
 from logging_setup import get_logger
@@ -164,7 +163,7 @@ def _total_tokens(messages: list[dict]) -> int:
         else:
             acc_count, acc_total = 0, 0
 
-        if n >= acc_count and list_id == list_id:  # Same list, appending
+        if n >= acc_count:  # Same list, appending
             new_tokens = sum(_estimate_tokens(m) for m in messages[acc_count:])
             acc_total += new_tokens
             acc_count = n

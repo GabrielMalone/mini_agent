@@ -26,7 +26,6 @@ class TestMistakeNotebook:
     @pytest.fixture
     def populated_stores(self, db_path):
         """Create FailurePatternStore with data, then MistakeNotebook."""
-        from memory.memory import _close_shared_conn
         fps = FailurePatternStore(db_path)
         fps.init_schema()
 

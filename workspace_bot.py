@@ -130,8 +130,8 @@ def main() -> None:
     except Exception as e:
         # Check for privileged intents error -- retry with basic intents
         if "PrivilegedIntentsRequired" in type(e).__name__:
-            _blog(f"[workspace_bot] Privileged intents not enabled in Discord Developer Portal.")
-            _blog(f"[workspace_bot] Disabling privileged intents (members, presences, message_content) and retrying...")
+            _blog("[workspace_bot] Privileged intents not enabled in Discord Developer Portal.")
+            _blog("[workspace_bot] Disabling privileged intents (members, presences, message_content) and retrying...")
             import discord_bot
             discord_bot.INTENTS.members = False
             discord_bot.INTENTS.presences = False

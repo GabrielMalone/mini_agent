@@ -13,14 +13,20 @@ import shutil
 import subprocess
 import threading
 import uuid
-import threading
 
 from core.safety import ReadSafetyGate, WriteSafetyGate
-from tools.result import ToolResult, ErrorClass
+from tools.result import ToolResult
 from tools import _register, _summarize, _TASK_REGISTRY
 
 _WINDOWS = platform.system() == "Windows"
 _WINDOWS_POPEN_KWARGS = {"creationflags": subprocess.CREATE_NO_WINDOW} if _WINDOWS else {}
+
+# Common Git Bash paths on Windows (checked in priority order)
+_WIN_GIT_BASH_PATHS: list[str] = [
+    r"C:\Program Files\Git\bin\bash.exe",
+    r"C:\Program Files (x86)\Git\bin\bash.exe",
+    r"C:\Git\bin\bash.exe",
+]
 
 # ---------------------------------------------------------------------------
 # Platform helpers for cross-platform shell execution
@@ -34,12 +40,7 @@ def _get_shell_command() -> list[str]:
     """
     if platform.system() == "Windows":
         # Prefer Git Bash if available
-        bash_paths = [
-            r"C:\Program Files\Git\bin\bash.exe",
-            r"C:\Program Files (x86)\Git\bin\bash.exe",
-            r"C:\Git\bin\bash.exe",
-        ]
-        for bp in bash_paths:
+        for bp in _WIN_GIT_BASH_PATHS:
             if os.path.isfile(bp):
                 return [bp]
         # Try shutil.which for bash on PATH
@@ -59,12 +60,7 @@ def _get_shell_command() -> list[str]:
 def _is_bash_available() -> bool:
     """Check if bash is available on this system."""
     if platform.system() == "Windows":
-        bash_paths = [
-            r"C:\Program Files\Git\bin\bash.exe",
-            r"C:\Program Files (x86)\Git\bin\bash.exe",
-            r"C:\Git\bin\bash.exe",
-        ]
-        for bp in bash_paths:
+        for bp in _WIN_GIT_BASH_PATHS:
             if os.path.isfile(bp):
                 return True
         return shutil.which("bash") is not None
@@ -549,9 +545,7 @@ def _run_shell_summary(args: dict) -> str:
 # search_files
 # ---------------------------------------------------------------------------
 
-_SKIP_DIRS = {".git", ".hg", ".svn", "__pycache__", ".pytest_cache",
-              "venv", ".venv", "node_modules", ".mypy_cache", ".tox",
-              "dist", "build", ".eggs"}
+from core.constants import SKIP_DIRS as _SKIP_DIRS  # noqa: E402 — canonical skip-dirs set
 
 # Binary / non-text extensions to skip during search
 _BINARY_EXTS = {".pyc", ".pyo", ".so", ".o", ".a", ".dylib", ".dll",

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback, startTransition, useDeferredValue, useMemo } from 'react';
 import useSmoothStream from './hooks/useSmoothStream';
+import useTheme from './hooks/useTheme';
 import LogLine from './components/LogLine';
 import CodeBlock from './components/CodeBlock';
 import RoundedFrame from './components/RoundedFrame';
@@ -8,100 +9,15 @@ import CharStream from './components/CharStream';
 import DeferredMarkdown from './components/DeferredMarkdown';
 import StreamingMessage from './components/StreamingMessage';
 import ErrorBoundary from './components/ErrorBoundary';
-import SessionPicker from './components/SessionPicker';
 import SettingsPanel from './components/SettingsPanel';
 import ToolCard from './components/ToolCard';
+import Header from './components/Header';
+import StatusBar from './components/StatusBar';
 
 // Cap rendered DOM nodes to prevent lag at long conversations (300+ turns).
 // State arrays still hold full history; only the visible slice hits the DOM.
 const MAX_RENDERED_CHAT_LINES = 400;
 const MAX_RENDERED_TOOL_LINES = 400;
-
-// Theme registry -- name, data-theme value, status-bar icon (colored circle + palette)
-const PALETTE_SVG = <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="5" cy="8" r="2.5"/><circle cx="12" cy="4" r="2"/><circle cx="12" cy="11.5" r="2"/><path d="M3 13a3 3 0 0 0 5.2-2 1.8 1.8 0 0 1 2.1-1.8A3 3 0 0 0 13 6"/></svg>;
-const THEME_COLORS = {
-  dark:         '#a0a8c0',
-  light:        '#e8ac4a',
-  dracula:      '#bd93f9',
-  nord:         '#88c0d0',
-  catppuccin:   '#cba6f7',
-  'rose-pine':  '#ebbcba',
-  gruvbox:      '#d79921',
-  solarized:    '#2aa198',
-  'tokyo-night':'#7aa2f7',
-  monokai:      '#a6e22e',
-};
-const THEMES = [
-  { name: 'Dark',         id: 'dark',         icon: <svg viewBox="0 0 12 12" width="10" height="10"><circle cx="6" cy="6" r="4" fill={THEME_COLORS.dark}/></svg> },
-  { name: 'Light',        id: 'light',        icon: <svg viewBox="0 0 12 12" width="10" height="10"><circle cx="6" cy="6" r="4" fill={THEME_COLORS.light}/></svg> },
-  { name: 'Dracula',      id: 'dracula',      icon: <svg viewBox="0 0 12 12" width="10" height="10"><circle cx="6" cy="6" r="4" fill={THEME_COLORS.dracula}/></svg> },
-  { name: 'Nord',         id: 'nord',         icon: <svg viewBox="0 0 12 12" width="10" height="10"><circle cx="6" cy="6" r="4" fill={THEME_COLORS.nord}/></svg> },
-  { name: 'Catppuccin',   id: 'catppuccin',   icon: <svg viewBox="0 0 12 12" width="10" height="10"><circle cx="6" cy="6" r="4" fill={THEME_COLORS.catppuccin}/></svg> },
-  { name: 'Rose Pine',    id: 'rose-pine',    icon: <svg viewBox="0 0 12 12" width="10" height="10"><circle cx="6" cy="6" r="4" fill={THEME_COLORS['rose-pine']}/></svg> },
-  { name: 'Gruvbox',      id: 'gruvbox',      icon: <svg viewBox="0 0 12 12" width="10" height="10"><circle cx="6" cy="6" r="4" fill={THEME_COLORS.gruvbox}/></svg> },
-  { name: 'Solarized',    id: 'solarized',    icon: <svg viewBox="0 0 12 12" width="10" height="10"><circle cx="6" cy="6" r="4" fill={THEME_COLORS.solarized}/></svg> },
-  { name: 'Tokyo Night',  id: 'tokyo-night',  icon: <svg viewBox="0 0 12 12" width="10" height="10"><circle cx="6" cy="6" r="4" fill={THEME_COLORS['tokyo-night']}/></svg> },
-  { name: 'Monokai',      id: 'monokai',      icon: <svg viewBox="0 0 12 12" width="10" height="10"><circle cx="6" cy="6" r="4" fill={THEME_COLORS.monokai}/></svg> },
-];
-
-// Model catalog for the clickable model picker dropdown.
-//
-// DIRECT_MODEL_GROUPS: models accessible via their native provider APIs.
-//   Bare IDs trigger provider switch in server.py's set_model().
-//   Requires corresponding API key env var (DEEPSEEK_API_KEY, MOONSHOT_API_KEY, etc.).
-//
-// OPENROUTER_MODEL_GROUPS: models routed through OpenRouter's unified API.
-//   Prefixed IDs (provider/model) are sent to OpenRouter which handles routing.
-//   Requires OPENROUTER_API_KEY env var.  Free models use the :free suffix.
-
-const DIRECT_MODEL_GROUPS = [
-  { group: 'DeepSeek', models: [
-    { id: 'deepseek-v4-pro',   label: 'DeepSeek V4 Pro' },
-    { id: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash' },
-  ]},
-  { group: 'Kimi / Moonshot', models: [
-    { id: 'kimi-k2.7-code', label: 'Kimi K2.7 Code' },
-    { id: 'kimi-k2.6',      label: 'Kimi K2.6' },
-  ]},
-  { group: 'Qwen (DashScope)', models: [
-    { id: 'qwen-plus',    label: 'Qwen-Plus' },
-    { id: 'qwen-flash',   label: 'Qwen-Flash' },
-    { id: 'qwen3-max',    label: 'Qwen 3 Max' },
-    { id: 'qwen3-coder',  label: 'Qwen 3 Coder' },
-  ]},
-  { group: 'Free Tier', models: [
-    { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash (free)' },
-  ]},
-];
-
-const OPENROUTER_MODEL_GROUPS = [
-  { group: 'Kimi / Moonshot', models: [
-    { id: 'moonshotai/kimi-k2.7-code', label: 'Kimi K2.7 Code' },
-    { id: 'moonshotai/kimi-k2.6',      label: 'Kimi K2.6' },
-  ]},
-  { group: 'Google / Gemini', models: [
-    { id: 'google/gemini-3.5-flash', label: 'Gemini 3.5 Flash' },
-    { id: 'google/gemini-3.5-pro',   label: 'Gemini 3.5 Pro' },
-  ]},
-  { group: 'Qwen (DashScope)', models: [
-    { id: 'qwen/qwen-plus',    label: 'Qwen-Plus' },
-    { id: 'qwen/qwen3-max',    label: 'Qwen 3 Max' },
-    { id: 'qwen/qwen3-coder',  label: 'Qwen 3 Coder' },
-  ]},
-  { group: 'Free Models', models: [
-    { id: 'deepseek/deepseek-v4-flash:free',   label: 'DeepSeek V4 Flash (free)' },
-    { id: 'qwen/qwen3-coder:free',             label: 'Qwen 3 Coder (free)' },
-    { id: 'google/gemma-4-31b-it:free',        label: 'Gemma 4 31B (free)' },
-    { id: 'openai/gpt-oss-120b:free',          label: 'GPT-OSS 120B (free)' },
-    { id: 'meta-llama/llama-3.3-70b-instruct:free', label: 'Llama 3.3 70B (free)' },
-    { id: 'openrouter/free',                   label: 'OpenRouter Free Router' },
-  ]},
-];
-
-function setThemeDom(id) {
-  document.documentElement.setAttribute('data-theme', id);
-  localStorage.setItem('mini_agent_theme', id);
-}
 
 
 // ---------------------------------------------------------------------------
@@ -143,9 +59,7 @@ function AppShell() {
   const [thinkingBlocks, setThinkingBlocks] = useState([]);
   const deferredThinkingBlocks = useDeferredValue(thinkingBlocks);
   const [botStatus, setBotStatus] = useState({});
-  const [botMenuOpen, setBotMenuOpen] = useState(false);
-  const botMenuToggleRef = useRef(null);
-  const [botMenuPos, setBotMenuPos] = useState(null);
+  const [provider, setProvider] = useState('deepseek');
 
   // Reasonix-style status bar state
   const [balanceDisplay, setBalanceDisplay] = useState(null);
@@ -153,6 +67,13 @@ function AppShell() {
   const [turnCost, setTurnCost] = useState('-');
   const [cacheHitRate, setCacheHitRate] = useState(null);
   const [subagentRunning, setSubagentRunning] = useState(0);
+
+  // Theme hook (extracted)
+  const {
+    theme, themeEntry, PALETTE_SVG, THEMES,
+    themePickerOpen, setThemePickerOpen, themeToggleRef, dropdownPos,
+    applyTheme, cycleTheme,
+  } = useTheme();
 
   const inputRef = useRef(null);
   const thinkingLogRef = useRef(null);
@@ -187,151 +108,6 @@ function AppShell() {
   }, []);
   const [showSettings, setShowSettings] = useState(false);
   const [inputValue, setInputValue] = useState('');
-  const [theme, setTheme] = useState(() => {
-    const stored = localStorage.getItem('mini_agent_theme');
-    if (stored && THEMES.some((t) => t.id === stored)) return stored;
-    return 'dark';
-  });
-  const [themePickerOpen, setThemePickerOpen] = useState(false);
-  const themeToggleRef = useRef(null);
-  const [dropdownPos, setDropdownPos] = useState(null);
-
-  // Model picker
-  const [modelPickerOpen, setModelPickerOpen] = useState(false);
-  const [provider, setProvider] = useState('deepseek');
-  const modelRef = useRef(null);
-  const [modelDropdownPos, setModelDropdownPos] = useState(null);
-
-  const themeIndex = THEMES.findIndex((t) => t.id === theme);
-  const themeEntry = THEMES[themeIndex] || THEMES[0];
-
-  const applyTheme = useCallback((id) => {
-    setTheme(id);
-    setThemeDom(id);
-    setThemePickerOpen(false);
-    // Persist to disk so theme survives localStorage clears
-    window.miniAgent?.saveTheme?.(id);
-  }, []);
-
-  // Cycle to next theme
-  const cycleTheme = useCallback(() => {
-    const nextIndex = (themeIndex + 1) % THEMES.length;
-    applyTheme(THEMES[nextIndex].id);
-  }, [themeIndex, applyTheme]);
-
-  // Keep data-theme attribute + localStorage in sync with React state.
-  // This is the single declarative sync point -- applyTheme() and the
-  // index.html inline script both set the same key, but this effect
-  // guarantees consistency even if one of them races or gets skipped.
-  useEffect(() => {
-    setThemeDom(theme);
-  }, [theme]);
-
-  // On mount, pull the file-persisted theme.  localStorage can be cleared
-  // when Electron's partition/origin shifts; the file (~/.mini_agent_theme)
-  // is the durable source of truth.
-  useEffect(() => {
-    (async () => {
-      try {
-        const result = await window.miniAgent?.getTheme?.();
-        const fileTheme = result?.theme;
-        if (fileTheme && THEMES.some((t) => t.id === fileTheme) && fileTheme !== theme) {
-          applyTheme(fileTheme);
-        }
-      } catch (_) { /* preload not available yet */ }
-    })();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Close theme picker on outside click
-  useEffect(() => {
-    if (!themePickerOpen) return;
-    const close = (e) => {
-      if (!e.target.closest('.theme-dropdown') && !e.target.closest('#theme-toggle')) {
-        setThemePickerOpen(false);
-      }
-    };
-    document.addEventListener('click', close);
-    return () => document.removeEventListener('click', close);
-  }, [themePickerOpen]);
-
-  // Position the theme dropdown relative to the toggle icon
-  useEffect(() => {
-    if (!themePickerOpen || !themeToggleRef.current) {
-      setDropdownPos(null);
-      return;
-    }
-    const rect = themeToggleRef.current.getBoundingClientRect();
-    const dropdownW = 190;
-    let right = window.innerWidth - rect.right;
-    // Clamp so dropdown doesn't overflow right edge
-    if (right + dropdownW > window.innerWidth - 8) {
-      right = Math.max(4, window.innerWidth - dropdownW - 8);
-    }
-    setDropdownPos({
-      bottom: window.innerHeight - rect.top + 4,
-      right,
-    });
-  }, [themePickerOpen]);
-
-  // Position the model dropdown relative to the header model span
-  useEffect(() => {
-    if (!modelPickerOpen || !modelRef.current) {
-      setModelDropdownPos(null);
-      return;
-    }
-    const rect = modelRef.current.getBoundingClientRect();
-    const dropdownW = 240;
-    let left = rect.left;
-    if (left + dropdownW > window.innerWidth - 8) {
-      left = Math.max(4, window.innerWidth - dropdownW - 8);
-    }
-    setModelDropdownPos({
-      top: rect.bottom + 4,
-      left,
-    });
-  }, [modelPickerOpen]);
-
-  // Close model picker on outside click
-  useEffect(() => {
-    if (!modelPickerOpen) return;
-    const close = (e) => {
-      if (!e.target.closest('.model-dropdown') && !e.target.closest('#header-model')) {
-        setModelPickerOpen(false);
-      }
-    };
-    document.addEventListener('click', close);
-    return () => document.removeEventListener('click', close);
-  }, [modelPickerOpen]);
-
-  // Position the bot menu relative to the bot indicators span
-  useEffect(() => {
-    if (!botMenuOpen || !botMenuToggleRef.current) {
-      setBotMenuPos(null);
-      return;
-    }
-    const rect = botMenuToggleRef.current.getBoundingClientRect();
-    const menuW = 200;
-    let left = rect.left;
-    if (left + menuW > window.innerWidth - 8) {
-      left = Math.max(4, window.innerWidth - menuW - 8);
-    }
-    setBotMenuPos({
-      bottom: window.innerHeight - rect.top + 4,
-      left,
-    });
-  }, [botMenuOpen]);
-
-  // Close bot menu on outside click
-  useEffect(() => {
-    if (!botMenuOpen) return;
-    const close = (e) => {
-      if (!e.target.closest('.bot-menu') && !e.target.closest('.discord-label')) {
-        setBotMenuOpen(false);
-      }
-    };
-    document.addEventListener('click', close);
-    return () => document.removeEventListener('click', close);
-  }, [botMenuOpen]);
 
   // Helper to add a line to any log -- uses startTransition for non-blocking UI
   const addLine = useCallback((setter) => (line) => {
@@ -437,86 +213,60 @@ function AppShell() {
       }
 
       // Also keep the flat log line for backward compat
-      addToolLine({ toolName, toolArgs, cls: '' });
+      addToolLine({ toolName, toolArgs, cls: 'tool-summary' });
 
-      // Create a tool card
+      // Create a card
       const cardId = ++toolCardIdRef.current;
-      const now = Date.now();
       startTransition(() => {
-        setToolCards((prev) => [
-          ...prev,
-          {
-            id: cardId,
-            toolName,
-            toolArgs,
-            status: 'running',
-            output: '',
-            startTime: now,
-            endTime: null,
-            diffPreview: '',
-            errorDetail: '',
-          },
-        ]);
+        setToolCards((prev) => [...prev, {
+          id: cardId,
+          toolName,
+          toolArgs,
+          status: 'running',
+          output: '',
+          startTime: Date.now(),
+          endTime: null,
+          diffPreview: null,
+          errorDetail: null,
+        }]);
       });
 
-      // Push a buffer for accumulating output (used by tool_output)
-      toolOutputStack.current.push({ cardId, lines: [], toolName });
+      // Push a buffer for tool output accumulation
+      toolOutputStack.current.push({ cardId, buffer: '' });
     }));
 
-    unsubs.push(api.on('stream:tool_output', (data) => {
-      const lines = data.line.split('\n');
-      const entry = toolOutputStack.current[toolOutputStack.current.length - 1];
-      if (entry) {
-        for (const line of lines) {
-          entry.lines.push(line);
-        }
-        // Update the card's output live
-        const cardId = entry.cardId;
-        const output = entry.lines.join('\n');
-        startTransition(() => {
-          setToolCards((prev) =>
-            prev.map((c) => (c.id === cardId ? { ...c, output } : c))
-          );
-        });
-      }
+    unsubs.push(api.on('stream:tool_chunk', (data) => {
+      const stack = toolOutputStack.current;
+      if (stack.length === 0) return;
+      const top = stack[stack.length - 1];
+      top.buffer += data.text || '';
+
+      startTransition(() => {
+        setToolCards((prev) =>
+          prev.map((c) =>
+            c.id === top.cardId ? { ...c, output: top.buffer } : c
+          )
+        );
+      });
     }));
 
     unsubs.push(api.on('stream:tool_end', (data) => {
-      const status = data.ok ? 'ok' : 'err';
-      const cls = data.ok ? 'msg-tool-ok' : 'msg-tool-err';
-
-      // Pop this tool's buffer from the stack
-      const entry = toolOutputStack.current.pop() || { lines: [], toolName: '', cardId: -1 };
-      const bufCode = entry.lines.join('\n').trim();
-      const code = bufCode || (data.content || '').trim();
-      const cardId = entry.cardId;
-
-      // Still add the flat log line for backward compat
-      if (code) {
-        const isSingleLine = !code.includes('\n');
-        if (isSingleLine) {
-          addToolLine({ text: `  ${status.toUpperCase()}  ${code}`, cls });
-        } else {
-          addToolLine({ text: `  ${status.toUpperCase()}  ${data.detail}`, cls });
-          addToolLine({
-            component: <CodeBlock code={code} fontSize="0.75em" toolName={entry.toolName} theme={theme} />,
-            cls: '',
-          });
-        }
-      } else {
-        addToolLine({ text: `  ${status.toUpperCase()}  ${data.detail}`, cls });
-      }
-      if (data.diff_preview) {
-        addToolLine({
-          component: <CodeBlock code={data.diff_preview} language="diff" fontSize="0.72em" theme={theme} />,
-          cls: '',
-        });
+      const stack = toolOutputStack.current;
+      // Pop matching buffer
+      let cardId = null;
+      let finalBuffer = '';
+      while (stack.length > 0) {
+        const top = stack.pop();
+        finalBuffer = top.buffer;
+        cardId = top.cardId;
+        break;
       }
 
-      // Finalize the tool card
-      if (cardId > 0) {
-        const now = Date.now();
-        const diffPreview = data.diff_preview || '';
+      const now = Date.now();
+      const status = data.ok ? 'ok' : 'error';
+      if (cardId != null) {
+        const code = finalBuffer || data.content || '';
+        const diffPreview = data.diff_preview || null;
         const errorDetail = !data.ok ? (data.detail || '') : '';
         startTransition(() => {
           setToolCards((prev) =>
@@ -721,82 +471,24 @@ function AppShell() {
           [data.task_id]: {
             ...agent,
             ok: data.ok,
-            output: data.content || '',
+            output: data.output || agent.output,
           },
         };
       });
     }));
 
-    return () => unsubs.forEach((fn) => fn());
-  }, []); // stable: addToolLine/thinking/chatStream callbacks are useCallback-wrapped
+    return () => unsubs.forEach((u) => u());
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Submit handler
   const handleSubmit = useCallback((text) => {
-    if (!text) return;
+    if (inputDisabled || !text?.trim()) return;
 
-    // Allow /clear (and cancel) even during an active turn so the user
-    // isn't trapped in a runaway agent loop. Reject all other input.
-    if (inputDisabled) {
-      if (text.trim().toLowerCase() === '/clear') {
-        window.miniAgent.cancel();          // kill running turn
-        setChatLines([]);
-        setToolsLines([]);
-        setSubagentData({});
-        chatStream.reset();
-        thinking.reset();
-        setThinkingBlocks([]);
-        setIsLive(false);
-        setInputDisabled(false);
-        setInputValue('');
-        inputRef.current?.focus();
-        window.miniAgent.command('/clear'); // tell backend to wipe memory
-      }
-      return;
-    }
-
-    if (text.startsWith('/')) {
-      // Handle renderer-local commands first
-      const trimmed = text.trim().toLowerCase();
-      if (trimmed.startsWith('/theme')) {
-        const arg = trimmed.replace('/theme', '').trim();
-        if (arg) {
-          // `/theme <name>` -- fuzzy match against theme id or name
-          const match = THEMES.find((t) =>
-            t.id.toLowerCase() === arg.toLowerCase() ||
-            t.name.toLowerCase() === arg.toLowerCase()
-          );
-          if (match) {
-            applyTheme(match.id);
-          }
-        } else {
-          // `/theme` with no arg -- cycle
-          cycleTheme();
-        }
-        setInputValue('');
-        return;
-      }
-      window.miniAgent.command(text);
-      setInputValue('');
-      // /clear also wipes the renderer's chat & tool logs immediately
-      if (text.trim().toLowerCase() === '/clear') {
-        startTransition(() => {
-          setChatLines([]);
-          setToolsLines([]);
-          setSubagentData({});
-        });
-        chatStream.reset();
-        thinking.reset();
-        setThinkingBlocks([]);
-      }
-      return;
-    }
-
+    // Add user message
     startTransition(() => {
       setChatLines((prev) => [
         ...prev,
-        ...(prev.length > 0 ? [{ id: nextLineId(), text: '', cls: 'msg-separator' }] : []),
-        { id: nextLineId(), text, cls: 'msg-user' },
-        { id: nextLineId(), text: '', cls: 'msg-separator' },
+        { id: nextLineId(), text: text.trim(), cls: 'msg-user' },
         { id: nextLineId(), text: '', cls: 'msg-agent-pending' },
       ]);
     });
@@ -901,26 +593,6 @@ function AppShell() {
     inputRef.current?.focus();
   }, [chatStream, thinking, stopTimer]);
 
-  // Discord bot start/stop toggle
-  const BOT_SCRIPTS = { 'mini-agent': 'workspace_bot.py', 'emotion-game': 'discord_bot.py' };
-  const handleBotToggle = useCallback(async (botName) => {
-    const api = window.miniAgent;
-    if (!api) return;
-    const script = BOT_SCRIPTS[botName];
-    if (!script) return;
-    const current = botStatus[botName];
-    setBotStatus((prev) => ({ ...prev, [botName]: !current }));
-    try {
-      if (current) {
-        await api.stopBot(script);
-      } else {
-        await api.startBot(script);
-      }
-    } catch (e) {
-      setBotStatus((prev) => ({ ...prev, [botName]: current }));
-    }
-  }, [botStatus]);
-
   // Auto-scroll thinking log
   useEffect(() => {
     const el = thinkingLogRef.current;
@@ -963,140 +635,73 @@ function AppShell() {
     };
   }, []);
 
+  // Memoized visible slices to cap rendered DOM nodes
+  const visibleToolLines = useMemo(() => {
+    if (deferredToolsLines.length <= MAX_RENDERED_TOOL_LINES) return deferredToolsLines;
+    return deferredToolsLines.slice(-MAX_RENDERED_TOOL_LINES);
+  }, [deferredToolsLines]);
+
+  const visibleChatLines = useMemo(() => {
+    if (deferredChatLines.length <= MAX_RENDERED_CHAT_LINES) return deferredChatLines;
+    return deferredChatLines.slice(-MAX_RENDERED_CHAT_LINES);
+  }, [deferredChatLines]);
+
   return (
     <div id="app">
       {/* Header */}
-      <div id="header" className="header">
-        {/* Reasonix-style status bar items (left of model) */}
-        <span className="statusbar-metrics">
-          {cacheHitRate != null && (
-            <span className="statusbar-metric statusbar-cache" title={`Cache hit rate: ${cacheHitRate}%`}>
-              <span className="statusbar-metric-value">{cacheHitRate}%</span>
-            </span>
-          )}
-          {subagentRunning > 0 && (
-            <span className="statusbar-metric statusbar-subagents" title={`${subagentRunning} sub-agents running`}>
-              <span className="statusbar-metric-icon">∥</span>
-              <span className="statusbar-metric-value">{subagentRunning}</span>
-            </span>
-          )}
-        </span>
-        <span
-          id="header-model"
-          className="text clickable"
-          ref={modelRef}
-          onClick={() => setModelPickerOpen((p) => !p)}
-          title="Click to switch model"
-        >{modelName}</span>
-        {modelPickerOpen && modelDropdownPos && (
-          <div className="model-dropdown" style={modelDropdownPos} onClick={(e) => e.stopPropagation()}>
-            {/* DIRECT API section */}
-            <div className="model-dropdown-section">
-              <div className="model-dropdown-header model-dropdown-section-header">── DIRECT API ──</div>
-              {DIRECT_MODEL_GROUPS.map((grp, gi) => (
-                <div key={`direct-${gi}`}>
-                  <div className="model-dropdown-subheader">{grp.group}</div>
-                  {grp.models.map((m) => {
-                    const isCurrent = m.id === modelName;
-                    return (
-                      <div
-                        key={m.id}
-                        className={`model-dropdown-item${isCurrent ? ' model-current' : ''}`}
-                        onClick={(e) => { e.stopPropagation(); setModelPickerOpen(false); window.miniAgent?.setModel(m.id); }}
-                      >
-                        <span className="model-name">{m.label}</span>
-                        <span className="model-id dim">{m.id}</span>
-                        {isCurrent && <span className="model-check">{'\u2713'}</span>}
-                      </div>
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
+      <Header modelName={modelName} cacheHitRate={cacheHitRate} subagentRunning={subagentRunning} />
 
-            {/* OPENROUTER section */}
-            <div className="model-dropdown-section">
-              <div className="model-dropdown-header model-dropdown-section-header">── OPENROUTER ──</div>
-              {OPENROUTER_MODEL_GROUPS.map((grp, gi) => (
-                <div key={`or-${gi}`}>
-                  <div className="model-dropdown-subheader">{grp.group}</div>
-                  {grp.models.map((m) => {
-                    const isCurrent = m.id === modelName;
-                    return (
-                      <div
-                        key={m.id}
-                        className={`model-dropdown-item${isCurrent ? ' model-current' : ''}`}
-                        onClick={(e) => { e.stopPropagation(); setModelPickerOpen(false); window.miniAgent?.setModel(m.id); }}
-                      >
-                        <span className="model-name">{m.label}</span>
-                        <span className="model-id dim">{m.id}</span>
-                        {isCurrent && <span className="model-check">{'\u2713'}</span>}
-                      </div>
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
+      {/* Thinking panel */}
+      <RoundedFrame id="thinking-frame" title="Thinking">
+        <div ref={thinkingLogRef} className="thinking-log">
+          <div className="frame-content">
+            {deferredThinkingBlocks.map((block, i) => (
+              <CharStream key={i} text={block} />
+            ))}
+            {thinking.displayedText && <CharStream text={thinking.displayedText} />}
           </div>
-        )}
-      </div>
-
-      {/* Body: three panels */}
-      <div id="body-panels">
-        {/* Left stack: Tools & Thinking + Agent Tree */}
-        <div id="left-stack">
-          <RoundedFrame id="left-pane" className={isLive ? 'tools-active' : ''}>
-            <div id="tools-log" ref={toolsLogRef} className="log scrollable dim">
-              {/* Tool Cards -- Dirac-inspired card-based display */}
-              <div id="tool-cards-panel">
-                {toolCards.map((card) => (
-                  <ToolCard key={card.id} tool={card} theme={theme} />
-                ))}
-              </div>
-              {/* Flat log lines (backward compat) */}
-              {deferredToolsLines.slice(-MAX_RENDERED_TOOL_LINES).map((line, i) => (
-                <LogLine key={`tl-${i}`} line={line} />
-              ))}
-            </div>
-            <div className="hr" />
-            <div id="thinking-log" ref={thinkingLogRef} className="log thinking-log thinking">
-              {thinking.displayedText && (
-                <CharStream text={thinking.displayedText} className="msg-thinking" />
-              )}
-              {!thinking.displayedText && deferredThinkingBlocks.map((block, i) => (
-                <div key={i} className="msg-thinking">
-                  <DeferredMarkdown text={block} markdown={false} />
-                </div>
-              ))}
-            </div>
-          </RoundedFrame>
-          {Object.keys(deferredSubagentData).length > 0 && (
-            <div id="agent-tree-panel">
-              <AgentTree agents={deferredSubagentData} />
-            </div>
-          )}
         </div>
+      </RoundedFrame>
 
-        {/* Right pane: Chat */}
-        <RoundedFrame id="right-pane" className={isLive ? 'chat-active' : ''}>
-          <div id="chat-log" ref={chatLogRef} className="log scrollable text">
-            {deferredChatLines.slice(-MAX_RENDERED_CHAT_LINES).map((line) => {
-              if (line.cls === 'msg-agent') {
-                return (
-                  <div key={line.id} className="msg-agent">
-                    <DeferredMarkdown text={line.text} />
-                  </div>
-                );
-              }
-              return <LogLine key={line.id} line={line} />;
-            })}
-            {chatStream.displayedText && (
-              <div className="msg-agent">
-                <StreamingMessage text={chatStream.displayedText} />
-              </div>
-            )}
+      {/* Main row: Tools + Chat + Sub-agents */}
+      <div id="main-row">
+        <RoundedFrame id="tools-frame" title="Tools">
+          <div ref={toolsLogRef} className="tools-log">
+            <div className="frame-content">
+              {toolCards.map((card) => (
+                <ToolCard key={card.id} card={card} />
+              ))}
+              {visibleToolLines.map((line, i) => (
+                <LogLine key={i} line={line} />
+              ))}
+            </div>
           </div>
         </RoundedFrame>
+
+        <RoundedFrame id="chat-frame" title="Chat">
+          <div ref={chatLogRef} className="chat-log">
+            <div className="frame-content">
+              {visibleChatLines.map((line) => {
+                if (line.markdown) {
+                  return <DeferredMarkdown key={line.id} text={line.text} cls={line.cls} />;
+                }
+                return <LogLine key={line.id} line={line} />;
+              })}
+              {chatStream.displayedText && (
+                <div className="msg-agent">
+                  <StreamingMessage text={chatStream.displayedText} />
+                </div>
+              )}
+            </div>
+          </div>
+        </RoundedFrame>
+
+        {/* Sub-agents pane */}
+        {Object.keys(deferredSubagentData).length > 0 && (
+          <RoundedFrame id="subagents-frame" title="Sub-agents">
+            <AgentTree data={deferredSubagentData} />
+          </RoundedFrame>
+        )}
       </div>
 
       {/* Input */}
@@ -1122,91 +727,34 @@ function AppShell() {
         </div>
       </div>
 
-
       {/* Status bar */}
-      <div id="status-bar" className="status-bar dim">
-        {balanceDisplay && balanceDisplay.available && (
-          <span className="statusbar-metric statusbar-balance" title="Wallet balance">
-            <span className="statusbar-metric-value">{balanceDisplay.display}</span>
-          </span>
-        )}
-        <span id="git-status">
-          {gitBranch && (<><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.5" className="icon-sm"><path d="M3 4v6a2 2 0 0 0 2 2h2M7 12l-2-2 2-2M11 5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM3 4.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"/></svg>{gitBranch}{gitDirty ? '*' : ''}</>)}
-        </span>
-        <span className="bot-indicators" ref={botMenuToggleRef}>
-          <span
-            className="discord-label clickable"
-            title="Discord bots"
-            onClick={(e) => { e.stopPropagation(); setBotMenuOpen((p) => !p); }}
-          ><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" className="icon-sm"><path d="M19.27 5.33C17.94 4.71 16.5 4.26 15 4a.09.09 0 0 0-.07.03c-.18.33-.39.76-.53 1.09a16.09 16.09 0 0 0-4.8 0c-.14-.34-.35-.76-.54-1.09-.01-.02-.04-.03-.07-.03-1.5.26-2.93.71-4.27 1.33-.01 0-.02.01-.03.02-2.72 4.07-3.47 8.03-3.1 11.95 0 .02.01.04.03.05 1.8 1.32 3.53 2.12 5.24 2.65.03.01.06 0 .07-.02.4-.55.76-1.13 1.07-1.74.02-.04 0-.08-.04-.09-.57-.22-1.11-.48-1.64-.78-.04-.02-.04-.08-.01-.11.11-.08.22-.17.33-.25.02-.02.05-.02.07-.01 3.44 1.57 7.15 1.57 10.55 0 .02-.01.05-.01.07.01.11.09.22.17.33.26.04.03.04.09-.01.11-.52.31-1.07.56-1.64.78-.04.01-.05.06-.04.09.32.61.68 1.19 1.07 1.74.03.01.06.02.09.01 1.72-.53 3.45-1.33 5.25-2.65.02-.01.03-.03.03-.05.44-4.53-.73-8.46-3.1-11.95-.01-.01-.02-.02-.04-.02zM8.52 14.91c-1.03 0-1.89-.95-1.89-2.12s.84-2.12 1.89-2.12c1.06 0 1.9.96 1.89 2.12 0 1.17-.84 2.12-1.89 2.12zm6.97 0c-1.03 0-1.89-.95-1.89-2.12s.84-2.12 1.89-2.12c1.06 0 1.9.96 1.89 2.12 0 1.17-.83 2.12-1.89 2.12z"/></svg>Discord</span>
-          {/* Bot action menu — shows both bots */}
-          {botMenuOpen && botMenuPos && (
-            <div className="bot-menu" style={botMenuPos} onClick={(e) => e.stopPropagation()}>
-              <div className="bot-menu-header">Discord Bots</div>
-              {['mini-agent', 'emotion-game'].map((bn) => {
-                const running = botStatus[bn];
-                return (
-                  <div key={bn} className="bot-menu-item">
-                    <div className="bot-menu-item-info">
-                      <span className="bot-menu-item-name">{bn}</span>
-                      <span className={`bot-menu-status ${running ? 'bot-menu-on' : 'bot-menu-off'}`}>
-                        {running !== undefined ? (running ? 'Running' : 'Stopped') : '...'}
-                      </span>
-                    </div>
-                    <button
-                      className={`bot-menu-btn ${running ? 'bot-menu-stop' : 'bot-menu-start'}`}
-                      onClick={() => { handleBotToggle(bn); }}
-                    >{running ? 'Stop' : 'Start'}</button>
-                  </div>
-                );
-              })}
-              <div className="bot-menu-actions">
-                <button className="bot-menu-btn bot-menu-close" onClick={() => setBotMenuOpen(false)}>Close</button>
-              </div>
-            </div>
-          )}
-        </span>
-        {isLive && (
-          <span id="live-indicator" onClick={handleCancel} title="Cancel"><svg viewBox="0 0 12 12" width="10" height="10" className="icon-sm"><circle cx="6" cy="6" r="4" fill="currentColor" className="live-dot"/></svg></span>
-        )}
-        {elapsedSec != null && (
-          <span id="timer"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.5" className="icon-sm"><circle cx="8" cy="8" r="6.5"/><path d="M8 4.5V8l2.5 2"/></svg>{elapsedSec}s</span>
-        )}
-        <span id="theme-toggle" ref={themeToggleRef} onClick={() => setThemePickerOpen((p) => !p)} title={`Theme: ${themeEntry.name}`}>
-          {PALETTE_SVG}
-          {themePickerOpen && dropdownPos && (
-            <div className="theme-dropdown" style={dropdownPos} onClick={(e) => e.stopPropagation()}>
-              {THEMES.map((t) => (
-                <div
-                  key={t.id}
-                  className={`theme-dropdown-item${t.id === theme ? ' theme-current' : ''}`}
-                  onClick={(e) => { e.stopPropagation(); applyTheme(t.id); }}
-                >
-                  <span className="theme-icon">{t.icon}</span>
-                  <span className="theme-name">{t.name}</span>
-                  {t.id === theme && <span className="theme-check"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" className="icon-sm"><polyline points="3,8 6.5,11.5 13,5"/></svg></span>}
-                </div>
-              ))}
-            </div>
-          )}
-        </span>
-        {turnCountVal != null && (
-          <span id="turn-counter"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.5" className="icon-sm"><path d="M2 8a6 6 0 0 1 6-6 5.5 5.5 0 0 1 5 3.5M14 8a6 6 0 0 1-6 6"/><polyline points="11,3 13,1 15,3"/></svg> turn <span id="turn-count">{turnCountVal}</span></span>
-        )}
-        {turnCost !== '-' && (
-          <span id="turn-cost" title="Last turn cost">{turnCost}</span>
-        )}
-        {subagentRunning > 0 && (
-          <span id="subagent-count" title={`${subagentRunning} sub-agents running`}>\u2225{subagentRunning}</span>
-        )}
-        <div className="status-right">
-          {restoredCount != null && (
-            <span id="restored-info">restored {restoredCount} msgs</span>
-          )}
-          <span id="workspace-info" className="clickable" onClick={handleWorkspaceClick} title="Click to change workspace">{workspace}</span>
-          <SessionPicker sessionName={sessionName} onSwitch={handleSessionSwitch} />
-        </div>
-      </div>
+      <StatusBar
+        balanceDisplay={balanceDisplay}
+        gitBranch={gitBranch}
+        gitDirty={gitDirty}
+        botStatus={botStatus}
+        setBotStatus={setBotStatus}
+        isLive={isLive}
+        elapsedSec={elapsedSec}
+        turnCountVal={turnCountVal}
+        turnCost={turnCost}
+        subagentRunning={subagentRunning}
+        restoredCount={restoredCount}
+        workspace={workspace}
+        sessionName={sessionName}
+        themeEntry={themeEntry}
+        PALETTE_SVG={PALETTE_SVG}
+        THEMES={THEMES}
+        theme={theme}
+        themePickerOpen={themePickerOpen}
+        setThemePickerOpen={setThemePickerOpen}
+        themeToggleRef={themeToggleRef}
+        dropdownPos={dropdownPos}
+        applyTheme={applyTheme}
+        handleCancel={handleCancel}
+        handleWorkspaceClick={handleWorkspaceClick}
+        handleSessionSwitch={handleSessionSwitch}
+      />
       {showSettings && <SettingsPanel onSaved={handleSettingsSaved} />}
     </div>
   );

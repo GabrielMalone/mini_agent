@@ -130,7 +130,7 @@ class MiniAgentDiscordBot(discord.Client):
         print(f"[discord_bot] Logged in as {self.user}  ({self.user.id})")
         print(f"[discord_bot] Workspace: {self.workspace}")
         print(f"[discord_bot] Model: {self.config.model}")
-        print(f"[discord_bot] Ready -- listening for @mentions")
+        print("[discord_bot] Ready -- listening for @mentions")
 
     async def on_message(self, msg: discord.Message) -> None:
         # Ignore our own messages
@@ -524,9 +524,9 @@ def main() -> None:
     elevenlabs_key = os.environ.get("ELEVENLABS_API_KEY", "")
     voice = VoiceHandler(elevenlabs_api_key=elevenlabs_key)
     if elevenlabs_key:
-        print(f"[discord_bot] Voice TTS: ElevenLabs")
+        print("[discord_bot] Voice TTS: ElevenLabs")
     else:
-        print(f"[discord_bot] Voice TTS: macOS say (no ELEVENLABS_API_KEY set)")
+        print("[discord_bot] Voice TTS: macOS say (no ELEVENLABS_API_KEY set)")
 
     bot = MiniAgentDiscordBot(
         workspace=workspace,

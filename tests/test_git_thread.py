@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """Test git subprocess in a daemon thread -- reproduce the hang."""
-import threading, time, subprocess, os, platform, sys
+import threading
+import subprocess
+import os
+import platform
+import sys
 
 def run_in_thread():
     sys.stderr.write('[thread] starting git status...\n')

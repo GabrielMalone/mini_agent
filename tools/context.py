@@ -8,6 +8,7 @@ Extracted from tools/__init__.py to keep the dispatch module focused.
 from __future__ import annotations
 
 import contextvars
+from dataclasses import dataclass, field
 
 
 # Context keys used across tools and llm
@@ -19,47 +20,83 @@ CTX_PLAN_DONE = "_plan_done"        # set[int] -- completed step indices
 CTX_PLAN_LAST_ADVANCED = "_plan_last_advanced_turn"  # int -- turn when last step advanced
 
 
+@dataclass
 class AgentContext:
     """Mutable context shared across tools and the agent loop.
 
     Initialized once at startup via ``set_context()``, then read/written
     by tools and ``llm.py`` through the ``_TOOL_CONTEXT`` proxy.
 
-    Attributes (all optional, defaulting to None or empty):
-        scratchpad_path       SQLite DB path for scratchpad persistence
-        exa_api_key           API key for Exa web search
-        workspace             Workspace root directory
-        _scratchpad_updated   Flag: scratchpad was updated this turn
-        _turn_history         dict[int, str] -- turn number -> summary
-        _plan_steps           list[str] -- declared plan steps
-        _plan_done            set[int] -- completed step indices
-        _plan_last_advanced_turn  int -- turn number when a step was last completed
+    All fields are declared as dataclass fields with type annotations and
+    safe defaults, making every context field discoverable without grepping
+    for ``hasattr`` / ``getattr`` guards.
     """
 
-    def __init__(self):
-        self.scratchpad_path: str | None = None
-        self.exa_api_key: str | None = None
-        self.openai_api_key: str | None = None
-        self.workspace: str | None = None
-        self._scratchpad_updated: bool = False
-        self._turn_history: dict[int, str] = {}
-        self._plan_steps: list[str] = []
-        self._plan_done: set[int] = set()
-        self._plan_last_advanced_turn: int = 0
-        self._turn_count: int = 0     # current turn number (set by run_agent_turn each iteration)
-        self._memory_store = None  # MemoryStore instance (set by init_session)
-        self._failure_pattern_store = None  # FailurePatternStore (set by init_session)
-        self._self_critique = None  # SelfCritique instance (set by init_session)
-        self._subagent_callback: callable | None = None  # (event_type, data) for Electron sub-agent events
-        self._scratchpad_injected: bool = False  # one-time scratchpad context injected this session
-        self._git_diff_injected: bool = False    # one-time git diff context injected this session
-        self._handoff_injected: bool = False     # one-time handoff context injected this session
-        self._state_txt_injected: bool = False   # one-time STATE.txt context injected this session
-        self._session_start_head: str | None = None  # git HEAD hash at session start (for auto-handoff)
-        self._consecutive_read_only_turns: int = 0  # turns of pure reads (reset on write/shell)
-        # Discord bot integration: set by discord_bot.py before each turn
-        self.discord_guild_id: int | None = None
-        self.discord_token: str | None = None
+    # -- Core session state (set via set_context) --
+    scratchpad_path: str | None = None
+    exa_api_key: str | None = None
+    openai_api_key: str | None = None
+    workspace: str | None = None
+    discord_guild_id: int | None = None
+    discord_token: str | None = None
+
+    # -- Plan tracking --
+    _plan_steps: list[str] = field(default_factory=list)
+    _plan_done: set[int] = field(default_factory=set)
+    _plan_last_advanced_turn: int = 0
+
+    # -- Turn history & counters --
+    _turn_history: dict[int, str] = field(default_factory=dict)
+    _turn_count: int = 0
+    _min_turn: int = 0
+    _consecutive_read_only_turns: int = 0
+    _last_msg_count: int = 0
+    _system_reminder_last_msg_count: int = 0
+
+    # -- Scratchpad (SQLite-backed) --
+    _scratchpad_updated: bool = False
+    _scratchpad_injected: bool = False
+
+    # -- One-time context injection flags --
+    _git_diff_injected: bool = False
+    _handoff_injected: bool = False
+    _state_txt_injected: bool = False
+    _tasks_injected: bool = False
+    _core_memory_injected: bool = False
+
+    # -- Git state --
+    _session_start_head: str | None = None
+
+    # -- Stores & services (set by init_session / agent loop) --
+    _memory_store: object | None = None          # MemoryStore
+    _failure_pattern_store: object | None = None  # FailurePatternStore
+    _self_critique: object | None = None          # SelfCritique
+    _tool_graph: object | None = None             # ToolGraph
+    _mistake_notebook: object | None = None       # MistakeNotebook
+    _agent_runtime: object | None = None          # AgentRuntime (sub-agent orchestration)
+    _agent_config: object | None = None           # AgentConfig
+    _agent_depth: int = 0                          # recursion guard for sub-agents
+    _read_gate: object | None = None              # ReadSafetyGate
+    _provider: str = "deepseek"                    # API provider label
+
+    # -- Sub-agent callback (Electron IPC bridge) --
+    _subagent_callback: object | None = None  # callable | None
+
+    # -- Orchestration / verification state --
+    _last_orch_state: str | None = None
+    _last_pending_reported: int = 0
+    _last_verification_turn: int = 0
+    _last_verified_modified: set[str] = field(default_factory=set)
+    _confidence_nudge_last_turn: int = 0
+
+    # -- Cache telemetry (set by api.py) --
+    _cache_stats: dict | None = None
+    _semantic_cache_stats: dict | None = None
+    _cache_turn_history: list = field(default_factory=list)
+    _cache_alert_last_turn: int = 0
+
+    # -- Failure pattern learning (in-memory) --
+    _failure_patterns: dict = field(default_factory=dict)
 
 
 _TOOL_CONTEXT_VAR: contextvars.ContextVar[AgentContext] = contextvars.ContextVar(

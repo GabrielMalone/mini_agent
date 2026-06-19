@@ -24,7 +24,6 @@ never inserted at the front.
 
 from __future__ import annotations
 
-from typing import Any
 
 from memory.memory_prune import _estimate_tokens
 

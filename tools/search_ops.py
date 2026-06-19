@@ -23,7 +23,7 @@ logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
 
 from core.safety import ReadSafetyGate, WriteSafetyGate
 from tools import _register, _summarize, ToolResult, _TOOL_CONTEXT
-from tools.shell_ops import _SKIP_DIRS
+from core.constants import SKIP_DIRS as _SKIP_DIRS
 
 
 # ---------------------------------------------------------------------------
@@ -798,7 +798,6 @@ def _sem_index(root: str) -> None:
     walk needed.  Returns immediately if no .py file mtimes have changed
     since the last build (fast no-op on repeated calls).
     """
-    import numpy as np
 
     global _SEMANTIC_MAX_MTIME, _SYMBOL_INDEX, _REF_INDEX, _SEMANTIC_LRU, _SEM_CACHE_DIRTY
     global _BM25_INDEX, _BM25_DOCUMENTS
@@ -1458,7 +1457,7 @@ def _find_usages(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolRe
     if not matches:
         # Fall back to grep-based search
         import subprocess
-        from tools.shell_ops import _SKIP_DIRS
+        from core.constants import SKIP_DIRS as _SKIP_DIRS
         try:
             cmd = ["grep", "-rn", "--include=*.py"]
             for d in _SKIP_DIRS:

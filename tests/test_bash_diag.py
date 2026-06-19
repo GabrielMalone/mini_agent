@@ -1,6 +1,5 @@
 """Test if bash subprocess hangs with stdin=DEVNULL on Windows."""
 import subprocess
-import sys
 import time
 
 BASH = r"C:\Program Files\Git\bin\bash.exe"

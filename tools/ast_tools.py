@@ -13,8 +13,8 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from tools.result import ToolResult, ErrorClass
-from tools import _register, _summarize, _TOOL_CONTEXT
+from tools.result import ToolResult
+from tools import _register, _summarize
 from core.safety import WriteSafetyGate, ReadSafetyGate
 
 

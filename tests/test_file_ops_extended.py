@@ -10,7 +10,6 @@ import os
 import subprocess
 import tempfile
 import unittest
-from unittest.mock import patch
 
 from conftest import make_tool_call as _make_tool_call, make_gates as _gates
 from tools import (

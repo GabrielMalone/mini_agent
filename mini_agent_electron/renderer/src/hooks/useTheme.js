@@ -1,0 +1,114 @@
+import { useState, useRef, useEffect, useCallback } from 'react';
+
+const PALETTE_SVG = <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="5" cy="8" r="2.5"/><circle cx="12" cy="4" r="2"/><circle cx="12" cy="11.5" r="2"/><path d="M3 13a3 3 0 0 0 5.2-2 1.8 1.8 0 0 1 2.1-1.8A3 3 0 0 0 13 6"/></svg>;
+
+const THEME_COLORS = {
+  dark:         '#a0a8c0',
+  light:        '#e8ac4a',
+  dracula:      '#bd93f9',
+  nord:         '#88c0d0',
+  catppuccin:   '#cba6f7',
+  'rose-pine':  '#ebbcba',
+  gruvbox:      '#d79921',
+  solarized:    '#2aa198',
+  'tokyo-night':'#7aa2f7',
+  monokai:      '#a6e22e',
+};
+
+export const THEMES = [
+  { name: 'Dark',         id: 'dark',         icon: <svg viewBox="0 0 12 12" width="10" height="10"><circle cx="6" cy="6" r="4" fill={THEME_COLORS.dark}/></svg> },
+  { name: 'Light',        id: 'light',        icon: <svg viewBox="0 0 12 12" width="10" height="10"><circle cx="6" cy="6" r="4" fill={THEME_COLORS.light}/></svg> },
+  { name: 'Dracula',      id: 'dracula',      icon: <svg viewBox="0 0 12 12" width="10" height="10"><circle cx="6" cy="6" r="4" fill={THEME_COLORS.dracula}/></svg> },
+  { name: 'Nord',         id: 'nord',         icon: <svg viewBox="0 0 12 12" width="10" height="10"><circle cx="6" cy="6" r="4" fill={THEME_COLORS.nord}/></svg> },
+  { name: 'Catppuccin',   id: 'catppuccin',   icon: <svg viewBox="0 0 12 12" width="10" height="10"><circle cx="6" cy="6" r="4" fill={THEME_COLORS.catppuccin}/></svg> },
+  { name: 'Rose Pine',    id: 'rose-pine',    icon: <svg viewBox="0 0 12 12" width="10" height="10"><circle cx="6" cy="6" r="4" fill={THEME_COLORS['rose-pine']}/></svg> },
+  { name: 'Gruvbox',      id: 'gruvbox',      icon: <svg viewBox="0 0 12 12" width="10" height="10"><circle cx="6" cy="6" r="4" fill={THEME_COLORS.gruvbox}/></svg> },
+  { name: 'Solarized',    id: 'solarized',    icon: <svg viewBox="0 0 12 12" width="10" height="10"><circle cx="6" cy="6" r="4" fill={THEME_COLORS.solarized}/></svg> },
+  { name: 'Tokyo Night',  id: 'tokyo-night',  icon: <svg viewBox="0 0 12 12" width="10" height="10"><circle cx="6" cy="6" r="4" fill={THEME_COLORS['tokyo-night']}/></svg> },
+  { name: 'Monokai',      id: 'monokai',      icon: <svg viewBox="0 0 12 12" width="10" height="10"><circle cx="6" cy="6" r="4" fill={THEME_COLORS.monokai}/></svg> },
+];
+
+function setThemeDom(id) {
+  document.documentElement.setAttribute('data-theme', id);
+  localStorage.setItem('mini_agent_theme', id);
+}
+
+export default function useTheme() {
+  const [theme, setTheme] = useState(() => {
+    const stored = localStorage.getItem('mini_agent_theme');
+    if (stored && THEMES.some((t) => t.id === stored)) return stored;
+    return 'dark';
+  });
+  const [themePickerOpen, setThemePickerOpen] = useState(false);
+  const themeToggleRef = useRef(null);
+  const [dropdownPos, setDropdownPos] = useState(null);
+
+  const themeIndex = THEMES.findIndex((t) => t.id === theme);
+  const themeEntry = THEMES[themeIndex] || THEMES[0];
+
+  const applyTheme = useCallback((id) => {
+    setTheme(id);
+    setThemeDom(id);
+    setThemePickerOpen(false);
+    window.miniAgent?.saveTheme?.(id);
+  }, []);
+
+  const cycleTheme = useCallback(() => {
+    const nextIndex = (themeIndex + 1) % THEMES.length;
+    applyTheme(THEMES[nextIndex].id);
+  }, [themeIndex, applyTheme]);
+
+  // Keep data-theme attribute + localStorage in sync with React state
+  useEffect(() => {
+    setThemeDom(theme);
+  }, [theme]);
+
+  // On mount, pull the file-persisted theme
+  useEffect(() => {
+    (async () => {
+      try {
+        const result = await window.miniAgent?.getTheme?.();
+        const fileTheme = result?.theme;
+        if (fileTheme && THEMES.some((t) => t.id === fileTheme) && fileTheme !== theme) {
+          applyTheme(fileTheme);
+        }
+      } catch (_) { /* preload not available yet */ }
+    })();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Close theme picker on outside click
+  useEffect(() => {
+    if (!themePickerOpen) return;
+    const close = (e) => {
+      if (!e.target.closest('.theme-dropdown') && !e.target.closest('#theme-toggle')) {
+        setThemePickerOpen(false);
+      }
+    };
+    document.addEventListener('click', close);
+    return () => document.removeEventListener('click', close);
+  }, [themePickerOpen]);
+
+  // Position the theme dropdown relative to the toggle icon
+  useEffect(() => {
+    if (!themePickerOpen || !themeToggleRef.current) {
+      setDropdownPos(null);
+      return;
+    }
+    const rect = themeToggleRef.current.getBoundingClientRect();
+    const dropdownW = 190;
+    let right = window.innerWidth - rect.right;
+    if (right + dropdownW > window.innerWidth - 8) {
+      right = Math.max(4, window.innerWidth - dropdownW - 8);
+    }
+    setDropdownPos({
+      bottom: window.innerHeight - rect.top + 4,
+      right,
+    });
+  }, [themePickerOpen]);
+
+  return {
+    theme, themeEntry, themeIndex, PALETTE_SVG, THEMES,
+    themePickerOpen, setThemePickerOpen, themeToggleRef, dropdownPos,
+    applyTheme, cycleTheme,
+  };
+}

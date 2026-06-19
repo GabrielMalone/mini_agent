@@ -10,16 +10,14 @@ read_image analyzes an image file via the LLM.
 """
 from __future__ import annotations
 import base64
-import json
 import os
-import time
 from core.safety import ReadSafetyGate, WriteSafetyGate
 from tools import _register, _summarize, ToolResult, _TOOL_CONTEXT
 
 # ---------------------------------------------------------------------------
 # restore_file -- session undo
 # ---------------------------------------------------------------------------
-from tools.file_ops import _BACKUPS
+from tools._file_utils import _BACKUPS
 import shutil
 import os as _os_restore
 
@@ -243,7 +241,6 @@ def _guess_mime_type(path: str) -> str:
 
 def _read_image(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
     """Read an image file, send it to GPT-4o, and return a text description."""
-    import base64
     import requests
     path = args.get("path", "")
     if not path:

@@ -55,7 +55,7 @@ TURN_HISTORY_MAX_ENTRIES = 200        # cap on _turn_history entries
 # ---------------------------------------------------------------------------
 # _CIRCUIT_WINDOW and _CIRCUIT_THRESHOLD defined in context_inject.py
 # (single source of truth, shared with the circuit breaker implementation).
-from .context_inject import _CIRCUIT_WINDOW, _CIRCUIT_THRESHOLD
+from .context_inject import _CIRCUIT_WINDOW
 
 
 # ---------------------------------------------------------------------------
@@ -155,9 +155,7 @@ from .context_inject import (  # noqa: E402
     _inject_context,
     _inject_pre_execution_context,
     _record_tool_sequence_to_graph,
-    _check_circuit,
     _tool_call_key,
-    _compress_stale_tool_results,
 )
 
 

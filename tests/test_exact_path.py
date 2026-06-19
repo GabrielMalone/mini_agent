@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Reproduce the exact execute_tool path with cancel_event."""
-import threading, time, sys
+import threading
+import time
+import sys
 from tools import execute_tool
 from core.safety import ReadSafetyGate, WriteSafetyGate
 

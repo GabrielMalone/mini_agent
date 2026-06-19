@@ -49,4 +49,5 @@ SKIP_DIRS: set[str] = {
     ".mypy_cache", ".pytest_cache", ".ruff_cache",
     "dist", "build",
     ".tox", ".eggs",
+    "*.egg-info",
 }

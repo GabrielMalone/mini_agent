@@ -50,12 +50,7 @@ _GRAPH_BUILT = False
 _GRAPH_LOCK = threading.Lock()
 _GRAPH_WORKSPACE: str = ""
 
-# Directories to skip
-_SKIP_DIRS: set[str] = {
-    ".git", "__pycache__", ".venv", "venv", "node_modules",
-    ".mypy_cache", ".pytest_cache", ".ruff_cache", "dist", "build",
-    ".tox", ".eggs",
-}
+from .constants import SKIP_DIRS as _SKIP_DIRS  # noqa: E402  — canonical skip-dirs set
 
 # Names we skip in call edges
 _SKIP_CALL_NAMES: frozenset[str] = frozenset({
@@ -100,7 +95,6 @@ def build_knowledge_graph(root: str) -> None:
         _GRAPH = {}
         _GRAPH_WORKSPACE = root
 
-    import ast as _ast
 
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames

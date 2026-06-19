@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Test execute_tool with git -- reproduce the hang."""
-import sys, time
+import sys
+import time
 sys.stderr.write('[start] importing...\n')
 sys.stderr.flush()
 

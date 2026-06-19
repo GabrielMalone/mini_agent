@@ -33,8 +33,6 @@ from typing import Any
 from core.compaction import (
     should_compact,
     compact_tool_results_at_turn_end,
-    append_compaction_summary,
-    COMPACTION_RATIO_EMERGENCY,
 )
 from memory.memory_prune import _estimate_tokens
 
