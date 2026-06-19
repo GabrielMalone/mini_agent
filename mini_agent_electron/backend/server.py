@@ -357,7 +357,17 @@ class AgentRunner:
     # -- turn execution -------------------------------------------------
 
     def submit(self, text: str) -> None:
-        """Queue user input and start a turn if not already running."""
+        """Queue user input and start a turn if not already running.
+
+        Slash commands (e.g. /clear, /stats) are intercepted and dispatched
+        to the command handler rather than being sent to the LLM.  This is a
+        backend defence in case the frontend hasn't been rebuilt with the
+        corresponding slash-command routing.
+        """
+        if text.strip().startswith("/"):
+            self.handle_command(text.strip())
+            return
+
         with self._input_lock:
             self._input_queue.append(text)
 
@@ -585,6 +595,17 @@ class AgentRunner:
             ]
             clear_api_cache()
             self.memory.clear()
+            # Reset one-time context-injection flags so HANDOFF, STATE,
+            # session summary etc. are re-injected on the next turn.
+            for attr in (
+                '_handoff_injected', '_state_txt_injected', '_tasks_injected',
+                '_session_summary_injected', '_scratchpad_injected',
+                '_git_diff_injected',
+            ):
+                try:
+                    delattr(_TOOL_CONTEXT, attr)
+                except AttributeError:
+                    pass
             self._total_turns = 0
             self._total_tokens = 0
             self._session_cost = SessionCost()

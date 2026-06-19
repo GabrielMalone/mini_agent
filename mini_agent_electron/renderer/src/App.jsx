@@ -398,10 +398,28 @@ function AppShell() {
   const handleSubmit = useCallback((text) => {
     if (inputDisabled || !text?.trim()) return;
 
+    const trimmed = text.trim();
+
+    // Route slash commands through the command handler so they're
+    // processed programmatically (e.g. /clear, /stats) rather than
+    // sent to the LLM as a user message.
+    if (trimmed.startsWith('/')) {
+      setInputValue('');
+      // Show the command line in chat so the user sees it was sent
+      startTransition(() => {
+        setChatLines((prev) => [
+          ...prev,
+          { id: nextLineId(), text: trimmed, cls: 'msg-user' },
+        ]);
+      });
+      window.miniAgent.command(trimmed);
+      return;
+    }
+
     startTransition(() => {
       setChatLines((prev) => [
         ...prev,
-        { id: nextLineId(), text: text.trim(), cls: 'msg-user' },
+        { id: nextLineId(), text: trimmed, cls: 'msg-user' },
         { id: nextLineId(), text: '', cls: 'msg-agent-pending' },
       ]);
     });
@@ -411,7 +429,7 @@ function AppShell() {
     setInputDisabled(true);
     setInputValue('');
 
-    window.miniAgent.submit(text);
+    window.miniAgent.submit(trimmed);
 
     submitTimeoutRef.current = setTimeout(() => {
       setInputDisabled(false);
