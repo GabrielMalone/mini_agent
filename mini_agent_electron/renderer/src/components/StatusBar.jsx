@@ -64,11 +64,6 @@ export default function StatusBar({
 
   return (
     <div id="status-bar" className="status-bar dim">
-      {balanceDisplay && balanceDisplay.available && (
-        <span className="statusbar-metric statusbar-balance" title="Wallet balance">
-          <span className="statusbar-metric-value">{balanceDisplay.display}</span>
-        </span>
-      )}
       <span id="git-status">
         {gitBranch && (<><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.5" className="icon-sm"><path d="M3 4v6a2 2 0 0 0 2 2h2M7 12l-2-2 2-2M11 5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM3 4.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"/></svg>{gitBranch}{gitDirty ? '*' : ''}</>)}
       </span>
@@ -124,6 +119,11 @@ export default function StatusBar({
           </div>
         )}
       </span>
+      {balanceDisplay && balanceDisplay.available && (
+        <span className="statusbar-metric statusbar-balance" title="Wallet balance">
+          <span className="statusbar-metric-value">{balanceDisplay.display}</span>
+        </span>
+      )}
 
       <div className="status-right">
         <span id="workspace-info" className="clickable" onClick={handleWorkspaceClick} title="Click to change workspace">{workspace}</span>
