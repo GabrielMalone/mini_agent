@@ -291,6 +291,7 @@ html, body {
 .statusbar-balance .statusbar-metric-value {
   color: var(--green);
   font-weight: 500;
+  font-size: 12px;
 }
 .statusbar-cache .statusbar-metric-value {
   color: var(--accent);
@@ -1392,6 +1393,7 @@ html, body {
 
 /* Spinner for running cards */
 .tool-card-spinner {
+  display: inline-block;
   width: 10px;
   height: 10px;
   border: 2px solid var(--border);
