@@ -40,6 +40,8 @@ from core.anchor_manager import (
     format_lines_for_model,
 )
 
+from core.file_context_tracker import get_tracker
+
 # Edit operations (triggers @_register for edit_file, edit_lines)
 # Also re-exports symbols that external consumers import from tools.file_ops directly
 # (shell_ops, ast_tools, agent_ops, tests)
@@ -167,6 +169,7 @@ def _read_file(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResu
 
     # Track this file as read for read-before-edit enforcement
     _READ_FILES.add(resolved)
+    get_tracker().mark_file_read(resolved)
 
     return ToolResult(success=True, content=full_content)
 
@@ -264,6 +267,7 @@ def _write_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolRes
         _FILE_CACHE.pop(safety_result.resolved_path, None)
         # Track as read for read-before-edit enforcement (agent wrote it, knows content)
         _READ_FILES.add(safety_result.resolved_path)
+        get_tracker().mark_file_edited(safety_result.resolved_path)
         # Keep symbol index fresh for newly written .py files
         if path.endswith(".py"):
             from tools.search_ops import _reindex_file

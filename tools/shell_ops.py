@@ -144,6 +144,20 @@ def _persist_test_output(output: str) -> None:
 
 _STREAM_READER_MAX_LINES = 10000  # cap to prevent unbounded memory growth
 
+# Module-level MemoryStore cache (avoid transient SQLite connections on task_status polls)
+_MEMORY_STORE_CACHE = None
+
+
+def _get_memory_store():
+    """Return a cached MemoryStore, creating it once on first call."""
+    global _MEMORY_STORE_CACHE
+    if _MEMORY_STORE_CACHE is None:
+        from memory.memory import MemoryStore
+        _MEMORY_STORE_CACHE = MemoryStore(
+            os.path.join(os.getcwd(), ".mini_agent_memory.db"), max_messages=500
+        )
+    return _MEMORY_STORE_CACHE
+
 
 def _stream_reader(stream, collector: list[str], forward: bool = False,
                    on_output: callable = None, prefix: str = "") -> None:
@@ -236,9 +250,7 @@ def _task_status(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolR
     # Try to retrieve persisted test output for background runs
     output_msg = ""
     try:
-        from memory.memory import MemoryStore
-        import os as _os
-        mem = MemoryStore(_os.path.join(_os.getcwd(), ".mini_agent_memory.db"), max_messages=500)
+        mem = _get_memory_store()
         test_out = mem.get_test_output()
         if test_out and test_out.strip():
             lines = test_out.split("\n")
@@ -272,6 +284,21 @@ def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: 
         return ToolResult.authorization_error(danger_warning, hint="Use force=True to bypass this safety check, or choose a non-destructive alternative.")
     # If force=True, retain the warning to prepend to final output
     _danger_prefix = danger_warning + "\n\n" if danger_warning else ""
+    # Guard against hallucinated flags treated as commands.
+    # LLMs sometimes output "--some-flag value" as a bare command; this catches it.
+    _stripped = command.strip()
+    if _stripped.startswith("-"):
+        # Only block if it looks like a flag, not a negated option to a real command
+        # (e.g. "--help", "--version", "--some-flag" with no preceding command word)
+        return ToolResult(
+            success=False,
+            content=(
+                f"Blocked: command starts with '{_stripped.split()[0]}'. "
+                f"This looks like a flag/option, not a command. "
+                f"If this is intentional (e.g. a program whose name starts with '-'), "
+                f"prepend './' or use the full path."
+            ),
+        )
     # Windows: note when bash is unavailable (cmd.exe has different pipe/redirect syntax)
     _windows_cmd_note = ""
     if platform.system() == "Windows" and not _is_bash_available() and not force:
@@ -387,9 +414,13 @@ def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: 
                               content=f"Started background task {task_id}. Use task_status to check.")
 
         if on_output is not None:
-            if stdin_text is not None and proc.stdin is not None:
-                proc.stdin.write(stdin_text)
-                proc.stdin.close()
+            if stdin_text is not None:
+                if proc.stdin is not None:
+                    proc.stdin.write(stdin_text)
+                    proc.stdin.close()
+                else:
+                    _sys.stderr.write("[shell] Warning: stdin provided but proc.stdin is None, stdin not delivered\n")
+                    _sys.stderr.flush()
             t_out = threading.Thread(target=_stream_reader,
                                      args=(proc.stdout, stdout_lines, True, on_output, ""), daemon=True)
             t_err = threading.Thread(target=_stream_reader,
@@ -460,9 +491,13 @@ def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: 
             from tools import _TOOL_CONTEXT
             _TOOL_CONTEXT._active_proc = proc
 
-            if stdin_text is not None and proc.stdin is not None:
-                proc.stdin.write(stdin_text)
-                proc.stdin.close()
+            if stdin_text is not None:
+                if proc.stdin is not None:
+                    proc.stdin.write(stdin_text)
+                    proc.stdin.close()
+                else:
+                    _sys.stderr.write("[shell] Warning: stdin provided but proc.stdin is None, stdin not delivered\n")
+                    _sys.stderr.flush()
 
             if _WINDOWS:
                 try:

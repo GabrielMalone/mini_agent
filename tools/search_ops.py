@@ -87,15 +87,11 @@ def build_symbol_index(root: str) -> dict[str, list[dict]]:
     import re
     import json as _json
 
-    # --- Delegate to _sem_index first ---
-    # _sem_index collects symbol + reference data during its single workspace
-    # walk (Python def/class + word references).  If it populates the globals,
-    # we can skip our own walk entirely — no duplicate I/O.
-    _sem_index(root)
-    if _SYMBOL_INDEX is not None:
-        return _SYMBOL_INDEX
-
-    # --- disk cache: avoid re-scanning on every session ---
+    # --- disk cache: check first to avoid any walk if fresh ---
+    # Reordered before _sem_index so a fresh symbol cache avoids the
+    # semantic walk entirely.  Previously the disk cache was checked
+    # *after* _sem_index, which meant a fresh semantic cache that didn't
+    # populate _SYMBOL_INDEX would still trigger a second os.walk here.
     cache_path = os.path.join(root, ".mini_agent_index.json")
     cache_mtime = 0.0
     try:
@@ -104,15 +100,33 @@ def build_symbol_index(root: str) -> dict[str, list[dict]]:
     except Exception:
         pass
 
-    # Fast path: if cache exists and we know no .py file is newer, return cached data
     if cache_mtime > 0.0 and _INDEX_MAX_MTIME > 0.0 and cache_mtime >= _INDEX_MAX_MTIME:
         try:
             cached = _json.loads(open(cache_path, encoding="utf-8", errors="replace").read())
-            sym = {k: v for k, v in cached.get("symbols", {}).items()}
-            ref = {k: v for k, v in cached.get("references", {}).items()}
-            _SYMBOL_INDEX = sym
-            _REF_INDEX = ref
-            return sym
+            _SYMBOL_INDEX = {k: v for k, v in cached.get("symbols", {}).items()}
+            _REF_INDEX = {k: v for k, v in cached.get("references", {}).items()}
+            return _SYMBOL_INDEX
+        except Exception:
+            pass
+
+    # --- Delegate to _sem_index ---
+    # _sem_index collects symbol + reference data during its single workspace
+    # walk (Python def/class + word references).  If it populates the globals,
+    # we can skip our own walk entirely — no duplicate I/O.
+    _sem_index(root)
+    if _SYMBOL_INDEX is not None:
+        return _SYMBOL_INDEX
+
+    # --- disk cache: try again after _sem_index (may have just been written) ---
+    if cache_mtime <= 0.0 or _INDEX_MAX_MTIME <= 0.0 or cache_mtime < _INDEX_MAX_MTIME:
+        try:
+            if os.path.exists(cache_path):
+                cache_mtime = os.path.getmtime(cache_path)
+                if cache_mtime >= _INDEX_MAX_MTIME:
+                    cached = _json.loads(open(cache_path, encoding="utf-8", errors="replace").read())
+                    _SYMBOL_INDEX = {k: v for k, v in cached.get("symbols", {}).items()}
+                    _REF_INDEX = {k: v for k, v in cached.get("references", {}).items()}
+                    return _SYMBOL_INDEX
         except Exception:
             pass  # fall through to full rebuild
 
@@ -1788,7 +1802,54 @@ def _explore_extract_terms(query: str) -> list[str]:
     return list(tokens)
 
 
-def _explore_score_symbol(name: str, kind: str, filepath: str, terms: list[str]) -> int:
+def _explore_read_doc(filepath: str, line: int) -> str:
+    """Extract docstring and leading comments for a symbol defined at *line* (1-indexed).
+
+    Returns a single space-joined string of comment text above the definition
+    plus the docstring body, or ``\"\"`` if nothing is found or the file can't
+    be read.
+    """
+    try:
+        with open(filepath, "r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+    except (OSError, PermissionError):
+        return ""
+
+    if line < 1 or line > len(lines):
+        return ""
+
+    parts: list[str] = []
+
+    # Collect comment block above the definition (skip blank lines between)
+    i = line - 2  # line just before def/class
+    while i >= 0:
+        stripped = lines[i].strip()
+        if stripped.startswith("#"):
+            parts.insert(0, stripped.lstrip("# ").strip())
+            i -= 1
+        elif stripped == "":
+            i -= 1
+        else:
+            break
+
+    # Collect docstring (first string expression after def/class line)
+    if line < len(lines):  # line is 1-indexed def line, so lines[line] is next
+        next_line = lines[line].strip()
+        if next_line.startswith('"""') or next_line.startswith("'''"):
+            parts.append(next_line.strip('"\' \t'))
+            if next_line.count('"""') < 2 and next_line.count("'''") < 2:
+                j = line + 1
+                while j < len(lines):
+                    doc_line = lines[j].strip()
+                    parts.append(doc_line.strip('"\' \t'))
+                    if '"""' in doc_line or "'''" in doc_line:
+                        break
+                    j += 1
+
+    return " ".join(p for p in parts if p)
+
+
+def _explore_score_symbol(name: str, kind: str, filepath: str, terms: list[str], line: int = 0) -> int:
     """Score a symbol against search terms. Higher = more relevant."""
     name_lower = name.lower()
     score = 0
@@ -1810,6 +1871,15 @@ def _explore_score_symbol(name: str, kind: str, filepath: str, terms: list[str])
     for term in terms:
         if term in fname:
             score += 15
+
+    # Doc bonus: term in docstring or leading comment (each term +15)
+    if line > 0:
+        doc = _explore_read_doc(filepath, line)
+        if doc:
+            doc_lower = doc.lower()
+            for term in terms:
+                if term in doc_lower:
+                    score += 15
 
     return score
 
@@ -1833,7 +1903,7 @@ def _explore_rank_symbols(
             if key in seen:
                 continue
             seen.add(key)
-            score = _explore_score_symbol(name, entry.get("kind", ""), entry["path"], terms)
+            score = _explore_score_symbol(name, entry.get("kind", ""), entry["path"], terms, entry.get("line", 0))
             if score > 0:
                 scored.append((score, name, entry))
 

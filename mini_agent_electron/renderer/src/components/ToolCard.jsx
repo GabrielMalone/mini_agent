@@ -1,5 +1,9 @@
 import { useState, useEffect, useRef, memo, useCallback } from 'react';
 import CodeBlock from './CodeBlock';
+import SearchResults from './SearchResults';
+import ReadFileResult from './ReadFileResult';
+import ShellResults from './ShellResults';
+import AstResult from './AstResult';
 
 /**
  * ToolCard -- Dirac-inspired card-based tool display.
@@ -81,9 +85,8 @@ const ToolCard = memo(function ToolCard({ tool, theme }) {
             <div className="tool-card-output-single dim">{tool.output}</div>
           )}
           {hasOutput && !isSingleLine && (
-            <CodeBlock
-              code={tool.output}
-              fontSize="0.72em"
+            <ToolOutput
+              output={tool.output}
               toolName={tool.toolName}
               theme={theme}
             />
@@ -110,5 +113,28 @@ const ToolCard = memo(function ToolCard({ tool, theme }) {
     </div>
   );
 });
+
+
+// -- ToolOutput: dispatches to specialized component based on tool name ---
+
+function ToolOutput({ output, toolName, theme }) {
+  const name = toolName || '';
+
+  if (/^search_files\(|^find_symbol\(|^find_usages\(|^semantic_search\(|^web_search\(/.test(name)) {
+    return <SearchResults content={output} />;
+  }
+  if (/^read_file\(/.test(name)) {
+    return <ReadFileResult content={output} toolName={name} />;
+  }
+  if (/^run_shell\(|^run_tests\(/.test(name)) {
+    return <ShellResults content={output} ok={true} />;
+  }
+  if (/^get_file_skeleton\(|^get_function\(/.test(name)) {
+    return <AstResult content={output} toolName={name} />;
+  }
+
+  // Fallback: generic CodeBlock with wrap
+  return <CodeBlock code={output} fontSize="0.72em" toolName={name} theme={theme} wrap={true} />;
+}
 
 export default ToolCard;

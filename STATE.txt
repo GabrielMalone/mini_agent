@@ -1,5 +1,5 @@
 # mini_agent Architecture Map
-# Last updated: 2026-06-19 (React 19 UI + enriched tool summaries with line numbers, anchors, hashes)
+# Last updated: 2026-06-19 (fork cherry-pick: structured UI components, core utilities, CodeBlock enhancements)
 #
 # This file is the agent's map of the codebase. Update it after completed changes.
 # Behavioral rules live in AGENTS.md. Long-term facts live in core memory.
@@ -8,6 +8,14 @@
 
 - **Hash-anchored editing (2026-06-16)** — edit_lines with 3-char SHA-256 validation per Akay/Howard Chen pattern
 - **Electron slash commands (2026-06-19)** — `/cancel` (cancel running turn) and `/help` (list all commands) added to server.py handle_command
+- **Fork cherry-pick: structured output UI (2026-06-19)** — 5 new React components from sunfllower1141 fork:
+  AnsiBlock (ANSI→styled), ReadFileResult (read_file with syntax highlight),
+  SearchResults (search_files/find_symbol tables), ShellResults (shell output with exit code),
+  AstResult (AST skeleton/function rendering). ToolCard dispatches via ToolOutput helper.
+- **Fork cherry-pick: core utilities (2026-06-19)** — `core/file_context_tracker.py` (stale read detection),
+  `core/symbol_context_resolver.py` (tree-sitter context), `tools/ast_ops.py` (tree-sitter AST ops)
+- **Fork cherry-pick: CodeBlock enhancements (2026-06-19)** — wrap/noScroll props, 35+ languages,
+  ANSI escape support via anser, EXT_TO_LANG export for downstream components
 - **Storm-breaker (2026-06-16)** — after 3 consecutive identical failures, synthesize explanation instead of silent loop
 - **Self-modifying architecture** — agent observes, diagnoses, and improves its own codebase via STATE.txt/CHANGELOG.md/HANDOFF.md
 - **Context injection ZONE model** — ZONE 1 (immutable prefix), ZONE 2 (append-only log), ZONE 3 (volatile scratch)
@@ -28,6 +36,8 @@
 - `core/config.py` -- TOML config loading, provider settings (718 lines). Re-exports from constants.
 - `core/tree_sitter_parser.py` -- multi-language (Python/JS/TS) symbol extraction via tree-sitter
 - `core/knowledge_graph.py` -- entity-relationship graph (calls, imports, inherits, defines).
+- `core/file_context_tracker.py` -- proactive file change detection (stale read prevention, mtime tracking)
+- `core/symbol_context_resolver.py` -- tree-sitter context resolution for imports and class properties
   BFS shortest-path, subgraph, caller-finding. Wired into edit risk + post-edit verification.
 
 ### Sub-Agent System
@@ -78,6 +88,7 @@
 - `tools/failure_learning.py` -- failure pattern store (SQLite), self-critique (MistakeNotebook),
   experience context injection. Tracks tool failures, learns fix strategies.
 - `tools/browser_ops.py` -- Playwright headless browser
+- `tools/ast_ops.py` -- tree-sitter-based AST operations (get_file_skeleton, get_function, replace_symbol)
 - `tools/desktop_ops.py` -- desktop automation
 - `tools/macos_ops.py` -- macOS-specific desktop ops
 - `tools/_json_rpc_shared.py` -- shared drain_stderr() for lsp.py and mcp_client.py
@@ -89,6 +100,12 @@
 - `mini_agent_electron/renderer/src/App.jsx` -- React 19 UI with startTransition + useDeferredValue
 - `mini_agent_electron/renderer/src/hooks/useSmoothStream.js` -- requestAnimationFrame-based streaming
 - `mini_agent_electron/renderer/style.css` -- themeable styles with CSS animations
+- `mini_agent_electron/renderer/src/components/CodeBlock.jsx` -- syntax highlighting with 35+ languages, wrap/noScroll, ANSI support
+- `mini_agent_electron/renderer/src/components/AnsiBlock.jsx` -- ANSI escape → styled React elements
+- `mini_agent_electron/renderer/src/components/ReadFileResult.jsx` -- read_file output with filename header + line hashes
+- `mini_agent_electron/renderer/src/components/SearchResults.jsx` -- search_files/find_symbol results as tables
+- `mini_agent_electron/renderer/src/components/ShellResults.jsx` -- shell command output with exit code badge
+- `mini_agent_electron/renderer/src/components/AstResult.jsx` -- AST skeleton/function output with proper line numbering
 
 ### React UI Modernization (2026-06-19)
 - React 19 `startTransition`: all chat/tool/thinking array updates wrapped for non-blocking UI

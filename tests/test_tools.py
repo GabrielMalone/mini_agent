@@ -840,6 +840,150 @@ class TestFindSymbol(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# explore tests
+# ---------------------------------------------------------------------------
+
+class TestExplore(unittest.TestCase):
+    """Verify explore tool ranks symbols by name, filename, AND docstring/comment content."""
+
+    def setUp(self):
+        self.workspace = tempfile.mkdtemp()
+        self.write_gate, self.read_gate = _gates(self.workspace)
+        # Clear global symbol index so symbols from other tests don't leak in
+        import tools.search_ops as so
+        so._SYMBOL_INDEX = None
+        so._REF_INDEX = None
+        so._INDEX_MAX_MTIME = 0.0
+        # Write files with varied symbol naming and documentation
+        src = os.path.join(self.workspace, "auth.py")
+        with open(src, "w") as f:
+            f.write('def authenticate(user, password):\n')
+            f.write('    """Validate user credentials against the database."""\n')
+            f.write('    pass\n\n')
+            f.write('# Verify the session token is still valid\n')
+            f.write('def check_session(token):\n')
+            f.write('    """Return True if the session token has not expired."""\n')
+            f.write('    pass\n\n')
+            f.write('def logout():\n')
+            f.write('    pass\n')
+        # Build fresh index
+        from tools.search_ops import build_symbol_index
+        build_symbol_index(self.workspace)
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.workspace, ignore_errors=True)
+        # Clean up global state
+        import tools.search_ops as so
+        so._SYMBOL_INDEX = None
+        so._REF_INDEX = None
+        so._INDEX_MAX_MTIME = 0.0
+
+    def test_matches_by_function_name(self):
+        """Exact function name in query surfaces the symbol."""
+        tc = _make_tool_call("explore", query="authenticate")
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertTrue(result.success)
+        self.assertIn("authenticate", result.content)
+
+    def test_matches_by_docstring_content(self):
+        """Terms that appear ONLY in docstrings still surface the symbol."""
+        tc = _make_tool_call("explore", query="validate credentials against database")
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertTrue(result.success)
+        # Should find authenticate() because its docstring contains these terms
+        self.assertIn("authenticate", result.content.lower())
+
+    def test_matches_by_leading_comment(self):
+        """Terms in a leading # comment above a def surface the symbol."""
+        tc = _make_tool_call("explore", query="verify session token valid")
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertTrue(result.success)
+        # check_session has a leading comment with "Verify the session token is still valid"
+        self.assertIn("check_session", result.content.lower())
+
+    def test_symbol_without_docs_still_works(self):
+        """Symbols without docstrings still match via name only."""
+        tc = _make_tool_call("explore", query="logout")
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertTrue(result.success)
+        self.assertIn("logout", result.content.lower())
+
+    def test_requires_query(self):
+        tc = _make_tool_call("explore")
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertIsInstance(result, ToolResult)
+        self.assertFalse(result.success)
+        self.assertIn("query", result.content.lower())
+
+    def test_no_results_for_unrelated_query(self):
+        """A nonsense query still returns a valid result (kind bonus gives every symbol a baseline score)."""
+        tc = _make_tool_call("explore", query="zzzblargnothingatall999")
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertIsInstance(result, ToolResult)
+        self.assertTrue(result.success)
+        # Result should not be dominated by the nonsense term -- the auth symbols
+        # should still appear because of their kind bonus, but the query term
+        # should not match any docstring or symbol name
+        self.assertNotIn("zzzblargnothingatall", result.content.lower())
+
+
+# ---------------------------------------------------------------------------
+# build_symbol_index double-walk regression test
+# ---------------------------------------------------------------------------
+
+class TestBuildSymbolIndex(unittest.TestCase):
+    """Verify build_symbol_index returns correct results without duplicate I/O."""
+
+    def setUp(self):
+        self.workspace = tempfile.mkdtemp()
+        self.src = os.path.join(self.workspace, "demo.py")
+        with open(self.src, "w") as f:
+            f.write("def hello_world():\n    pass\n\n")
+            f.write("class MyClass:\n    def method_one(self):\n        pass\n")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.workspace, ignore_errors=True)
+        # Clean up global state so other tests aren't affected
+        from tools import search_ops
+        search_ops._SYMBOL_INDEX = None
+        search_ops._REF_INDEX = None
+        search_ops._INDEX_MAX_MTIME = 0.0
+
+    def test_first_call_builds_and_returns_correctly(self):
+        import tools.search_ops as so
+        so._SYMBOL_INDEX = None
+        so._REF_INDEX = None
+        so._INDEX_MAX_MTIME = 0.0
+        idx = so.build_symbol_index(self.workspace)
+        self.assertIsNotNone(so._SYMBOL_INDEX)
+        self.assertIn("hello_world", idx)
+        self.assertIn("MyClass", idx)
+        self.assertIn("method_one", idx)
+
+    def test_second_call_returns_same_index(self):
+        import tools.search_ops as so
+        so._SYMBOL_INDEX = None
+        so._REF_INDEX = None
+        so._INDEX_MAX_MTIME = 0.0
+        idx1 = so.build_symbol_index(self.workspace)
+        idx2 = so.build_symbol_index(self.workspace)
+        self.assertEqual(set(idx1.keys()), set(idx2.keys()))
+        # After first call populates index, second should be fast (cached)
+        self.assertIsNotNone(so._SYMBOL_INDEX)
+
+    def test_index_includes_line_numbers(self):
+        import tools.search_ops as so
+        so._SYMBOL_INDEX = None
+        so._REF_INDEX = None
+        so._INDEX_MAX_MTIME = 0.0
+        idx = so.build_symbol_index(self.workspace)
+        entries = idx.get("hello_world", [])
+        self.assertTrue(any(e["line"] == 1 for e in entries))
+
+
+# ---------------------------------------------------------------------------
 # Error hint tests
 # ---------------------------------------------------------------------------
 

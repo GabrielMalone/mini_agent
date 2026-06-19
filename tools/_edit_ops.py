@@ -13,8 +13,10 @@ from tools._file_utils import (
     _canonicalize_for_match, _normalize_quotes, _normalize_unicode_whitespace,
     _validate_python_syntax, _auto_advance_plan, _backup_before_write,
     _READ_FILES, _BACKUPS, _FILE_CACHE,
-    _current_agent_id, _compute_line_hashes,
+    _compute_line_hashes,
 )
+
+from core.file_context_tracker import get_tracker
 
 # ---------------------------------------------------------------------------
 # edit_file
@@ -530,6 +532,7 @@ def _apply_single_edit(
 
         from tools import add_modified_file, clear_tool_cache
         add_modified_file(resolved)
+        get_tracker().mark_file_edited(resolved)
         clear_tool_cache()
         _FILE_CACHE.pop(resolved, None)
         # Keep symbol index fresh for edited .py files
@@ -769,6 +772,7 @@ def _edit_file_anchored(
         clear_tool_cache()
         _FILE_CACHE.pop(fs["resolved"], None)
         _READ_FILES.add(fs["resolved"])
+        get_tracker().mark_file_edited(fs["resolved"])
 
         additions = sum(e["lines_added"] for e in applied)
         deletions = sum(e["lines_deleted"] for e in applied)
@@ -978,6 +982,7 @@ def _edit_lines(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolRes
 
     from tools import add_modified_file, clear_tool_cache
     add_modified_file(resolved)
+    get_tracker().mark_file_edited(resolved)
     clear_tool_cache()
     _FILE_CACHE.pop(resolved, None)
 
