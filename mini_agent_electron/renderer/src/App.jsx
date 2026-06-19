@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, startTransition, useDeferredValue, useMemo } from 'react';
+import { useState, useRef, useEffect, useCallback, startTransition, useDeferredValue } from 'react';
 import useSmoothStream from './hooks/useSmoothStream';
 import useTheme from './hooks/useTheme';
 import LogLine from './components/LogLine';
@@ -13,11 +13,6 @@ import SettingsPanel from './components/SettingsPanel';
 import ToolCard from './components/ToolCard';
 import Header from './components/Header';
 import StatusBar from './components/StatusBar';
-
-// Cap rendered DOM nodes to prevent lag at long conversations (300+ turns).
-// State arrays still hold full history; only the visible slice hits the DOM.
-const MAX_RENDERED_CHAT_LINES = 400;
-const MAX_RENDERED_TOOL_LINES = 400;
 
 
 // ---------------------------------------------------------------------------
@@ -124,15 +119,11 @@ function AppShell() {
     if (!api) return;
 
     const onStatus = (data) => {
-      // Check for no-API-key signal from main process
       if (data.reason === 'no_api_key') {
         setShowSettings(true);
         return;
       }
-      if (data.ready) {
-        // Backend came online -- hide settings if it was showing
-        setShowSettings(false);
-      }
+      if (data.ready) setShowSettings(false);
       if (data.model != null) setModelName(data.model);
       if (data.provider != null) setProvider(data.provider);
       if (data.session_name != null) setSessionName(data.session_name);
@@ -142,25 +133,15 @@ function AppShell() {
         setGitDirty(!!data.git_dirty);
       }
       if (data.restored_count != null) setRestoredCount(data.restored_count);
-      // Reasonix-style status bar fields
       if (data.balance != null) setBalanceDisplay(data.balance);
       if (data.session_cost != null) setSessionCost(data.session_cost);
       if (data.turn_cost != null) setTurnCost(data.turn_cost);
       if (data.cache_hit_rate != null) setCacheHitRate(data.cache_hit_rate);
       if (data.subagent_running != null) setSubagentRunning(data.subagent_running);
-      if (data.ready) {
-        addToolLine({ text: 'backend ready', cls: 'dim' });
-      }
+      if (data.ready) addToolLine({ text: 'backend ready', cls: 'dim' });
     };
     const unsub = api.on('backend:status', onStatus);
-
-    // Fetch cached status from main process (handles race where backend
-    // sent status before our listener was registered)
-    api.getStatus?.().then((data) => {
-      if (!data) return;
-      onStatus(data);
-    });
-
+    api.getStatus?.().then((data) => { if (data) onStatus(data); });
     return () => unsub();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -211,27 +192,15 @@ function AppShell() {
         toolName = summary;
         toolArgs = '';
       }
-
-      // Also keep the flat log line for backward compat
       addToolLine({ toolName, toolArgs, cls: 'tool-summary' });
 
-      // Create a card
       const cardId = ++toolCardIdRef.current;
       startTransition(() => {
         setToolCards((prev) => [...prev, {
-          id: cardId,
-          toolName,
-          toolArgs,
-          status: 'running',
-          output: '',
-          startTime: Date.now(),
-          endTime: null,
-          diffPreview: null,
-          errorDetail: null,
+          id: cardId, toolName, toolArgs, status: 'running', output: '',
+          startTime: Date.now(), endTime: null, diffPreview: null, errorDetail: null,
         }]);
       });
-
-      // Push a buffer for tool output accumulation
       toolOutputStack.current.push({ cardId, buffer: '' });
     }));
 
@@ -240,19 +209,15 @@ function AppShell() {
       if (stack.length === 0) return;
       const top = stack[stack.length - 1];
       top.buffer += data.text || '';
-
       startTransition(() => {
         setToolCards((prev) =>
-          prev.map((c) =>
-            c.id === top.cardId ? { ...c, output: top.buffer } : c
-          )
+          prev.map((c) => c.id === top.cardId ? { ...c, output: top.buffer } : c)
         );
       });
     }));
 
     unsubs.push(api.on('stream:tool_end', (data) => {
       const stack = toolOutputStack.current;
-      // Pop matching buffer
       let cardId = null;
       let finalBuffer = '';
       while (stack.length > 0) {
@@ -261,7 +226,6 @@ function AppShell() {
         cardId = top.cardId;
         break;
       }
-
       const now = Date.now();
       const status = data.ok ? 'ok' : 'error';
       if (cardId != null) {
@@ -271,9 +235,7 @@ function AppShell() {
         startTransition(() => {
           setToolCards((prev) =>
             prev.map((c) =>
-              c.id === cardId
-                ? { ...c, status, endTime: now, output: code, diffPreview, errorDetail }
-                : c
+              c.id === cardId ? { ...c, status, endTime: now, output: code, diffPreview, errorDetail } : c
             )
           );
         });
@@ -283,10 +245,6 @@ function AppShell() {
     unsubs.push(api.on('stream:turn_complete', (data) => {
       clearTimeout(submitTimeoutRef.current);
       const agentText = chatStream.flush();
-      // Always resolve the pending placeholder, even when the model
-      // produced no text content (e.g. reasoning-only + tool_calls).
-      // Otherwise the placeholder stays as an empty line in chat forever,
-      // and the user sees no output summary.
       startTransition(() => {
         setChatLines((prev) => {
           const updated = [...prev];
@@ -300,17 +258,11 @@ function AppShell() {
       });
       chatStream.reset();
       if (data.turn_count) setTurnCountVal(data.turn_count);
-      // Reasonix-style cost updates from turn_complete
       if (data.usage?.turn_cost) setTurnCost(data.usage.turn_cost);
       if (data.usage?.session_cost) setSessionCost(data.usage.session_cost);
       if (data.usage?.cache_hit_rate != null) setCacheHitRate(data.usage.cache_hit_rate);
       if (data.usage?.subagent_running != null) setSubagentRunning(data.usage.subagent_running);
-      // Balance -- pushed on every turn_complete so the wallet display updates live
       if (data.usage?.balance != null) setBalanceDisplay(data.usage.balance);
-      // NOTE: Do NOT set isLive=false here.  The agent may start another
-      // turn immediately (sub-agent auto-report, tool continuations, etc.).
-      // Only the 'idle' message (sent when _turn_loop truly drains the
-      // queue) should reset isLive.
     }));
 
     unsubs.push(api.on('stream:error', (data) => {
@@ -321,7 +273,6 @@ function AppShell() {
       startTransition(() => {
         setChatLines((prev) => {
           const updated = [...prev];
-          // Flush any pending agent text before showing the error
           if (agentText && updated.length > 0 && updated[updated.length - 1].cls === 'msg-agent-pending') {
             updated[updated.length - 1] = { id: updated[updated.length - 1].id, text: agentText, cls: 'msg-agent', markdown: true };
           }
@@ -354,11 +305,6 @@ function AppShell() {
       }
     }));
 
-    // --- Turn lifecycle: start / idle ---
-    // The backend sends turn_start at the beginning of each turn and idle
-    // when the sequential turn-loop truly exits (input queue drained).
-    // These provide a reliable running/cancel indicator that doesn't flicker
-    // between turns.
     unsubs.push(api.on('backend:turn_start', () => {
       setIsLive(true);
       setInputDisabled(true);
@@ -368,10 +314,6 @@ function AppShell() {
     unsubs.push(api.on('backend:idle', () => {
       clearTimeout(submitTimeoutRef.current);
       stopTimer();
-      // Safety: flush any remaining streaming text and resolve the pending
-      // placeholder.  If turn_complete was skipped or chatStream.flush()
-      // returned empty, the placeholder would otherwise stay as an empty
-      // line in the chat log.
       const leftover = chatStream.flush();
       if (leftover || chatStream.displayedText) {
         startTransition(() => {
@@ -396,13 +338,8 @@ function AppShell() {
       setSubagentData((prev) => ({
         ...prev,
         [data.task_id]: {
-          name: data.name,
-          desc: data.desc,
-          parent_id: data.parent_id || 'orchestrator',
-          toolCalls: [],
-          thoughts: [],
-          output: '',
-          ok: null,
+          name: data.name, desc: data.desc, parent_id: data.parent_id || 'orchestrator',
+          toolCalls: [], thoughts: [], output: '', ok: null,
         },
       }));
     }));
@@ -430,7 +367,6 @@ function AppShell() {
         const agent = prev[data.task_id];
         if (!agent) return prev;
         const toolCalls = [...agent.toolCalls];
-        // Mark the last matching tool call as complete
         for (let i = toolCalls.length - 1; i >= 0; i--) {
           if (toolCalls[i].toolName === data.tool_name && toolCalls[i].ok === null) {
             toolCalls[i] = { ...toolCalls[i], ok: data.ok, result: data.content?.slice(0, 200) };
@@ -445,14 +381,12 @@ function AppShell() {
       setSubagentData((prev) => {
         const agent = prev[data.task_id];
         if (!agent) return prev;
-        // Keep last 30 thought chunks to avoid unbounded growth
         const thoughts = [...agent.thoughts, data.text].slice(-30);
         return { ...prev, [data.task_id]: { ...agent, thoughts } };
       });
     }));
 
     unsubs.push(api.on('stream:subagent_output', (data) => {
-      // subagent_output is still sent for backward compat; accumulate into thoughts
       setSubagentData((prev) => {
         const agent = prev[data.task_id];
         if (!agent) return prev;
@@ -466,14 +400,7 @@ function AppShell() {
       setSubagentData((prev) => {
         const agent = prev[data.task_id];
         if (!agent) return prev;
-        return {
-          ...prev,
-          [data.task_id]: {
-            ...agent,
-            ok: data.ok,
-            output: data.output || agent.output,
-          },
-        };
+        return { ...prev, [data.task_id]: { ...agent, ok: data.ok, output: data.output || agent.output } };
       });
     }));
 
@@ -484,7 +411,6 @@ function AppShell() {
   const handleSubmit = useCallback((text) => {
     if (inputDisabled || !text?.trim()) return;
 
-    // Add user message
     startTransition(() => {
       setChatLines((prev) => [
         ...prev,
@@ -500,9 +426,6 @@ function AppShell() {
 
     window.miniAgent.submit(text);
 
-    // Safety timeout -- re-enable input after 120s in case the backend
-    // hangs or crashes.  The idle message handles normal completion;
-    // this is a last-resort fallback.
     submitTimeoutRef.current = setTimeout(() => {
       setInputDisabled(false);
       inputRef.current?.focus();
@@ -520,9 +443,7 @@ function AppShell() {
     setInputValue(e.target.value);
   }, []);
 
-  // Drag-and-drop: use the preload bridge which can read Electron's File.path.
-  // The preload manages dragOver/drop at the document level and calls our
-  // callback with absolute file paths.
+  // Drag-and-drop
   useEffect(() => {
     const api = window.miniAgent;
     if (!api || !api.onFileDrop) return;
@@ -551,21 +472,14 @@ function AppShell() {
   const handleSessionSwitch = useCallback((name, isNew) => {
     const api = window.miniAgent;
     if (!api) return;
-    if (isNew) {
-      api.newSession(name);
-    } else {
-      api.switchSession(name);
-    }
-    // Session name in footer will update via backend:status event
+    if (isNew) api.newSession(name);
+    else api.switchSession(name);
   }, []);
 
-  // Settings saved handler -- backend will send backend:status { ready: true }
-  // which triggers setShowSettings(false) in the onStatus listener
-  const handleSettingsSaved = useCallback(() => {
-    // Let the backend:status event handle hiding the panel
-  }, []);
+  // Settings saved handler
+  const handleSettingsSaved = useCallback(() => {}, []);
 
-  // Cancel handler -- immediately reset UI, then tell backend
+  // Cancel handler
   const handleCancel = useCallback(() => {
     window.miniAgent?.cancel();
     clearTimeout(submitTimeoutRef.current);
@@ -596,27 +510,19 @@ function AppShell() {
   // Auto-scroll thinking log
   useEffect(() => {
     const el = thinkingLogRef.current;
-    if (el) {
-      requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
-    }
+    if (el) requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
   }, [thinking.displayedText]);
 
-  // Auto-scroll chat log — fire on both the immediate and deferred values
-  // so we catch the DOM paint. requestAnimationFrame ensures scrollHeight is
-  // measured after React has committed the new nodes.
+  // Auto-scroll chat log
   useEffect(() => {
     const el = chatLogRef.current;
-    if (el) {
-      requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
-    }
+    if (el) requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
   }, [chatLines, deferredChatLines, chatStream.displayedText]);
 
-  // Auto-scroll tools log (cards + lines)
+  // Auto-scroll tools log
   useEffect(() => {
     const el = toolsLogRef.current;
-    if (el) {
-      requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
-    }
+    if (el) requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
   }, [toolCards, deferredToolsLines]);
 
   // Auto-focus input on mount
@@ -628,23 +534,9 @@ function AppShell() {
   useEffect(() => {
     return () => {
       clearTimeout(submitTimeoutRef.current);
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
+      if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     };
   }, []);
-
-  // Memoized visible slices to cap rendered DOM nodes
-  const visibleToolLines = useMemo(() => {
-    if (deferredToolsLines.length <= MAX_RENDERED_TOOL_LINES) return deferredToolsLines;
-    return deferredToolsLines.slice(-MAX_RENDERED_TOOL_LINES);
-  }, [deferredToolsLines]);
-
-  const visibleChatLines = useMemo(() => {
-    if (deferredChatLines.length <= MAX_RENDERED_CHAT_LINES) return deferredChatLines;
-    return deferredChatLines.slice(-MAX_RENDERED_CHAT_LINES);
-  }, [deferredChatLines]);
 
   return (
     <div id="app">
@@ -671,7 +563,7 @@ function AppShell() {
               {toolCards.map((card) => (
                 <ToolCard key={card.id} card={card} />
               ))}
-              {visibleToolLines.map((line, i) => (
+              {deferredToolsLines.map((line, i) => (
                 <LogLine key={i} line={line} />
               ))}
             </div>
@@ -681,7 +573,7 @@ function AppShell() {
         <RoundedFrame id="chat-frame" title="Chat">
           <div ref={chatLogRef} className="chat-log">
             <div className="frame-content">
-              {visibleChatLines.map((line) => {
+              {deferredChatLines.map((line) => {
                 if (line.markdown) {
                   return <DeferredMarkdown key={line.id} text={line.text} cls={line.cls} />;
                 }

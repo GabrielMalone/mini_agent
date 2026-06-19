@@ -325,55 +325,46 @@ html, body {
 }
 
 /* ---------------------------------------------------------------------------
-   Body panels
+   Body panels (new Dirac-inspired layout)
    --------------------------------------------------------------------------- */
-#body-panels {
-  display: flex;
-  flex: 1;
-  gap: 10px;
-  min-height: 0;
+#thinking-frame {
+  flex: 0 0 auto;
+  max-height: 14em;
+  min-height: 4em;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  margin-bottom: 6px;
   overflow: hidden;
 }
 
-#left-stack {
-  flex: 30;
+#main-row {
   display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
+  flex: 1;
   gap: 8px;
-}
-
-#left-pane {
-  flex: 3;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
   min-height: 0;
-  border-radius: 10px;
-  border: 1px solid var(--border);
   overflow: hidden;
 }
 
-#agent-tree-panel {
-  flex: 1;
-  min-height: 120px;
-  position: relative;
-  overflow: hidden;
-  border-radius: 10px;
-  border: 1px solid var(--border);
-}
-#agent-tree-panel .react-flow {
-  width: 100%;
-  height: 100%;
-}
-
-#right-pane {
-  flex: 40;
-  display: flex;
-  flex-direction: column;
+#tools-frame {
+  flex: 25;
   min-width: 0;
-  border-radius: 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+#chat-frame {
+  flex: 45;
+  min-width: 0;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+#subagents-frame {
+  flex: 20;
+  min-width: 180px;
+  border-radius: 8px;
   border: 1px solid var(--border);
   overflow: hidden;
 }
@@ -555,24 +546,24 @@ html, body {
 }
 
 /* React Flow controls theming -- higher-specificity selectors avoid !important */
-#agent-tree-panel .react-flow__controls {
+#subagents-frame .react-flow__controls {
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 6px;
   box-shadow: none;
 }
 
-#agent-tree-panel .react-flow__controls-button {
+#subagents-frame .react-flow__controls-button {
   background: var(--bg);
   border-color: var(--border);
   fill: var(--accent);
 }
 
-#agent-tree-panel .react-flow__controls-button:hover {
+#subagents-frame .react-flow__controls-button:hover {
   background: var(--surface);
 }
 
-#agent-tree-panel .react-flow__minimap {
+#subagents-frame .react-flow__minimap {
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -1925,32 +1916,26 @@ html, body {
   animation: fadeIn 0.2s ease-out;
 }
 
+
 /* Panel border transition on all panels */
-#left-pane,
-#right-pane,
-#agent-tree-panel,
+#thinking-frame,
+#tools-frame,
+#chat-frame,
+#subagents-frame,
 #input-frame {
   transition: border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
-/* Highlight the tool pane when tools are actively streaming */
-#left-pane.tools-active {
+#tools-frame.tools-active {
   border-color: rgb(var(--accent-rgb) / 0.10);
   box-shadow: 0 0 6px rgb(var(--accent-rgb) / 0.02);
 }
 
-/* Highlight the chat pane when the agent is responding */
-#right-pane.chat-active {
+#chat-frame.chat-active {
   border-color: rgb(var(--accent-rgb) / 0.12);
   box-shadow: 0 0 6px rgb(var(--accent-rgb) / 0.02);
 }
-
-/* Smooth color transitions for tool result status */
-.msg-tool-ok,
-.msg-tool-err {
-  transition: color 0.25s ease, opacity 0.25s ease;
 }
-
 /* Code blocks -- smooth appearance */
 .shiki-block {
   animation: fadeIn 0.4s ease-out;

@@ -681,7 +681,7 @@ def run_agent_turn(
     on_tool_output: Callable[..., Any] | None = None,
     approve_callback: Callable[..., Any] | None = None,
     cancel_event: threading.Event | None = None,
-    max_turns: int = 100,
+    max_turns: int = 10_000_000,
     session: requests.Session | None = None,
     memory_store: Any = None,
 ) -> dict | None:
@@ -853,40 +853,7 @@ def run_agent_turn(
             if not continue_loop:
                 continue
 
-        # Hard cap check: inject wrap-up nudge and give one final turn
-        _ABSOLUTE_MAX_TURNS = 200
-        if turn_count >= min(max_turns, _ABSOLUTE_MAX_TURNS):
-            if 'msg' not in locals():
-                return None  # max_turns was 0, no API call made
-            # Inject a wrap-up nudge instead of returning raw tool_calls
-            wrap_up = (
-                f"You have reached the turn limit ({turn_count} turns). "
-                "Summarize what you've accomplished so far, note any unfinished "
-                "work, and recommend next steps for the user. Do NOT call any more tools."
-            )
-            messages.append({"role": "user", "content": wrap_up})
-            # Allow one final API call for the summary
-            try:
-                final_msg = call_llm(messages, config, session=session, cancel_event=cancel_event)
-                if total_usage:
-                    _accumulate_usage(total_usage, final_msg)
-                    final_msg["_total_usage"] = total_usage
-                final_msg["_turn_count"] = turn_count
-                final_msg.setdefault("content", (
-                    f"Turn limit reached ({turn_count} turns). "
-                    "Please continue in a new message with a more focused task."
-                ))
-                return final_msg
-            except Exception:
-                pass
-            if total_usage:
-                msg["_total_usage"] = total_usage
-            msg["_turn_count"] = turn_count
-            msg.setdefault("content", (
-                f"Turn limit reached ({turn_count} turns). "
-                "Please continue in a new message with a more focused task."
-            ))
-            return msg
+        # No hard cap -- runs until agent stops calling tools or is cancelled
     finally:
         # Restore console title (glazewm detection marker)
         _set_console_title("mini_agent")
