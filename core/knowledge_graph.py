@@ -136,13 +136,16 @@ def _add_module(name: str, filepath: str) -> None:
 def _extract_python_graph(source: str, fpath: str, mod_name: str) -> None:
     """Extract graph edges from Python source using AST."""
     import ast as _ast
+    from core.ast_utils import get_name, resolve_call_name
+
     try:
         tree = _ast.parse(source, filename=fpath)
     except SyntaxError:
         return
 
-    # --- Class hierarchy tracking ---
+    # --- Context stacks ---
     current_class: list[str] = []
+    current_func: list[str] = []  # tracks enclosing function for call attribution
 
     class GraphVisitor(_ast.NodeVisitor):
         def visit_ClassDef(self, node):
@@ -163,7 +166,7 @@ def _extract_python_graph(source: str, fpath: str, mod_name: str) -> None:
 
             # Inheritance edges
             for base in node.bases:
-                base_name = _ast.unparse(base) if hasattr(_ast, "unparse") else _get_name(base)
+                base_name = _ast.unparse(base) if hasattr(_ast, "unparse") else get_name(base)
                 if base_name and base_name not in _SKIP_CALL_NAMES:
                     _add_edge(full_name, base_name, "inherits", fpath, node.lineno)
 
@@ -184,17 +187,21 @@ def _extract_python_graph(source: str, fpath: str, mod_name: str) -> None:
                 )
             _add_edge(mod_name, full_name, "defines", fpath, node.lineno)
 
-            # Extract calls within this function
-            for child in _ast.walk(node):
-                if isinstance(child, _ast.Call):
-                    callee = _resolve_call_name_ast(child)
-                    if callee and callee not in _SKIP_CALL_NAMES:
-                        _add_edge(full_name, callee, "calls", fpath, child.lineno)
-
+            # Descend into body; visit_Call will attribute calls to this function
+            current_func.append(full_name)
             self.generic_visit(node)
+            current_func.pop()
 
         def visit_AsyncFunctionDef(self, node):
             self.visit_FunctionDef(node)
+
+        def visit_Call(self, node):
+            """Attribute calls to the innermost enclosing function (if any)."""
+            if current_func:
+                callee = resolve_call_name(node)
+                if callee and callee not in _SKIP_CALL_NAMES:
+                    _add_edge(current_func[-1], callee, "calls", fpath, node.lineno)
+            self.generic_visit(node)
 
         def visit_Import(self, node):
             for alias in node.names:
@@ -247,25 +254,8 @@ def _extract_ts_graph(source: str, fpath: str, mod_name: str) -> None:
         _add_edge(mod_name, mod, "imports", fpath, line)
 
 
-def _resolve_call_name_ast(node: Any) -> str | None:
-    """Resolve a Call node's function name from AST."""
-    import ast as _ast
-    func = node.func
-    if isinstance(func, _ast.Name):
-        return func.id
-    if isinstance(func, _ast.Attribute):
-        return func.attr
-    return None
-
-
-def _get_name(node: Any) -> str | None:
-    """Extract name from an AST node (for inheritance)."""
-    import ast as _ast
-    if isinstance(node, _ast.Name):
-        return node.id
-    if isinstance(node, _ast.Attribute):
-        return node.attr
-    return None
+# _resolve_call_name_ast and _get_name replaced by core.ast_utils:
+#   from core.ast_utils import resolve_call_name, get_name
 
 
 # ---------------------------------------------------------------------------

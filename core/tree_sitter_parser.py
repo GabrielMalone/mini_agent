@@ -280,11 +280,21 @@ def _extract_with_fallback(
 def _extract_python_ast(
     tree: Any, filepath: str,
 ) -> tuple[list[dict], list[dict], list[dict]]:
-    """Extract symbols using Python's built-in AST."""
+    """Extract symbols using Python's built-in AST.
+
+    Extracts definitions, calls (with caller attribution), and imports
+    in a single ``ast.walk`` pass.
+    """
     import ast as _ast
+    from core.ast_utils import resolve_call_name
+
     definitions: list[dict] = []
     calls: list[dict] = []
     imports: list[dict] = []
+
+    # Build line-range → function name mapping so calls can be attributed
+    # to their enclosing function in the same pass.
+    func_ranges: list[tuple[int, int, str]] = []  # (start_line, end_line, name)
 
     for node in _ast.walk(tree):
         if isinstance(node, (_ast.FunctionDef, _ast.AsyncFunctionDef)):
@@ -293,12 +303,43 @@ def _extract_python_ast(
                 "name": node.name,
                 "line": node.lineno,
             })
+            end = getattr(node, "end_lineno", node.lineno)
+            func_ranges.append((node.lineno, end, node.name))
+
         elif isinstance(node, _ast.ClassDef):
             definitions.append({
                 "kind": "class",
                 "name": node.name,
                 "line": node.lineno,
             })
+
+        elif isinstance(node, _ast.Call):
+            callee = resolve_call_name(node)
+            if callee:
+                caller = None
+                for start, end, fname in func_ranges:
+                    if start <= node.lineno <= end:
+                        caller = fname
+                        break
+                calls.append({
+                    "caller": caller,
+                    "callee": callee,
+                    "line": node.lineno,
+                })
+
+        elif isinstance(node, _ast.Import):
+            for alias in node.names:
+                imports.append({
+                    "module": alias.name,
+                    "internal": False,  # caller can refine this later
+                })
+
+        elif isinstance(node, _ast.ImportFrom):
+            if node.module:
+                imports.append({
+                    "module": node.module,
+                    "internal": False,
+                })
 
     return definitions, calls, imports
 

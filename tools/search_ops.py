@@ -1280,6 +1280,8 @@ def _build_call_graph(root: str) -> None:
         _CALLER_GRAPH = {}
 
         import ast as _ast
+        from core.ast_utils import resolve_call_name
+
         _SKIP_DIRS_LIST = _SKIP_DIRS
 
         for dirpath, dirnames, filenames in os.walk(root):
@@ -1298,19 +1300,30 @@ def _build_call_graph(root: str) -> None:
                 except (SyntaxError, OSError, PermissionError):
                     continue
 
+                # Single ast.walk with context tracking — no nested walks.
+                # Build line-range → function name mapping first, then resolve
+                # calls against it in the same pass.
+                func_stack: list[tuple[int, int, str]] = []
                 for node in _ast.walk(tree):
                     if isinstance(node, (_ast.FunctionDef, _ast.AsyncFunctionDef)):
-                        caller_name = node.name
-                        for child in _ast.walk(node):
-                            if isinstance(child, _ast.Call):
-                                callee = _resolve_call_name(child)
-                                if callee and callee not in _SKIP_REF_NAMES:
-                                    _CALL_GRAPH.setdefault(caller_name, []).append(
-                                        (callee, fpath, child.lineno)
-                                    )
-                                    _CALLER_GRAPH.setdefault(callee, []).append(
-                                        (caller_name, fpath, child.lineno)
-                                    )
+                        end = getattr(node, "end_lineno", node.lineno)
+                        func_stack.append((node.lineno, end, node.name))
+                    elif isinstance(node, _ast.Call):
+                        callee = resolve_call_name(node)
+                        if callee and callee not in _SKIP_REF_NAMES:
+                            # Attribute to innermost enclosing function
+                            caller_name = None
+                            for start, end, fname in reversed(func_stack):
+                                if start <= node.lineno <= end:
+                                    caller_name = fname
+                                    break
+                            if caller_name:
+                                _CALL_GRAPH.setdefault(caller_name, []).append(
+                                    (callee, fpath, node.lineno)
+                                )
+                                _CALLER_GRAPH.setdefault(callee, []).append(
+                                    (caller_name, fpath, node.lineno)
+                                )
         # Deduplicate
         for g in (_CALL_GRAPH, _CALLER_GRAPH):
             for name in list(g.keys()):
@@ -1324,17 +1337,6 @@ def _build_call_graph(root: str) -> None:
                 g[name] = unique
 
         _CALL_GRAPH_BUILT = True
-
-
-def _resolve_call_name(node: Any) -> str | None:
-    """Resolve a Call node's function name."""
-    import ast as _ast
-    func = node.func
-    if isinstance(func, _ast.Name):
-        return func.id
-    if isinstance(func, _ast.Attribute):
-        return func.attr
-    return None
 
 
 @_register("find_callers")
