@@ -1,5 +1,5 @@
 # mini_agent Architecture Map
-# Last updated: 2026-06-19 (React 19 UI modernization — startTransition, rAF streaming, CSS animations)
+# Last updated: 2026-06-19 (React 19 UI + enriched tool summaries with line numbers, anchors, hashes)
 #
 # This file is the agent's map of the codebase. Update it after completed changes.
 # Behavioral rules live in AGENTS.md. Long-term facts live in core memory.
@@ -101,6 +101,14 @@
 - Panel highlighting: left pane gets .tools-active border glow when agent is running,
   right pane gets .chat-active when responding
 - @starting-style for smooth first-paint entry (Chromium 117+ / Electron 42+)
+
+### Enriched Tool Summaries (2026-06-19)
+- `_read_file_summary`: now shows line range — `read_file(/x/y.py, lines 100-150)` instead of just path
+- `_write_file_summary`: shows line count + byte count — `write_file(/x/y.py, 75 lines, 2736B) "..."`
+- `_edit_file_summary` (anchor mode): shows per-edit anchor words + content previews — `Apple→"new code", Banjo→"..."`
+- `_edit_lines_summary`: shows hash anchors + line ranges — `L10-L15 h=a1b2c3 +546B`
+- Frontend `tool_start`: emoji icons for tool categories (📖 read, ✏️ write, 🔍 search, ⚙️ shell, etc.)
+- Frontend `tool_end`: checkmark/cross symbols (✓/✗) instead of OK/ERR, detail always shown
 
 ## Architecture Notes
 
