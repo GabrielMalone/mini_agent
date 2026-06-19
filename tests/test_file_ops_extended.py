@@ -472,9 +472,9 @@ class TestSessionStatsCache(unittest.TestCase):
         result = execute_tool(tc, self.write_gate, self.read_gate)
         self.assertTrue(result.success)
         self.assertIn("Cache hit rate: 100.0%", result.content)
-        self.assertIn("50,000 cached", result.content)
-        self.assertIn("input 50,000 tok", result.content)
-        self.assertIn("output 10,000 tok", result.content)
+        self.assertIn("50000 cached", result.content)
+        self.assertIn("input 50000 tok", result.content)
+        self.assertIn("output 10000 tok", result.content)
         self.assertIn("saved $", result.content)
         # Cost without cache: 50000 * 0.14/1M = $0.007
         # With cache:       50000 * 0.014/1M = $0.0007
@@ -491,7 +491,7 @@ class TestSessionStatsCache(unittest.TestCase):
         self.assertTrue(result.success)
         self.assertIn("Cache hit rate: 0.0%", result.content)
         self.assertIn("0 cached", result.content)
-        self.assertIn("input 30,000 tok", result.content)
+        self.assertIn("input 30000 tok", result.content)
         # No "saved" line because saved=0
         self.assertNotIn("saved $", result.content)
         # Cost line should still appear
@@ -508,8 +508,8 @@ class TestSessionStatsCache(unittest.TestCase):
         self.assertTrue(result.success)
         # 20000 / 30000 = 66.666...%
         self.assertIn("Cache hit rate: 66.7%", result.content)
-        self.assertIn("20,000 cached", result.content)
-        self.assertIn("30,000 tokens", result.content)
+        self.assertIn("20000 cached", result.content)
+        self.assertIn("30000 tokens", result.content)
         self.assertIn("saved $", result.content)
 
     def test_unknown_provider_skips_cost_line(self):

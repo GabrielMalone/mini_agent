@@ -43,7 +43,7 @@ def pytest_addoption(parser):
         "--run-slow",
         action="store_true",
         default=False,
-        help="Include slow tests (excluded by default: sub-agent threads, AgentRuntime, git, desktop ops)",
+        help="Include slow tests (excluded by default: git, desktop ops)",
     )
     parser.addoption(
         "--swebench",
@@ -193,30 +193,17 @@ def gates(tmp_path):
 
 @pytest.fixture
 def configured_context(tmp_path, monkeypatch):
-    """Set up ``_TOOL_CONTEXT`` with an ``AgentRuntime`` and mock config.
+    """Set up ``_TOOL_CONTEXT`` with a mock config.
 
-    Cleans up all sub-agent threads and global message state on teardown.
+    Cleans up on teardown.
     """
-    from agents.agent_runtime import AgentRuntime
     from tools import set_context
 
-    runtime = AgentRuntime()
     config = make_mock_config(workspace=str(tmp_path))
 
     set_context(
-        _agent_runtime=runtime,
         _agent_config=config,
         workspace=str(tmp_path),
     )
     yield
-    # Clean up all sub-agents so background threads don't pollute
-    # _AGENT_MSGS for subsequent tests (e.g. heartbeat handoffs).
-    runtime.cancel_all()
-    # Join all threads to ensure no in-flight messages land after cleanup.
-    for t in list(runtime.tasks.values()):
-        t.join(timeout=2)
-    from tools.agent_messages import _AGENT_MSGS, _AGENT_MSGS_LOCK
-
-    with _AGENT_MSGS_LOCK:
-        _AGENT_MSGS.clear()
-    set_context(_agent_runtime=None, _agent_config=None)
+    set_context(_agent_config=None)

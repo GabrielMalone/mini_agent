@@ -123,7 +123,7 @@ class TestAllToolsDispatchable(unittest.TestCase):
         # (use_skill, skill_list, skill_view).
         # MCP schemas are injected dynamically by init_session() if MCP servers configured.
         # So we assert a minimum, not an exact count.
-        min_expected = 78  # static TOOLS from schema.py + use_skill + skill_list + skill_view
+        min_expected = 63  # static TOOLS from schema.py (includes use_skill, skill_list, skill_view)
         actual = len(TOOLS)
         self.assertGreaterEqual(actual, min_expected,
             f"Expected at least {min_expected} tools, got {actual}. "

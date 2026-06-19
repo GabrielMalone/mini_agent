@@ -89,7 +89,7 @@ class TestListSkills(unittest.TestCase):
 
     def test_all_expected_skill_names(self):
         result = skills.list_skills()
-        expected = {"test", "lsp", "web", "agents",
+        expected = {"test", "lsp", "web",
                     "search", "tasks", "image", "bootstrap", "desktop"}
         self.assertTrue(expected.issubset(set(result.keys())))
 

@@ -16,9 +16,7 @@ Submodules:
                   write_scratchpad, diff, restore_file, plan, plan_status
     shell_ops   -- run_shell, task_status, search_files, run_tests, verify, git
     search_ops  -- find_symbol, find_usages, semantic_search, web_search, recall_turn
-    agent_ops   -- spawn_agent, agent_status, collect_agent, collect_any,
-                  agent_message, agent_read, agent_handoff, agent_inbox,
-                  agent_subscribe, agent_extend, agent_cancel
+    agent_ops   -- restore_file, session_stats, recall_turn, remember, read_image
     lsp         -- lsp_definition, lsp_references, lsp_hover, lsp_diagnostics
 
 """
@@ -184,16 +182,8 @@ def get_unused_tools(min_turns: int = 5) -> set[str]:
     return unused
 
 # ---------------------------------------------------------------------------
-# File reservation system -- extracted to tools/reservations.py
+# File reservation system (removed -- was in tools/reservations.py)
 # ---------------------------------------------------------------------------
-from tools.reservations import (  # noqa: E402, F401
-    reserve_file,
-    release_file,
-    release_all_files,
-)
-
-# Sub-agent runtime registry (lazy init in config.init_session)
-_AGENT_RUNTIME = None  # AgentRuntime -- set by init_session
 _CACHEABLE = frozenset({
     "read_file", "file_info", "list_directory",
     "search_files", "find_symbol", "semantic_search", "web_search",
@@ -831,13 +821,9 @@ from tools import search_ops      # noqa: E402, F401  -- find_symbol, web_search
 from tools import browser_ops     # noqa: E402, F401  -- browser automation (web skill)
 from tools import desktop_ops     # noqa: E402, F401  -- desktop automation (desktop skill)
 from tools import macos_ops       # noqa: E402, F401  -- macOS-specific APIs (desktop skill)
-from tools import agent_spawn     # noqa: E402, F401  -- spawn_agent (agents skill)
-from tools import agent_collect   # noqa: E402, F401  -- agent_status, collect_agent, collect_any
-from tools import agent_ops       # noqa: E402, F401  -- agent_extend, agent_cancel, wait_for_agent, etc.
+from tools import agent_ops       # noqa: E402, F401  -- restore_file, session_stats, recall_turn, remember, read_image
 from tools import memory_core     # noqa: E402, F401  -- memory_core, session_search (core)
 from tools import agent_todos     # noqa: E402, F401  -- todo_write, todo_read (planning skill)
-from tools import agent_patterns  # noqa: E402, F401  -- fan_out, pipeline, barrier (agents skill)
-from tools import agent_messages  # noqa: E402, F401  -- typed inter-agent messaging (agents skill)
 from tools import lsp             # noqa: E402, F401  -- LSP tools (lsp skill)
 from tools.search_ops import build_symbol_index  # noqa: E402, F401
 from tools.mcp_client import get_mcp_manager, init_mcp_servers, shutdown_mcp  # noqa: E402, F401

@@ -25,7 +25,7 @@ from .config import (
 from .safety import ReadSafetyGate, WriteSafetyGate
 from memory.memory import MemoryStore
 from .prompt import build_system_prompt, build_startup_context, build_session_header, build_memory_snapshot
-from agents.agent_runtime import AgentRuntime
+
 
 # MCP tool schemas -- injected into TOOLS lazily when config.mcp_servers is non-empty.
 _MCP_SCHEMAS = [
@@ -246,9 +246,7 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
     from tools import reset_tool_usage
     reset_tool_usage()
 
-    # Initialize multi-agent runtime
-    runtime = AgentRuntime()
-    set_context(_agent_config=config, _agent_runtime=runtime)
+    set_context(_agent_config=config)
 
     # --- Start embedding model preload EARLY so the download overlaps with
     # the slow workspace scan and LSP init below.  _sem_preload() starts a
