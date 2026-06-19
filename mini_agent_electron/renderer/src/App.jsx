@@ -885,17 +885,21 @@ function AppShell() {
 
   // Auto-scroll thinking log
   useEffect(() => {
-    if (thinkingLogRef.current) {
-      thinkingLogRef.current.scrollTop = thinkingLogRef.current.scrollHeight;
+    const el = thinkingLogRef.current;
+    if (el) {
+      requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
     }
   }, [thinking.displayedText]);
 
-  // Auto-scroll chat log
+  // Auto-scroll chat log — fire on both the immediate and deferred values
+  // so we catch the DOM paint. requestAnimationFrame ensures scrollHeight is
+  // measured after React has committed the new nodes.
   useEffect(() => {
-    if (chatLogRef.current) {
-      chatLogRef.current.scrollTop = chatLogRef.current.scrollHeight;
+    const el = chatLogRef.current;
+    if (el) {
+      requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
     }
-  }, [chatLines, chatStream.displayedText]);
+  }, [chatLines, deferredChatLines, chatStream.displayedText]);
 
   // Auto-focus input on mount
   useEffect(() => {
