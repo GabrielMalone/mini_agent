@@ -63,3 +63,8 @@ _cleanup_temp.py
 .discord_bot.pid
 .workspace_bot.pid
 discord_uploads/
+
+# Bot runtime logs
+_bot_boot.log
+_bot_stdout.txt
+_bot_test.txt
