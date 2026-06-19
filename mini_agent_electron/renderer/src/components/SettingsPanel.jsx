@@ -127,7 +127,7 @@ export default function SettingsPanel({ onSaved }) {
             disabled={saving}
             type="button"
           >
-            {saving ? 'Starting...' : 'Save & Start'}
+            {saving ? <span className="settings-saving"><span className="tool-card-spinner" /> Starting...</span> : 'Save & Start'}
           </button>
         </div>
       </div>

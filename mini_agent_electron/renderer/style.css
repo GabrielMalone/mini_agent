@@ -1893,6 +1893,12 @@ html, body {
   cursor: not-allowed;
 }
 
+.settings-saving {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 /* ==========================================================================
   Smooth Transitions & Animations
   ========================================================================== */
