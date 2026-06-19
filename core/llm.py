@@ -95,12 +95,12 @@ def _check_storm_breaker() -> tuple[bool, str, str]:
 def _synthesize_storm_breaker_message(tool_name: str, error: str) -> str:
     """Build a natural-language storm-breaker message in the assistant's voice."""
     return (
-        f"I'm unable to continue: tool `{tool_name}` failed "
+        f"I keep hitting the same error: tool `{tool_name}` failed "
         f"{_STORM_THRESHOLD} times in a row with the same error:\n\n"
         f"```\n{error[:500]}\n```\n\n"
         f"This usually means the arguments are wrong, the target doesn't exist, "
-        f"or there's a deeper issue I can't resolve on my own. "
-        f"Please clarify what you'd like me to do, or check the inputs and try again."
+        f"or there's a deeper issue. Let me fix my approach and try the "
+        f"correct way instead of repeating the same mistake."
     )
 
 

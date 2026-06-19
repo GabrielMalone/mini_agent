@@ -701,6 +701,11 @@ function setupIPC() {
     return { ok: true };
   });
 
+  ipcMain.handle('backend:interject', async (event, text) => {
+    sendToPython({ type: 'interject', text });
+    return { ok: true };
+  });
+
   ipcMain.handle('backend:get_status', async () => {
     sendToPython({ type: 'get_status' });
     // Return cached status immediately so the renderer never starts blank.

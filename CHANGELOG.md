@@ -2,6 +2,29 @@
 
 Self-modification audit trail -- what the agent changed and why.
 
+## 2026-06-19 -- UI: Typing while agent is running + /cancel during live turns
+
+### Feature: Interjection support in Electron UI
+- User can now type and send messages while the agent is mid-turn
+- Regular text is queued via `interject.py` and injected at the next turn boundary
+- Slash commands (especially `/cancel`) are dispatched immediately even during a live turn
+- Previously: Enter key was silently swallowed when the agent was running
+
+### Feature: Plan state sent to Electron UI
+- `send_status()` and `turn_complete` now include `plan_steps` / `plan_done`
+- StatusBar renders a compact progress indicator (e.g. "2/4") with hover tooltip
+- `/clear` resets plan context and pushes status update so indicator disappears
+- Agent recovers from tool-retry-limit (storm-breaker) by self-correcting instead of giving up
+
+### Files changed
+- `mini_agent_electron/preload.js` — exposed `interject()` IPC method
+- `mini_agent_electron/main.js` — added `backend:interject` IPC handler
+- `mini_agent_electron/backend/server.py` — handle `"interject"` message type, `_turn_loop` drains interjections, starts turn if idle; plan state in status/turn_complete; clear plan on `/clear`
+- `mini_agent_electron/renderer/src/App.jsx` — `handleSubmit` routes live messages through `interject`/`command`; plan state handling
+- `mini_agent_electron/renderer/src/components/StatusBar.jsx` — plan progress indicator
+- `core/llm.py` — storm-breaker message now self-corrective instead of giving up
+- `tests/test_file_ops_extended.py` — updated storm-breaker wording test
+
 ## 2026-06-18 -- Code Audit: Full Codebase Health Check
 
 ### Verified Clean

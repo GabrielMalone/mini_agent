@@ -1132,7 +1132,7 @@ class TestStormBreaker(unittest.TestCase):
         msg = _synthesize_storm_breaker_message("read_file", "path argument is empty")
         self.assertIn("read_file", msg)
         self.assertIn("path argument is empty", msg)
-        self.assertIn("unable to continue", msg.lower())
+        self.assertIn("same error", msg.lower())
         self.assertIn("```", msg)  # error is formatted in code block
 
     def test_storm_breaker_appended_to_messages(self):

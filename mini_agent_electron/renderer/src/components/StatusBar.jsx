@@ -5,7 +5,7 @@ const BOT_SCRIPTS = { 'mini-agent': 'workspace_bot.py', 'emotion-game': 'discord
 
 export default function StatusBar({
   balanceDisplay, gitBranch, gitDirty, botStatus, setBotStatus,
-  workspace, sessionName,
+  workspace, sessionName, planSteps, planDone,
   themeEntry, PALETTE_SVG, THEMES, theme, themePickerOpen, setThemePickerOpen,
   themeToggleRef, dropdownPos, applyTheme,
   handleWorkspaceClick, handleSessionSwitch,
@@ -67,6 +67,12 @@ export default function StatusBar({
       <span id="git-status">
         {gitBranch && (<><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.5" className="icon-sm"><path d="M3 4v6a2 2 0 0 0 2 2h2M7 12l-2-2 2-2M11 5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM3 4.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"/></svg>{gitBranch}{gitDirty ? '*' : ''}</>)}
       </span>
+      {planSteps && planSteps.length > 0 && (
+        <span className="plan-indicator" title={planSteps.map((s, i) => `${planDone.includes(i) ? '✓' : '○'} ${s}`).join('\n')}>
+          <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="1.5" className="icon-sm"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M5.5 8l2 2 3-4"/></svg>
+          {planDone.length}/{planSteps.length}
+        </span>
+      )}
       <span className="bot-indicators" ref={botMenuToggleRef}>
         <span
           className="discord-label clickable"

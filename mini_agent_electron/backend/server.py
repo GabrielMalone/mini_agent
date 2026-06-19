@@ -304,6 +304,14 @@ class AgentRunner:
         status["subagent_running"] = self._running_subagent_count
         status["subagent_total"] = self._total_subagents
 
+        # Plan state
+        from tools import _TOOL_CONTEXT
+        plan_steps = getattr(_TOOL_CONTEXT, "_plan_steps", [])
+        if plan_steps:
+            plan_done = getattr(_TOOL_CONTEXT, "_plan_done", set())
+            status["plan_steps"] = list(plan_steps)
+            status["plan_done"] = sorted(plan_done)
+
         send_msg(status)
 
     def _fetch_balance_async(self) -> None:
@@ -394,7 +402,14 @@ class AgentRunner:
             while True:
                 with self._input_lock:
                     if not self._input_queue:
-                        return  # all queued messages processed
+                        # Check for pending interjections to keep the loop alive.
+                        from interject import poll_interjections
+                        pending = poll_interjections()
+                        if pending:
+                            self._input_queue.extend(pending)
+                            # Fall through to process them
+                        else:
+                            return  # all queued messages processed
                     texts = list(self._input_queue)
                     self._input_queue.clear()
 
@@ -571,10 +586,15 @@ class AgentRunner:
             # The async re-fetch below will push the latest balance when it completes.
             "balance": self._balance,
         }
+        # Include plan state in turn_complete so the UI updates after each turn
+        plan_steps = getattr(_TOOL_CONTEXT, "_plan_steps", [])
+        plan_done = getattr(_TOOL_CONTEXT, "_plan_done", set())
         send_msg({
             "type": "turn_complete",
             "usage": turn_usage,
             "turn_count": self._total_turns,
+            "plan_steps": list(plan_steps) if plan_steps else [],
+            "plan_done": sorted(plan_done) if plan_done else [],
         })
 
         # Re-fetch balance after every turn so the wallet display stays current.
@@ -607,11 +627,21 @@ class AgentRunner:
                     delattr(_TOOL_CONTEXT, attr)
                 except AttributeError:
                     pass
+            # Reset plan state so old plans don't linger
+            _TOOL_CONTEXT._plan_steps = []
+            _TOOL_CONTEXT._plan_done = set()
+            _TOOL_CONTEXT._plan_last_advanced_turn = 0
+            # Persist cleared plan to SQLite
+            try:
+                self.memory.set_plan([], [])
+            except Exception:
+                pass
             self._total_turns = 0
             self._total_tokens = 0
             self._session_cost = SessionCost()
             self._total_subagents = 0
             self._running_subagent_count = 0
+            self.send_status()  # push cleared plan state to UI
             send_msg({"type": "response", "lines": ["--- conversation cleared ---"]})
             return
 
@@ -963,6 +993,19 @@ def main() -> None:
 
         elif msg_type == "cancel":
             runner.cancel()
+
+        elif msg_type == "interject":
+            # User typed while agent was working — queue the message
+            # so it gets injected at the next turn boundary via
+            # context_inject._inject_interjections().
+            from interject import push_interjection
+            push_interjection(msg.get("text", ""))
+            # If no turn is currently running, start one now so the
+            # interjection gets processed immediately.  Otherwise it
+            # will be picked up by _turn_loop after the current turn
+            # completes.
+            if runner._turn_thread is None or not runner._turn_thread.is_alive():
+                runner._start_turn()
 
         elif msg_type == "set_model":
             runner.set_model(msg.get("model", ""))

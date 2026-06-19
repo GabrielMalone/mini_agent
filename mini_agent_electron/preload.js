@@ -16,6 +16,10 @@ contextBridge.exposeInMainWorld('miniAgent', {
   // Cancel current turn
   cancel: () => ipcRenderer.invoke('backend:cancel'),
 
+  // Queue a user message to be injected at the next turn boundary
+  // (allows typing while the agent is working without starting a new turn)
+  interject: (text) => ipcRenderer.invoke('backend:interject', text),
+
   // Open native directory picker for workspace selection
   openWorkspace: () => ipcRenderer.invoke('dialog:openWorkspace'),
 

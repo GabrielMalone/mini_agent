@@ -59,6 +59,8 @@ function AppShell() {
   const [turnCost, setTurnCost] = useState('-');
   const [cacheHitRate, setCacheHitRate] = useState(null);
   const [subagentRunning, setSubagentRunning] = useState(0);
+  const [planSteps, setPlanSteps] = useState([]);
+  const [planDone, setPlanDone] = useState([]);
 
   // Theme hook (extracted)
   const {
@@ -128,6 +130,8 @@ function AppShell() {
       if (data.turn_cost != null) setTurnCost(data.turn_cost);
       if (data.cache_hit_rate != null) setCacheHitRate(data.cache_hit_rate);
       if (data.subagent_running != null) setSubagentRunning(data.subagent_running);
+      if (data.plan_steps != null) setPlanSteps(data.plan_steps);
+      if (data.plan_done != null) setPlanDone(data.plan_done);
     };
     const unsub = api.on('backend:status', onStatus);
     api.getStatus?.().then((data) => { if (data) onStatus(data); });
@@ -250,6 +254,8 @@ function AppShell() {
       if (data.usage?.cache_hit_rate != null) setCacheHitRate(data.usage.cache_hit_rate);
       if (data.usage?.subagent_running != null) setSubagentRunning(data.usage.subagent_running);
       if (data.usage?.balance != null) setBalanceDisplay(data.usage.balance);
+      if (data.plan_steps != null) setPlanSteps(data.plan_steps);
+      if (data.plan_done != null) setPlanDone(data.plan_done);
     }));
 
     unsubs.push(api.on('stream:error', (data) => {
@@ -394,18 +400,19 @@ function AppShell() {
     return () => unsubs.forEach((u) => u());
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Submit handler
+  // Submit handler — allows typing while the agent is working.
+  // Slash commands (e.g. /cancel, /stats) always dispatch immediately.
+  // Regular text: if a turn is running, queue as an interjection;
+  // otherwise start a new turn.
   const handleSubmit = useCallback((text) => {
-    if (inputDisabled || !text?.trim()) return;
+    if (!text?.trim()) return;
 
     const trimmed = text.trim();
 
-    // Route slash commands through the command handler so they're
-    // processed programmatically (e.g. /clear, /stats) rather than
-    // sent to the LLM as a user message.
+    // Slash commands always go through the command handler
+    // so /cancel works even while the agent is running.
     if (trimmed.startsWith('/')) {
       setInputValue('');
-      // Show the command line in chat so the user sees it was sent
       startTransition(() => {
         setChatLines((prev) => [
           ...prev,
@@ -416,26 +423,38 @@ function AppShell() {
       return;
     }
 
+    // Show the user message in chat
     startTransition(() => {
       setChatLines((prev) => [
         ...prev,
         { id: nextLineId(), text: trimmed, cls: 'msg-user' },
-        { id: nextLineId(), text: '', cls: 'msg-agent-pending' },
       ]);
     });
-    chatStream.reset();
-
-    setIsLive(true);
-    setInputDisabled(true);
     setInputValue('');
 
-    window.miniAgent.submit(trimmed);
+    if (isLive) {
+      // Agent is running — queue the message for injection at the
+      // next turn boundary instead of starting a new turn.
+      window.miniAgent.interject(trimmed);
+    } else {
+      // Agent is idle — start a new turn normally.
+      startTransition(() => {
+        setChatLines((prev) => [
+          ...prev,
+          { id: nextLineId(), text: '', cls: 'msg-agent-pending' },
+        ]);
+      });
+      chatStream.reset();
+      setIsLive(true);
+      setInputDisabled(true);
+      window.miniAgent.submit(trimmed);
 
-    submitTimeoutRef.current = setTimeout(() => {
-      setInputDisabled(false);
-      inputRef.current?.focus();
-    }, 120_000);
-  }, [inputDisabled, chatStream]);
+      submitTimeoutRef.current = setTimeout(() => {
+        setInputDisabled(false);
+        inputRef.current?.focus();
+      }, 120_000);
+    }
+  }, [isLive, inputDisabled, chatStream]);
 
   const handleKeyDown = useCallback((e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -638,6 +657,8 @@ function AppShell() {
         setBotStatus={setBotStatus}
         workspace={workspace}
         sessionName={sessionName}
+        planSteps={planSteps}
+        planDone={planDone}
         themeEntry={themeEntry}
         PALETTE_SVG={PALETTE_SVG}
         THEMES={THEMES}
