@@ -540,12 +540,10 @@ class AgentRunner:
         # Persist
         self.messages = self.memory.save(self.messages)
 
-        # Surface any prune summary to the chat panel so the user sees
-        # what was pruned (not just the LLM's internal reasoning about it).
+        # Consume prune summary (kept for LLM context but hidden from chat).
         summary = self.memory.last_prune_summary
         if summary:
             self.memory.last_prune_summary = ""
-            send_msg({"type": "response", "lines": [summary]})
 
         # Notify Electron
         sc = self._session_cost

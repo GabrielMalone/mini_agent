@@ -9,7 +9,7 @@ import remarkGfm from 'remark-gfm';
  *
  * For thinking blocks, set markdown={false} to stay as plain <pre> forever.
  */
-const DeferredMarkdown = memo(function DeferredMarkdown({ text, markdown = true }) {
+const DeferredMarkdown = memo(function DeferredMarkdown({ text, markdown = true, cls = '' }) {
   const [parsed, setParsed] = useState(null);
 
   useEffect(() => {
@@ -23,7 +23,7 @@ const DeferredMarkdown = memo(function DeferredMarkdown({ text, markdown = true 
   // Plain pre mode -- used for thinking blocks
   if (!markdown) {
     return (
-      <pre style={{ whiteSpace: 'pre-wrap', margin: 0, fontFamily: 'inherit', fontSize: 'inherit' }}>
+      <pre className={cls} style={{ whiteSpace: 'pre-wrap', margin: 0, fontFamily: 'inherit', fontSize: 'inherit' }}>
         {text}
       </pre>
     );
@@ -31,16 +31,18 @@ const DeferredMarkdown = memo(function DeferredMarkdown({ text, markdown = true 
 
   if (!parsed) {
     return (
-      <pre style={{ whiteSpace: 'pre-wrap', margin: 0, fontFamily: 'inherit', fontSize: 'inherit' }}>
+      <pre className={cls} style={{ whiteSpace: 'pre-wrap', margin: 0, fontFamily: 'inherit', fontSize: 'inherit' }}>
         {text}
       </pre>
     );
   }
 
   return (
-    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-      {parsed}
-    </ReactMarkdown>
+    <div className={cls}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+        {parsed}
+      </ReactMarkdown>
+    </div>
   );
 });
 

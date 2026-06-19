@@ -2,7 +2,6 @@ import { useState, useRef, useEffect, useCallback, startTransition, useDeferredV
 import useSmoothStream from './hooks/useSmoothStream';
 import useTheme from './hooks/useTheme';
 import LogLine from './components/LogLine';
-import CodeBlock from './components/CodeBlock';
 import RoundedFrame from './components/RoundedFrame';
 import AgentTree from './components/AgentTree';
 import CharStream from './components/CharStream';
@@ -19,8 +18,7 @@ import StatusBar from './components/StatusBar';
 // App
 // ---------------------------------------------------------------------------
 function AppShell() {
-  // Log state -- arrays of { text, cls?, html?, icon? }
-  const [toolsLines, setToolsLines] = useState([]);
+  // Chat lines -- arrays of { text, cls?, html?, icon? }
   const [chatLines, setChatLines] = useState([]);
 
   // Tool Cards state -- Dirac-inspired card-based display
@@ -29,7 +27,6 @@ function AppShell() {
   const toolCardIdRef = useRef(0);
 
   // Deferred values keep the UI responsive during heavy streaming
-  const deferredToolsLines = useDeferredValue(toolsLines);
   const deferredChatLines = useDeferredValue(chatLines);
 
   // Sub-agent data -- { [task_id]: { name, desc, toolCalls: [], thoughts: [], output: "", ok: null } }
@@ -105,13 +102,6 @@ function AppShell() {
   const [inputValue, setInputValue] = useState('');
 
   // Helper to add a line to any log -- uses startTransition for non-blocking UI
-  const addLine = useCallback((setter) => (line) => {
-    startTransition(() => {
-      setter((prev) => [...prev, line]);
-    });
-  }, []);
-
-  const addToolLine = useCallback((line) => addLine(setToolsLines)(line), [addLine]);
 
   // Status / init -- fetched once on mount (empty deps to avoid re-render loop)
   useEffect(() => {
@@ -138,7 +128,6 @@ function AppShell() {
       if (data.turn_cost != null) setTurnCost(data.turn_cost);
       if (data.cache_hit_rate != null) setCacheHitRate(data.cache_hit_rate);
       if (data.subagent_running != null) setSubagentRunning(data.subagent_running);
-      if (data.ready) addToolLine({ text: 'backend ready', cls: 'dim' });
     };
     const unsub = api.on('backend:status', onStatus);
     api.getStatus?.().then((data) => { if (data) onStatus(data); });
@@ -202,11 +191,11 @@ function AppShell() {
       toolOutputStack.current.push({ cardId, buffer: '' });
     }));
 
-    unsubs.push(api.on('stream:tool_chunk', (data) => {
+    unsubs.push(api.on('stream:tool_output', (data) => {
       const stack = toolOutputStack.current;
       if (stack.length === 0) return;
       const top = stack[stack.length - 1];
-      top.buffer += data.text || '';
+      top.buffer += data.line || '';
       startTransition(() => {
         setToolCards((prev) =>
           prev.map((c) => c.id === top.cardId ? { ...c, output: top.buffer } : c)
@@ -225,7 +214,7 @@ function AppShell() {
         break;
       }
       const now = Date.now();
-      const status = data.ok ? 'ok' : 'error';
+      const status = data.ok ? 'ok' : 'err';
       if (cardId != null) {
         const code = finalBuffer || data.content || '';
         const diffPreview = data.diff_preview || null;
@@ -398,7 +387,7 @@ function AppShell() {
       setSubagentData((prev) => {
         const agent = prev[data.task_id];
         if (!agent) return prev;
-        return { ...prev, [data.task_id]: { ...agent, ok: data.ok, output: data.output || agent.output } };
+        return { ...prev, [data.task_id]: { ...agent, ok: data.ok, output: data.content || agent.output } };
       });
     }));
 
@@ -521,7 +510,7 @@ function AppShell() {
   useEffect(() => {
     const el = toolsLogRef.current;
     if (el) requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
-  }, [toolCards, deferredToolsLines]);
+  }, [toolCards]);
 
   // Auto-focus input on mount
   useEffect(() => {
@@ -541,38 +530,46 @@ function AppShell() {
       {/* Header */}
       <Header modelName={modelName} cacheHitRate={cacheHitRate} subagentRunning={subagentRunning} />
 
-      {/* Thinking panel */}
-      <RoundedFrame id="thinking-frame" title="Thinking">
-        <div ref={thinkingLogRef} className="thinking-log">
-          <div className="frame-content">
-            {deferredThinkingBlocks.map((block, i) => (
-              <CharStream key={i} text={block} />
-            ))}
-            {thinking.displayedText && <CharStream text={thinking.displayedText} />}
-          </div>
-        </div>
-      </RoundedFrame>
-
       {/* Main row: Tools + Chat + Sub-agents */}
       <div id="main-row">
-        <RoundedFrame id="tools-frame" title="Tools">
-          <div ref={toolsLogRef} className="tools-log">
-            <div className="frame-content">
-              {toolCards.map((card) => (
-                <ToolCard key={card.id} card={card} />
-              ))}
+        {/* Left column: Tools (top) + Thinking (bottom) */}
+        <div id="left-column">
+          <RoundedFrame id="tools-frame" title="Tools">
+            <div ref={toolsLogRef} className="tools-log">
+              <div className="frame-content">
+                {toolCards.map((card) => (
+                  <ToolCard key={card.id} tool={card} theme={theme} />
+                ))}
+              </div>
             </div>
-          </div>
-        </RoundedFrame>
+          </RoundedFrame>
+
+          <RoundedFrame id="thinking-frame" title="Thinking">
+            <div ref={thinkingLogRef} className="thinking-log">
+              <div className="frame-content">
+                {deferredThinkingBlocks.map((block, i) => (
+                  <CharStream key={i} text={block} className="thinking" />
+                ))}
+                {thinking.displayedText && <CharStream text={thinking.displayedText} className="thinking" />}
+              </div>
+            </div>
+          </RoundedFrame>
+        </div>
 
         <RoundedFrame id="chat-frame" title="Chat">
           <div ref={chatLogRef} className="chat-log">
             <div className="frame-content">
-              {deferredChatLines.map((line) => {
-                if (line.markdown) {
-                  return <DeferredMarkdown key={line.id} text={line.text} cls={line.cls} />;
+              {deferredChatLines.flatMap((line, i) => {
+                const els = [];
+                if (line.cls === 'msg-user' && i > 0) {
+                  els.push(<div key={`sep-${line.id}`} className="msg-separator" />);
                 }
-                return <LogLine key={line.id} line={line} />;
+                if (line.markdown) {
+                  els.push(<DeferredMarkdown key={line.id} text={line.text} cls={line.cls} />);
+                } else {
+                  els.push(<LogLine key={line.id} line={line} />);
+                }
+                return els;
               })}
               {chatStream.displayedText && (
                 <div className="msg-agent">
