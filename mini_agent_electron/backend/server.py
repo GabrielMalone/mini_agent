@@ -7,7 +7,7 @@ JSON-lines protocol. Each line is a complete JSON object.
 
 Protocol (Electron -> Python):
   {"type": "submit",    "text": "user message"}
-  {"type": "command",   "command": "/clear"}
+  {"type": "command",   "command": "/clear | /help | /cancel | /stats | ..."}
   {"type": "cancel"}
   {"type": "get_status"}
   {"type": "shutdown"}
@@ -69,6 +69,7 @@ from core.prompt import build_system_prompt, build_startup_context, build_sessio
 from core.balance import fetch_balance
 from core.cost_tracking import SessionCost, format_cost_cny
 from api import clear_api_cache
+from tools import _TOOL_CONTEXT
 
 
 # ---------------------------------------------------------------------------
@@ -833,6 +834,31 @@ class AgentRunner:
                 send_msg({"type": "response", "lines": [f"Workspace set to: {new_workspace}"]})
             except Exception as exc:
                 send_msg({"type": "error", "message": str(exc)})
+            return
+
+        if cmd == "/cancel":
+            self.cancel()
+            send_msg({"type": "response", "lines": ["--- cancelled ---"]})
+            return
+
+        if cmd == "/help":
+            lines = [
+                "Available commands:",
+                "  /help               Show this help",
+                "  /cancel             Cancel the current running turn",
+                "  /clear              Clear conversation history and reset session",
+                "  /stats              Show session stats (turns, tokens, cost, cache)",
+                "  /export             Export conversation to workspace as markdown",
+                "  /init               Initialize project rules (.mini_agent.rules)",
+                "  /workspace <path>   Switch to a different workspace directory",
+                "  /session list       List all saved sessions",
+                "  /session new <name> Create and switch to a new session",
+                "  /session switch <n> Switch to an existing session",
+                "  /session delete <n> Delete a saved session",
+                "",
+                "Type a message to start a conversation with the agent.",
+            ]
+            send_msg({"type": "response", "lines": lines})
             return
 
         send_msg({"type": "response", "lines": [f"Unknown command: {command}"]})

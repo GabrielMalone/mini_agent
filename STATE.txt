@@ -7,6 +7,7 @@
 ## Active Decisions
 
 - **Hash-anchored editing (2026-06-16)** — edit_lines with 3-char SHA-256 validation per Akay/Howard Chen pattern
+- **Electron slash commands (2026-06-19)** — `/cancel` (cancel running turn) and `/help` (list all commands) added to server.py handle_command
 - **Storm-breaker (2026-06-16)** — after 3 consecutive identical failures, synthesize explanation instead of silent loop
 - **Self-modifying architecture** — agent observes, diagnoses, and improves its own codebase via STATE.txt/CHANGELOG.md/HANDOFF.md
 - **Context injection ZONE model** — ZONE 1 (immutable prefix), ZONE 2 (append-only log), ZONE 3 (volatile scratch)
