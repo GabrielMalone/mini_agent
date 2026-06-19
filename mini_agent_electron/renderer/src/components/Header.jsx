@@ -45,7 +45,7 @@ export const OPENROUTER_MODEL_GROUPS = [
   ]},
 ];
 
-export default function Header({ modelName, cacheHitRate, subagentRunning }) {
+export default function Header({ modelName, cacheHitRate, subagentRunning, loading }) {
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const modelRef = useRef(null);
   const [modelDropdownPos, setModelDropdownPos] = useState(null);
@@ -96,13 +96,19 @@ export default function Header({ modelName, cacheHitRate, subagentRunning }) {
           </span>
         )}
       </span>
-      <span
-        id="header-model"
-        className="text clickable"
-        ref={modelRef}
-        onClick={() => setModelPickerOpen((p) => !p)}
-        title="Click to switch model"
-      >{modelName}</span>
+      {loading ? (
+        <span id="header-model" className="text header-loading" title="Backend starting...">
+          <span className="tool-card-spinner" />
+        </span>
+      ) : (
+        <span
+          id="header-model"
+          className="text clickable"
+          ref={modelRef}
+          onClick={() => setModelPickerOpen((p) => !p)}
+          title="Click to switch model"
+        >{modelName}</span>
+      )}
       {modelPickerOpen && modelDropdownPos && (
         <div className="model-dropdown" style={modelDropdownPos} onClick={(e) => e.stopPropagation()}>
           {/* DIRECT API section */}

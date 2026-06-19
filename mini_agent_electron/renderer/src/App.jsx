@@ -528,7 +528,7 @@ function AppShell() {
   return (
     <div id="app">
       {/* Header */}
-      <Header modelName={modelName} cacheHitRate={cacheHitRate} subagentRunning={subagentRunning} />
+      <Header modelName={modelName} loading={modelName === 'starting...'} cacheHitRate={cacheHitRate} subagentRunning={subagentRunning} />
 
       {/* Main row: Tools + Chat + Sub-agents */}
       <div id="main-row">
