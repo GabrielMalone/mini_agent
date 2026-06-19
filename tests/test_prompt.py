@@ -31,20 +31,16 @@ class TestBuildSystemPrompt(unittest.TestCase):
         self.assertIn("You are mini_agent", prompt)
         self.assertIn("terminal AI coding assistant", prompt)
 
-    def test_static_prompt_has_key_modules(self):
+    def test_static_prompt_has_key_guidance(self):
         prompt = build_system_prompt(self._config())
-        self.assertIn("prompt.py", prompt)
-        self.assertIn("config.py", prompt)
-        self.assertIn("llm.py", prompt)
-        self.assertIn("api.py", prompt)
-        self.assertIn("memory.py", prompt)
-        self.assertIn("safety.py", prompt)
-        self.assertIn("README.md", prompt)
+        self.assertIn("find_symbol", prompt)
+        self.assertIn("read_file", prompt)
 
-    def test_static_prompt_has_behavior_section(self):
+    def test_static_prompt_has_prime_directives(self):
         prompt = build_system_prompt(self._config())
-        self.assertIn("Behavior:", prompt)
-        self.assertIn("Be direct and concise", prompt)
+        self.assertIn("PRIME DIRECTIVES:", prompt)
+        self.assertIn("ACCOMPLISH THE TASK", prompt)
+        self.assertIn("MINIMIZE ROUND TRIPS", prompt)
 
     def test_static_prompt_has_tool_guidance(self):
         prompt = build_system_prompt(self._config())
@@ -53,7 +49,7 @@ class TestBuildSystemPrompt(unittest.TestCase):
 
     def test_static_prompt_has_loop_prevention(self):
         prompt = build_system_prompt(self._config())
-        self.assertIn("Loop prevention", prompt)
+        self.assertIn("LOOP PREVENTION", prompt)
         self.assertIn("Same tool + same args 2x = STUCK", prompt)
 
     def test_static_prompt_has_provider_note(self):

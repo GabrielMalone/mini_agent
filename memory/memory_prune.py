@@ -728,14 +728,47 @@ _strip_orphaned_tool_results = _strip_orphaned_tool_messages
 # Token-aware pruning
 # ---------------------------------------------------------------------------
 
-# TODO: _prune_by_tokens is ~50 lines -- consider splitting message-count cap
-#       and token-budget pruning into separate helpers.
+# ---------------------------------------------------------------------------
+# Middle-truncation helpers
+# ---------------------------------------------------------------------------
+
+def _find_user_boundaries(messages: list[dict]) -> list[int]:
+    """Return indices of user-role messages (safe cut points)."""
+    return [i for i, m in enumerate(messages) if m.get("role") == "user"]
+
+
+def _find_first_assistant_after(messages: list[dict], user_idx: int) -> int | None:
+    """Find the next assistant message after a user message."""
+    for i in range(user_idx + 1, len(messages)):
+        if messages[i].get("role") == "assistant":
+            return i
+    return None
+
+
 def _prune_by_tokens(
     messages: list[dict],
     max_tokens: int,
     max_messages: int,
+    *,
+    strategy: str = "middle",
 ) -> tuple[list[dict], list[dict]]:
-    """Trim *messages* from the front to stay within budget.
+    """Trim *messages* to stay within token and message-count budgets.
+
+    Two strategies:
+
+    ``"front"`` (legacy)
+        Drop oldest turns from the head.  Simple but loses early task
+        framing context.
+
+    ``"middle"`` (default, Dirac-inspired)
+        Keep the system prompt, the **first user-assistant pair** (task
+        framing), and the tail.  Remove a middle slice that ends on a
+        user-message boundary.  When the middle slice isn't enough, also
+        trim additional turns from the tail-side of the head block.
+
+        Advantages: recent context stays intact; the model always sees how
+        the task was originally framed.  The head pair alone is typically
+        < 200 tokens so it costs almost nothing to retain.
 
     Returns (kept_messages, pruned_messages).  Pruning preserves turn
     boundaries: cuts only at ``user`` message boundaries, so tool-call
@@ -749,53 +782,146 @@ def _prune_by_tokens(
         return [], []
 
     # Pin the system prompt if present
-    sys_msg_start = 0
     sys_prompt: list[dict] = []
+    rest_start = 0
     if messages and messages[0].get("role") == "system":
         sys_prompt = [messages[0]]
-        sys_msg_start = 1
-        messages = messages[1:]  # work on the rest; re-attach at end
+        rest_start = 1
 
-    if not messages:
+    body = messages[rest_start:]
+    if not body:
         return sys_prompt, []
 
-    # 1. Hard cap by message count
-    if len(messages) > max_messages:
-        excess = len(messages) - max_messages
+    pruned: list[dict] = []
+
+    # 1. Hard cap by message count (always drop from the front side)
+    if len(body) > max_messages:
+        excess = len(body) - max_messages
         cut = excess
-        for i in range(excess, len(messages)):
-            if messages[i].get("role") == "user":
+        for i in range(excess, len(body)):
+            if body[i].get("role") == "user":
                 cut = i
                 break
         else:
             cut = excess
-        pruned = messages[:cut]
-        messages = messages[cut:]
-    else:
-        pruned = []
+        pruned = body[:cut]
+        body = body[cut:]
 
-    # 2. Token budget -- trim oldest turns until under limit.
-    #    Precompute per-message token estimates and subtract incrementally
-    #    instead of re-scanning all messages on every iteration.
-    token_counts = [_estimate_tokens(m) for m in messages]
+    # 2. Token budget
+    token_counts = [_estimate_tokens(m) for m in body]
     total = sum(token_counts)
-    start = 0
-    while total > max_tokens and start < len(messages) - 1:
-        # Find first user message boundary from current start
-        cut = start
-        for i in range(start + 1, len(messages)):
-            if messages[i].get("role") == "user":
-                cut = i
+
+    if total <= max_tokens:
+        return sys_prompt + body, pruned
+
+    if strategy == "front":
+        # Legacy: trim oldest turns from the head
+        start = 0
+        while total > max_tokens and start < len(body) - 1:
+            cut = start
+            for i in range(start + 1, len(body)):
+                if body[i].get("role") == "user":
+                    cut = i
+                    break
+            if cut == start:
                 break
-        if cut == start:
-            break  # no user message found -- stop, can't safely prune further
-        total -= sum(token_counts[start:cut])
-        pruned.extend(messages[start:cut])
-        start = cut
+            total -= sum(token_counts[start:cut])
+            pruned.extend(body[start:cut])
+            start = cut
+        body = body[start:]
+        return sys_prompt + body, pruned
 
-    if start > 0:
-        messages = messages[start:]
+    # --- "middle" strategy (default) ---
+    # Step A: Identify the first user-assistant pair (head block)
+    user_boundaries = _find_user_boundaries(body)
+    if not user_boundaries:
+        # No user messages -- fall back to front trim
+        start = 0
+        while total > max_tokens and start < len(body) - 1:
+            total -= token_counts[start]
+            pruned.append(body[start])
+            start += 1
+        body = body[start:]
+        return sys_prompt + body, pruned
 
-    # Re-attach system prompt
-    return sys_prompt + messages, pruned
+    first_user_idx = user_boundaries[0]
+    first_asst_idx = _find_first_assistant_after(body, first_user_idx)
+
+    # Head block: everything up to and including the first assistant response
+    # (which may contain tool_calls).  We keep this for task framing.
+    head_end = (first_asst_idx + 1) if first_asst_idx is not None else (first_user_idx + 1)
+    head_block = body[:head_end]
+    head_tokens = sum(token_counts[:head_end])
+
+    # If we can't even afford the head block + a minimal tail, fall back
+    # to front trimming (drop head too).
+    if head_tokens + 200 > max_tokens:
+        start = 0
+        while total > max_tokens and start < len(body) - 1:
+            cut = start
+            for i in range(start + 1, len(body)):
+                if body[i].get("role") == "user":
+                    cut = i
+                    break
+            if cut == start:
+                break
+            total -= sum(token_counts[start:cut])
+            pruned.extend(body[start:cut])
+            start = cut
+        body = body[start:]
+        return sys_prompt + body, pruned
+
+    # Step B: Find the middle section to remove
+    # We want to keep the tail (everything after the middle cut point).
+    # Goal: remaining = head_block + tail, with total <= max_tokens.
+    middle_start = head_end
+    remaining_body = body[middle_start:]
+    remaining_tokens = total - head_tokens
+    tail_tokens_budget = max_tokens - head_tokens
+
+    if remaining_tokens <= tail_tokens_budget:
+        # Already fits
+        return sys_prompt + body, pruned
+
+    # Work backwards from the end to find a tail that fits within budget.
+    # Build a cumulative token sum from the tail and find the cut point.
+    rev_tokens = token_counts[middle_start:][::-1]
+    cum = 0
+    tail_len = 0
+    for t in rev_tokens:
+        if cum + t > tail_tokens_budget:
+            break
+        cum += t
+        tail_len += 1
+
+    if tail_len == 0:
+        # Keep at least the last turn (everything after the last user boundary)
+        # Find the last user boundary in the middle+ section
+        for i in range(len(body) - 1, middle_start - 1, -1):
+            if body[i].get("role") == "user":
+                tail_len = len(body) - i
+                break
+        if tail_len == 0:
+            # Last resort: keep last 3 messages
+            tail_len = min(3, len(body) - middle_start)
+
+    tail_start = len(body) - tail_len
+
+    # Ensure tail starts on a user boundary (walk forward to first user)
+    if tail_start > middle_start:
+        for i in range(tail_start, len(body)):
+            if body[i].get("role") == "user":
+                tail_start = i
+                break
+
+    # If tail_start fell before or at head_end, we're in trouble -- just
+    # keep the head + whatever we can of the tail.
+    if tail_start <= middle_start:
+        tail_start = middle_start
+
+    middle_slice = body[middle_start:tail_start]
+    pruned.extend(middle_slice)
+    body = head_block + body[tail_start:]
+
+    return sys_prompt + body, pruned
 

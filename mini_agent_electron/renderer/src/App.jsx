@@ -2,15 +2,15 @@ import { useState, useRef, useEffect, useCallback, startTransition, useDeferredV
 import useSmoothStream from './hooks/useSmoothStream';
 import LogLine from './components/LogLine';
 import CodeBlock from './components/CodeBlock';
-import LogPanel from './components/LogPanel';
-import AgentTree from './components/AgentTree';
 import RoundedFrame from './components/RoundedFrame';
+import AgentTree from './components/AgentTree';
 import CharStream from './components/CharStream';
 import DeferredMarkdown from './components/DeferredMarkdown';
 import StreamingMessage from './components/StreamingMessage';
 import ErrorBoundary from './components/ErrorBoundary';
 import SessionPicker from './components/SessionPicker';
 import SettingsPanel from './components/SettingsPanel';
+import ToolCard from './components/ToolCard';
 
 // Cap rendered DOM nodes to prevent lag at long conversations (300+ turns).
 // State arrays still hold full history; only the visible slice hits the DOM.
@@ -112,6 +112,11 @@ function AppShell() {
   const [toolsLines, setToolsLines] = useState([]);
   const [chatLines, setChatLines] = useState([]);
 
+  // Tool Cards state -- Dirac-inspired card-based display
+  // Each card: { id, toolName, toolArgs, status, output, startTime, endTime, diffPreview, errorDetail }
+  const [toolCards, setToolCards] = useState([]);
+  const toolCardIdRef = useRef(0);
+
   // Deferred values keep the UI responsive during heavy streaming
   const deferredToolsLines = useDeferredValue(toolsLines);
   const deferredChatLines = useDeferredValue(chatLines);
@@ -152,6 +157,7 @@ function AppShell() {
   const inputRef = useRef(null);
   const thinkingLogRef = useRef(null);
   const chatLogRef = useRef(null);
+  const toolsLogRef = useRef(null);
   const inThinkingRef = useRef(false);
   const submitTimeoutRef = useRef(null);
   const timerRef = useRef(null);
@@ -419,9 +425,7 @@ function AppShell() {
     }));
 
     unsubs.push(api.on('stream:tool_start', (data) => {
-      addToolLine({ text: '', cls: 'tool-separator' });
-      // Color-code the tool name using structured data (not HTML strings)
-      const summary = data.summary;
+      const summary = data.summary || data.tool_name || '?';
       const parenIdx = summary.indexOf('(');
       let toolName, toolArgs;
       if (parenIdx > 0) {
@@ -431,14 +435,32 @@ function AppShell() {
         toolName = summary;
         toolArgs = '';
       }
-      addToolLine({
-        toolName,
-        toolArgs,
-        cls: '',
+
+      // Also keep the flat log line for backward compat
+      addToolLine({ toolName, toolArgs, cls: '' });
+
+      // Create a tool card
+      const cardId = ++toolCardIdRef.current;
+      const now = Date.now();
+      startTransition(() => {
+        setToolCards((prev) => [
+          ...prev,
+          {
+            id: cardId,
+            toolName,
+            toolArgs,
+            status: 'running',
+            output: '',
+            startTime: now,
+            endTime: null,
+            diffPreview: '',
+            errorDetail: '',
+          },
+        ]);
       });
-      // Push a new buffer for this tool call (stack supports parallel calls)
-      // Track tool name alongside the buffer for language detection
-      toolOutputStack.current.push({ lines: [], toolName: data.summary });
+
+      // Push a buffer for accumulating output (used by tool_output)
+      toolOutputStack.current.push({ cardId, lines: [], toolName });
     }));
 
     unsubs.push(api.on('stream:tool_output', (data) => {
@@ -448,36 +470,62 @@ function AppShell() {
         for (const line of lines) {
           entry.lines.push(line);
         }
+        // Update the card's output live
+        const cardId = entry.cardId;
+        const output = entry.lines.join('\n');
+        startTransition(() => {
+          setToolCards((prev) =>
+            prev.map((c) => (c.id === cardId ? { ...c, output } : c))
+          );
+        });
       }
     }));
 
     unsubs.push(api.on('stream:tool_end', (data) => {
-      const status = data.ok ? 'OK' : 'ERR';
+      const status = data.ok ? 'ok' : 'err';
       const cls = data.ok ? 'msg-tool-ok' : 'msg-tool-err';
-      // Pop this tool's buffer from the stack (supports parallel calls)
-      const entry = toolOutputStack.current.pop() || { lines: [], toolName: '' };
+
+      // Pop this tool's buffer from the stack
+      const entry = toolOutputStack.current.pop() || { lines: [], toolName: '', cardId: -1 };
       const bufCode = entry.lines.join('\n').trim();
       const code = bufCode || (data.content || '').trim();
-      // When output is present, show it with syntax highlighting
+      const cardId = entry.cardId;
+
+      // Still add the flat log line for backward compat
       if (code) {
         const isSingleLine = !code.includes('\n');
         if (isSingleLine) {
-          addToolLine({ text: `  ${status}  ${code}`, cls });
+          addToolLine({ text: `  ${status.toUpperCase()}  ${code}`, cls });
         } else {
-          addToolLine({ text: `  ${status}  ${data.detail}`, cls });
+          addToolLine({ text: `  ${status.toUpperCase()}  ${data.detail}`, cls });
           addToolLine({
             component: <CodeBlock code={code} fontSize="0.75em" toolName={entry.toolName} theme={theme} />,
             cls: '',
           });
         }
       } else {
-        addToolLine({ text: `  ${status}  ${data.detail}`, cls });
+        addToolLine({ text: `  ${status.toUpperCase()}  ${data.detail}`, cls });
       }
-      // Show diff_preview for write/edit tools when available
       if (data.diff_preview) {
         addToolLine({
           component: <CodeBlock code={data.diff_preview} language="diff" fontSize="0.72em" theme={theme} />,
           cls: '',
+        });
+      }
+
+      // Finalize the tool card
+      if (cardId > 0) {
+        const now = Date.now();
+        const diffPreview = data.diff_preview || '';
+        const errorDetail = !data.ok ? (data.detail || '') : '';
+        startTransition(() => {
+          setToolCards((prev) =>
+            prev.map((c) =>
+              c.id === cardId
+                ? { ...c, status, endTime: now, output: code, diffPreview, errorDetail }
+                : c
+            )
+          );
         });
       }
     }));
@@ -891,6 +939,14 @@ function AppShell() {
     }
   }, [chatLines, deferredChatLines, chatStream.displayedText]);
 
+  // Auto-scroll tools log (cards + lines)
+  useEffect(() => {
+    const el = toolsLogRef.current;
+    if (el) {
+      requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
+    }
+  }, [toolCards, deferredToolsLines]);
+
   // Auto-focus input on mount
   useEffect(() => {
     inputRef.current?.focus();
@@ -990,7 +1046,18 @@ function AppShell() {
         {/* Left stack: Tools & Thinking + Agent Tree */}
         <div id="left-stack">
           <RoundedFrame id="left-pane" className={isLive ? 'tools-active' : ''}>
-            <LogPanel id="tools-log" className="scrollable dim" lines={deferredToolsLines.slice(-MAX_RENDERED_TOOL_LINES)} />
+            <div id="tools-log" ref={toolsLogRef} className="log scrollable dim">
+              {/* Tool Cards -- Dirac-inspired card-based display */}
+              <div id="tool-cards-panel">
+                {toolCards.map((card) => (
+                  <ToolCard key={card.id} tool={card} theme={theme} />
+                ))}
+              </div>
+              {/* Flat log lines (backward compat) */}
+              {deferredToolsLines.slice(-MAX_RENDERED_TOOL_LINES).map((line, i) => (
+                <LogLine key={`tl-${i}`} line={line} />
+              ))}
+            </div>
             <div className="hr" />
             <div id="thinking-log" ref={thinkingLogRef} className="log thinking-log thinking">
               {thinking.displayedText && (
