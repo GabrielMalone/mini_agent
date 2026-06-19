@@ -1270,6 +1270,10 @@ class MemoryStore:
             conn.execute(_DELETE)
             conn.execute("DELETE FROM scratchpad")
             conn.execute("DELETE FROM test_output")
+            try:
+                conn.execute("DELETE FROM session_summaries")
+            except sqlite3.OperationalError:
+                pass  # table may not exist yet
             conn.commit()
             conn.execute(_VACUUM)
         except (sqlite3.Error, OSError):

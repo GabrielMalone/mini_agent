@@ -580,6 +580,15 @@ def _summarize_pruned_rules(pruned: list[dict]) -> str:
         role = m.get("role", "")
         if role == "user":
             content = m.get("content", "")
+            # Skip messages that are already summaries/injections --
+            # re-summarizing them creates recursive "Earlier in this
+            # conversation: - User: Earlier in this conversation: ..."
+            # nesting that degrades context quality.
+            if content.startswith("Earlier in this conversation:") or \
+              content.startswith("[SESSION SUMMARY") or \
+              content.startswith("[CORE MEMORY") or \
+              m.get("_transient"):
+                continue
             preview = content[:_SUMMARY_PREVIEW_LENGTH].replace("\n", " ")
             if len(content) > _SUMMARY_PREVIEW_LENGTH:
                 preview += "..."
