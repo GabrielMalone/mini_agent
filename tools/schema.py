@@ -541,6 +541,99 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "find_callers",
+            "description": "Find all callers (functions that call) a given symbol in the workspace. Uses AST-based call graph analysis. Returns callee name, file path, and line number for each caller. Substring matching on symbol name is supported if no exact match is found.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Symbol name to find callers of (e.g. '_request_with_retry')."
+                    }
+                },
+                "required": ["name"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "find_callees",
+            "description": "Find all callees (functions called by) a given symbol in the workspace. Uses AST-based call graph analysis. Returns callee name, file path, and line number. Substring matching on symbol name is supported if no exact match is found.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Symbol name to find callees of (e.g. 'execute_tool')."
+                    }
+                },
+                "required": ["name"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "find_related",
+            "description": "Find entities directly related to a given symbol in the knowledge graph. Shows callers, callees, imports, and inheritance relationships. Use this to understand how a symbol connects to the rest of the codebase.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Symbol name to find related entities for."
+                    }
+                },
+                "required": ["name"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "trace_path",
+            "description": "Find paths between two symbols in the knowledge graph. Given a 'from' and 'to' symbol name, returns the shortest connection paths through call, import, and inheritance edges. Useful for understanding how two parts of the codebase connect.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "from": {
+                        "type": "string",
+                        "description": "Starting symbol name."
+                    },
+                    "to": {
+                        "type": "string",
+                        "description": "Target symbol name."
+                    }
+                },
+                "required": ["from", "to"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_subgraph",
+            "description": "Get a subgraph around a symbol, extending N hops in the knowledge graph. Returns entities and edges grouped by relationship kind (call, import, inherit). Useful for exploring a symbol's neighborhood in the codebase.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Symbol name to center the subgraph on."
+                    },
+                    "depth": {
+                        "type": "integer",
+                        "description": "Number of hops from the symbol (default 2, max 4)."
+                    }
+                },
+                "required": ["name"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "verify",
             "description": "Run lint + relevant tests for files modified in the current session. Uses tracked writes/edits to find matching test files. Falls back to running all tests if nothing has been modified yet. Use after code changes to verify nothing broke before moving on.",
             "parameters": {

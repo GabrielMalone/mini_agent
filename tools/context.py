@@ -63,9 +63,11 @@ class AgentContext:
     _state_txt_injected: bool = False
     _tasks_injected: bool = False
     _core_memory_injected: bool = False
+    _session_summary_injected: bool = False
 
     # -- Git state --
     _session_start_head: str | None = None
+    _session_id: str | None = None
 
     # -- Stores & services (set by init_session / agent loop) --
     _memory_store: object | None = None          # MemoryStore

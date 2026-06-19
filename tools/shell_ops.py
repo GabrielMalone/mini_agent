@@ -784,7 +784,7 @@ def _run_tests(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResu
     _retried = False
 
     def _build_cmd() -> list[str]:
-        cmd = _get_python_cmd() + ["-m", "pytest", "-q", "--ignore=venv", "--ignore=eval", "--ignore=tests"]
+        cmd = _get_python_cmd() + ["-m", "pytest", "-q", "--ignore=venv", "--ignore=eval"]
         if target:
             cmd.append(target)
         return cmd

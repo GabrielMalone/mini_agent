@@ -97,8 +97,11 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
     memory_path = os.path.join(workspace or os.getcwd(), config.memory_filename)
     memory = MemoryStore(memory_path, max_messages=config.max_messages,
                          max_tokens=config.context_window)
+    import uuid as _uuid
+    session_id = _uuid.uuid4().hex[:12]
     set_context(exa_api_key=config.exa_api_key, openai_api_key=config.openai_api_key,
-                scratchpad_path=memory._db_path, _memory_store=memory)
+                scratchpad_path=memory._db_path, _memory_store=memory,
+                _session_id=session_id)
 
     # Restore persisted plan state from previous session
     try:
@@ -385,6 +388,7 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
     _TOOL_CONTEXT._handoff_injected = False
     _TOOL_CONTEXT._state_txt_injected = False
     _TOOL_CONTEXT._tasks_injected = False
+    _TOOL_CONTEXT._session_summary_injected = False
     # Reset pattern rules for new session
     from core.context_inject import _reset_pattern_rules
     _reset_pattern_rules()
@@ -422,12 +426,28 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
             # Capture plan state for handoff
             plan_steps = getattr(_TOOL_CONTEXT, "_plan_steps", [])
             plan_done = list(getattr(_TOOL_CONTEXT, "_plan_done", set()))
-            memory.write_session_handoff(
-                workspace, start_head=start_head,
-                pending=pending, notes="",
-                plan_steps=plan_steps if plan_steps else None,
-                plan_done=plan_done if plan_done else None,
-            )
+            # Build handoff content from session state
+            changes_parts = []
+            modified_files = getattr(_TOOL_CONTEXT, "_modified_files", None)
+            if modified_files:
+                from tools import get_modified_files
+                mf = get_modified_files()
+                if mf:
+                    changes_parts.append("Files touched: " + ", ".join(mf[:20]))
+            if start_head:
+                try:
+                    import subprocess as _sp2
+                    r = _sp2.run(
+                        ["git", "-C", workspace, "diff", "--stat", start_head],
+                        capture_output=True, text=True, timeout=5,
+                    )
+                    if r.returncode == 0 and r.stdout.strip():
+                        changes_parts.append("Git diff:\n" + r.stdout.strip()[:500])
+                except Exception:
+                    pass
+            changes = "\n".join(changes_parts) if changes_parts else "(no tracked changes)"
+            modified_str = ", ".join(get_modified_files()) if get_modified_files() else ""
+            memory.write_handoff(changes=changes, pending=pending, modified_files=modified_str)
         except Exception:
             pass
 
@@ -447,7 +467,13 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
             summary = scratchpad[:300] if scratchpad else turn_text[:300]
             detail = f"Scratchpad:\n{scratchpad[:500]}\n\nTurn history:\n{turn_text[:500]}"
             if summary.strip():
-                memory.capture_session_summary(summary[:200], detail[:1000])
+                session_id = getattr(_TOOL_CONTEXT, "_session_id", "unknown")
+                memory.store_session_summary(
+                    session_id=session_id,
+                    request="(auto-captured at exit)",
+                    completed=summary[:200],
+                    notes=detail[:1000],
+                )
         except Exception:
             pass
 

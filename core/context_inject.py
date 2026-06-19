@@ -230,6 +230,41 @@ def _inject_core_memory_context(
         pass  # best-effort; never break the session over memory
 
 
+def _inject_session_summary_context(
+    messages: list[dict], *, memory_store: Any = None,
+) -> None:
+    """Inject the most recent DB-backed session summary at session start.
+
+    This picks up where the previous session left off — what was requested,
+    investigated, learned, completed, and next steps.  Injected ONCE at
+    session start so the agent has continuity without re-reading transcripts.
+    """
+    if memory_store is None:
+        return
+    if getattr(_TOOL_CONTEXT, "_session_summary_injected", False):
+        return
+    _TOOL_CONTEXT._session_summary_injected = True
+    try:
+        summary = memory_store.get_most_recent_summary()
+        if summary is None:
+            return
+        rendered = summary.render_for_context()
+        if not rendered.strip():
+            return
+        messages.append({
+            "role": "user",
+            "content": (
+                "[SESSION SUMMARY -- from your previous session]\n"
+                "You wrote this at the end of your last session. "
+                "Use it to pick up where you left off:\n\n"
+                + rendered
+            ),
+            "_transient": True,
+        })
+    except Exception:
+        pass  # best-effort; never break the session over a DB read
+
+
 def _inject_scratchpad_context(
     messages: list[dict], *, memory_store: Any = None,
 ) -> None:
@@ -1614,6 +1649,7 @@ def _inject_context(
         workspace_root=read_gate.workspace_root if read_gate else "",
     )
     _inject_core_memory_context(messages, memory_store=memory_store)
+    _inject_session_summary_context(messages, memory_store=memory_store)
     _inject_scratchpad_context(messages, memory_store=memory_store)
     _inject_git_diff(messages, memory_store=memory_store, read_gate=read_gate)
 

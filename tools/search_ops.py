@@ -87,6 +87,14 @@ def build_symbol_index(root: str) -> dict[str, list[dict]]:
     import re
     import json as _json
 
+    # --- Delegate to _sem_index first ---
+    # _sem_index collects symbol + reference data during its single workspace
+    # walk (Python def/class + word references).  If it populates the globals,
+    # we can skip our own walk entirely — no duplicate I/O.
+    _sem_index(root)
+    if _SYMBOL_INDEX is not None:
+        return _SYMBOL_INDEX
+
     # --- disk cache: avoid re-scanning on every session ---
     cache_path = os.path.join(root, ".mini_agent_index.json")
     cache_mtime = 0.0
