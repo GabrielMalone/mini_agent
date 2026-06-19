@@ -816,6 +816,7 @@ def tool_summary(tc: dict) -> str:
 # ---------------------------------------------------------------------------
 
 from tools import file_ops        # noqa: E402, F401  -- read_file, write_file, edit_file, etc.
+from tools import ast_tools       # noqa: E402, F401  -- get_file_skeleton, get_function, replace_symbol
 from tools import shell_ops       # noqa: E402, F401  -- run_shell, search_files, run_tests, etc.
 from tools import search_ops      # noqa: E402, F401  -- find_symbol, web_search, semantic_search
 from tools import browser_ops     # noqa: E402, F401  -- browser automation (web skill)

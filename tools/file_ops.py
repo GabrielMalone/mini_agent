@@ -112,6 +112,7 @@ def _read_file_windows_worker(
 def _read_file_direct(
     resolved: str, offset: int, limit: int, line_numbers: bool,
     hash_lines: bool = False,
+    include_anchors: bool = False,
 ) -> ToolResult:
     """Direct file read -- used on Unix and as fallback on Windows."""
     try:
@@ -124,12 +125,18 @@ def _read_file_direct(
                     continue
                 if len(collected) < limit:
                     stripped = line.rstrip("\n")
-                    if hash_lines:
-                        h = _line_hash(stripped)
+                    if include_anchors:
+                        # Will be formatted with anchors after the full read
+                        collected.append(stripped)
+                    elif hash_lines:
+                        h = hashlib.sha256(stripped.rstrip().encode()).hexdigest()[:3]
                         stripped = f"{total_lines}:{h}| {stripped}"
+                        collected.append(stripped)
                     elif line_numbers:
                         stripped = f"{total_lines}: {stripped}"
-                    collected.append(stripped)
+                        collected.append(stripped)
+                    else:
+                        collected.append(stripped)
                 if len(collected) >= limit and lineno + 1 >= offset + limit:
                     break
     except Exception as e:
@@ -337,26 +344,48 @@ _ABSOLUTE_MAX_LINES = 1000
 
 
 # ---------------------------------------------------------------------------
-# Hashline helpers -- used by read_file(hash_lines=True) and edit_lines
+# Hash-anchor helpers -- stable word anchors for reliable edit targeting.
+# Uses AnchorStateManager from core/anchor_manager.py for anchor reconciliation
+# across edits.  Each line gets a unique word (e.g. "Apple§def foo():") that
+# persists even when other lines shift around it.
+#
+# The old "hash_lines" mode (42:a1f|content) is preserved for backward compat
+# but "include_anchors" is the new hot path.
 # ---------------------------------------------------------------------------
 
-def _line_hash(line: str) -> str:
-    '''3-char hex hash of a line with trailing whitespace trimmed.
+from core.anchor_manager import (
+    AnchorStateManager,
+    format_lines_for_model,
+    content_hash as anchor_content_hash,
+)
 
-    Uses first 3 hex chars of SHA-256 for collision resistance in
-    practical file sizes.  Trailing whitespace is stripped because
-    it is invisible in most editors and causes matching failures.
-    '''
+# Backward-compat: old hash-line helpers still referenced by tests
+def _line_hash(line: str) -> str:
+    """3-char hex hash of a line (legacy helper)."""
     return hashlib.sha256(line.rstrip().encode()).hexdigest()[:3]
 
 
 def _compute_line_hashes(content: str) -> list[str]:
-    '''Compute hashline hashes for every line in *content*.'''
+    """Compute hashes for every line (legacy helper)."""
     return [_line_hash(line) for line in content.split("\n")]
 
 
 @_register("read_file")
 def _read_file(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
+    # Multi-file support: accept "paths" array or "path" single
+    paths = args.get("paths", None)
+    if paths is not None:
+        if not isinstance(paths, list) or len(paths) == 0:
+            return ToolResult(success=False, content="'paths' must be a non-empty array of file paths.")
+        results: list[str] = []
+        for p in paths:
+            single_args = {**args, "path": p}
+            del single_args["paths"]
+            r = _read_file(single_args, _wg, rg)
+            if r.content:
+                results.append(r.content)
+        return ToolResult(success=True, content="\n\n".join(results))
+
     path = args["path"]
     safety_result = rg.check(path)
     if not safety_result.allowed:
@@ -376,10 +405,10 @@ def _read_file(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResu
     limit = min(limit, _ABSOLUTE_MAX_LINES)
     line_numbers = args.get("line_numbers", False)
     hash_lines = args.get("hash_lines", False)
+    include_anchors = args.get("include_anchors", False)
 
-    # Cross-turn cache: if file mtime hasn't changed, return cached content directly.
-    # Only used when no offset/limit/line_numbers/hash_lines are specified (full reads).
-    if offset == 0 and limit == _DEFAULT_READ_LINES and not line_numbers and not hash_lines:
+    # Cross-turn cache: if file mtime hasn't changed and no special formatting
+    if offset == 0 and limit == _DEFAULT_READ_LINES and not line_numbers and not hash_lines and not include_anchors:
         try:
             current_mtime = os.path.getmtime(resolved)
             if resolved in _FILE_CACHE:
@@ -393,12 +422,49 @@ def _read_file(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResu
     if False:  # _WINDOWS bypassed - subprocess hangs on this system
         result = _read_file_windows_worker(resolved, offset, limit, line_numbers)
     else:
-        result = _read_file_direct(resolved, offset, limit, line_numbers, hash_lines=hash_lines)
+        result = _read_file_direct(
+            resolved, offset, limit, line_numbers,
+            hash_lines=hash_lines,
+            include_anchors=include_anchors,
+        )
 
     if not result.success:
         return result
 
     full_content = result.content
+
+    # Anchor formatting: if include_anchors=True, reconcile anchors and
+    # prepend "Apple§" to each line.  Uses the full file for proper anchoring
+    # even when offset/limit are specified.
+    if include_anchors:
+        try:
+            raw_lines = full_content.split("\n")
+            anchors = AnchorStateManager.reconcile(resolved, raw_lines)
+            # Compute content hash for change detection
+            fhash = anchor_content_hash(full_content)
+            if offset > 0 or (limit and limit < len(raw_lines)):
+                # Slice to requested range but keep anchors
+                start = offset
+                end = min(len(raw_lines), offset + limit) if limit else len(raw_lines)
+                sliced = raw_lines[start:end]
+                sliced_anchors = anchors[start:end]
+                formatted = format_lines_for_model(sliced, sliced_anchors, reveal=True)
+                full_content = f"[File Hash: {fhash}]\n[Lines {start+1}-{end} of {len(raw_lines)}]\n{formatted}"
+            else:
+                formatted = format_lines_for_model(raw_lines, anchors, reveal=True)
+                full_content = f"[File Hash: {fhash}]\n{formatted}"
+        except Exception:
+            pass  # Fall through with unformatted content on error
+    else:
+        # Content hash stamp even without anchors (for change detection)
+        # Skip stamping when hash_lines/line_numbers are active (they have own format)
+        if not hash_lines and not line_numbers:
+            try:
+                fhash = anchor_content_hash(full_content)
+                if not full_content.startswith("[File Hash:") and not full_content.startswith("[Lines"):
+                    full_content = f"[File Hash: {fhash}]\n{full_content}"
+            except Exception:
+                pass
 
     # Cache full file content for cross-turn reuse (only when reading from offset 0
     # AND the read was not truncated -- avoid caching partial content).
@@ -420,6 +486,9 @@ def _read_file(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResu
 
 @_summarize("read_file")
 def _read_file_summary(args: dict) -> str:
+    paths = args.get("paths", None)
+    if paths:
+        return f"read_file(paths={paths})"
     return f"read_file({args.get('path', '?')})"
 
 
@@ -1060,8 +1129,14 @@ def _apply_single_edit(
 
 @_register("edit_file")
 def _edit_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
-    old = args["old_string"]
-    new = args["new_string"]
+    # --- Anchor-based edit mode (new hot path) ---
+    files = args.get("files", None)
+    if files is not None:
+        return _edit_file_anchored(files, wg, _rg)
+
+    # --- Legacy old_string/new_string mode ---
+    old = args.get("old_string", "")
+    new = args.get("new_string", "")
     count = args.get("count", 1)
     preview = args.get("preview", False)
     paths = args.get("paths", None)
@@ -1099,6 +1174,180 @@ def _edit_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResu
         path = args["path"]
         result = _apply_single_edit(path, old, new, count, preview, wg, args)
         return result[1]
+
+
+def _edit_file_anchored(
+    files: list[dict],
+    wg: WriteSafetyGate,
+    _rg: ReadSafetyGate,
+) -> ToolResult:
+    """Apply anchor-based edits to one or more files.
+
+    Each file dict: {path, edits: [{anchor, end_anchor?, edit_type?, text}]}
+
+    All anchors are validated before any edit is applied.
+    """
+    from core.anchor_manager import (
+        AnchorStateManager,
+        resolve_anchored_edits,
+        apply_resolved_edits,
+        strip_anchors,
+    )
+    import difflib as _difflib
+
+    if not isinstance(files, list) or not files:
+        return ToolResult(success=False, content="'files' must be a non-empty array.")
+
+    # Phase 1: Read all files and prepare edits
+    file_states: list[dict] = []  # {resolved, display, lines, anchors, edits}
+    all_failures: list[str] = []
+
+    for file_entry in files:
+        path = file_entry.get("path", "")
+        edits = file_entry.get("edits", [])
+
+        if isinstance(edits, str):
+            import json as _json
+            try:
+                edits = _json.loads(edits)
+            except Exception:
+                all_failures.append(f"{path}: 'edits' must be a valid JSON array")
+                continue
+
+        if not isinstance(edits, list) or not edits:
+            all_failures.append(f"{path}: 'edits' must be a non-empty array")
+            continue
+
+        safety_result = wg.check(path)
+        if not safety_result.allowed:
+            all_failures.append(f"{path}: blocked by safety layer: {safety_result.reason}")
+            continue
+
+        resolved = safety_result.resolved_path
+
+        # Read-before-edit enforcement
+        if resolved.endswith(".py") and resolved not in _READ_FILES:
+            all_failures.append(
+                f"{path}: not read yet this session. Use read_file(include_anchors=True) first."
+            )
+            continue
+
+        # File reservation
+        agent_id = getattr(_current_agent_id, "task_id", None)
+        if agent_id is not None:
+            from tools import reserve_file
+            ok, msg = reserve_file(path, agent_id)
+            if not ok:
+                all_failures.append(f"{path}: {msg}")
+                continue
+
+        try:
+            with open(resolved, "r", encoding="utf-8", errors="replace") as f:
+                content = f.read()
+        except Exception as e:
+            all_failures.append(f"{path}: error reading file: {e}")
+            continue
+
+        lines = content.split("\n")
+        anchors = AnchorStateManager.reconcile(resolved, lines)
+
+        file_states.append({
+            "resolved": resolved,
+            "display": path,
+            "lines": lines,
+            "anchors": anchors,
+            "edits": edits,
+        })
+
+    if not file_states and all_failures:
+        return ToolResult(success=False, content="All files failed validation:\n" + "\n".join(all_failures))
+
+    # Phase 2: Resolve edits (validate anchors match actual content)
+    all_resolved: list[dict] = []  # {file_idx, resolved_edits, failed_edits}
+
+    for idx, fs in enumerate(file_states):
+        resolved, failed = resolve_anchored_edits(fs["edits"], fs["lines"], fs["anchors"])
+        all_resolved.append({
+            "file_idx": idx,
+            "resolved_edits": resolved,
+            "failed_edits": failed,
+        })
+
+    # Check for failures
+    total_failed = sum(len(ar["failed_edits"]) for ar in all_resolved)
+    if total_failed > 0:
+        failure_msgs: list[str] = []
+        for ar in all_resolved:
+            fs = file_states[ar["file_idx"]]
+            for fe in ar["failed_edits"]:
+                failure_msgs.append(f"{fs['display']}: {fe['error']}")
+        return ToolResult(
+            success=False,
+            content="Anchor validation failed -- no edits were applied:\n" + "\n".join(failure_msgs),
+        )
+
+    # Phase 3: Apply edits (already validated, so this should succeed)
+    results: list[str] = []
+    all_diffs: list[str] = []
+
+    for ar in all_resolved:
+        fs = file_states[ar["file_idx"]]
+        resolved = ar["resolved_edits"]
+
+        if not resolved:
+            continue
+
+        # Backup
+        _backup_before_write(fs["resolved"])
+
+        new_lines, applied = apply_resolved_edits(fs["lines"], resolved)
+        new_content = "\n".join(new_lines)
+
+        # Write
+        try:
+            with open(fs["resolved"], "w", encoding="utf-8") as f:
+                f.write(new_content)
+        except Exception as e:
+            results.append(f"[FAIL] {fs['display']}: write error: {e}")
+            continue
+
+        # Reconcile anchors with new content
+        AnchorStateManager.reconcile(fs["resolved"], new_lines)
+
+        # Generate diff
+        orig_lines = fs["lines"]
+        diff_lines = list(_difflib.unified_diff(
+            orig_lines, new_lines,
+            fromfile=fs["display"], tofile=fs["display"],
+            lineterm="",
+        ))
+        diff_text = "\n".join(diff_lines) if diff_lines else "(no visible change)"
+
+        # Track
+        from tools import add_modified_file, clear_tool_cache
+        add_modified_file(fs["resolved"])
+        clear_tool_cache()
+        _FILE_CACHE.pop(fs["resolved"], None)
+        _READ_FILES.add(fs["resolved"])
+
+        additions = sum(e["lines_added"] for e in applied)
+        deletions = sum(e["lines_deleted"] for e in applied)
+        stats = f" (+{additions}, -{deletions})" if additions or deletions else ""
+        results.append(
+            f"[OK] {fs['display']}{stats}: {len(resolved)} edit(s) applied"
+        )
+        all_diffs.append(f"--- {fs['display']} ---\n{diff_text}")
+
+    # Re-index modified Python files
+    for fs in file_states:
+        if fs["resolved"].endswith(".py"):
+            from tools.search_ops import _reindex_file
+            _reindex_file(fs["resolved"], wg.workspace_root)
+
+    final = "\n".join(results)
+    if all_diffs:
+        final += "\n\n--- Diffs ---\n" + "\n\n".join(all_diffs)
+    return ToolResult(success=True, content=final)
 
 
 @_summarize("edit_file")

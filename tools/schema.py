@@ -165,13 +165,18 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "read_file",
-            "description": "Read the contents of a file at the given path. Use offset and limit for line-range reads on large files.",
+            "description": "Read the contents of one or more files at the given path(s). Use 'paths' (array) for multi-file reads. Use offset and limit for line-range reads on large files. Set include_anchors=True to get stable word anchors (e.g. 'Apple§content') for reliable edit_file targeting.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "path": {
                         "type": "string",
-                        "description": "Path to the file to read"
+                        "description": "Path to the file to read (use 'paths' for multiple files)"
+                    },
+                    "paths": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional: list of file paths to read (multi-file batch)"
                     },
                     "offset": {
                         "type": "integer",
@@ -188,6 +193,10 @@ TOOLS = [
                     "hash_lines": {
                         "type": "boolean",
                         "description": "Optional: prefix each line with line number and 3-char content hash (e.g. '42:a1f| content'). Use this before edit_lines to get hash anchors. Default: false."
+                    },
+                    "include_anchors": {
+                        "type": "boolean",
+                        "description": "Optional: prefix each line with a stable word anchor (e.g. 'Apple§def foo():'). Anchors persist across edits -- use these with edit_file(files=[{edits:[{anchor, end_anchor, edit_type, text}]}]) for reliable line targeting. Default: false."
                     }
                 },
                 "required": [
@@ -224,40 +233,63 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "edit_file",
-            "description": "Edit a file by replacing a specific string with another. Replaces first occurrence by default; use count=-1 for all. When preview=True, returns a unified diff without writing. Use 'paths' (list) for batch multi-file edits.",
+            "description": "Edit one or more files. TWO MODES: (1) Anchor mode: use 'files' array with [{path, edits: [{anchor, end_anchor?, edit_type?, text}]}]. Read files with read_file(include_anchors=True) first to get stable word anchors. (2) Legacy string mode: use 'path'/'paths' with 'old_string'/'new_string'.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "path": {
                         "type": "string",
-                        "description": "Path to the file to edit (required for single-file edit; ignored if 'paths' is provided)"
+                        "description": "Path to the file to edit (legacy string mode; ignored if 'files' is provided)"
                     },
                     "paths": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Optional: list of file paths to apply the same old->new edit to (batch edit). When set, 'path' is ignored."
+                        "description": "Optional: list of file paths for batch same-string edit (legacy mode)"
                     },
                     "old_string": {
                         "type": "string",
-                        "description": "Exact string to find and replace"
+                        "description": "Exact string to find and replace (legacy mode)"
                     },
                     "new_string": {
                         "type": "string",
-                        "description": "String to replace it with"
+                        "description": "String to replace it with (legacy mode)"
                     },
                     "count": {
                         "type": "integer",
-                        "description": "Optional: number of occurrences to replace (1 = first only, -1 = all). Default: 1."
+                        "description": "Optional: number of occurrences to replace (1 = first only, -1 = all). Default: 1. (legacy mode)"
                     },
                     "preview": {
                         "type": "boolean",
-                        "description": "Optional: if true, skip the write and return a unified diff (lines starting with - for old, + for new). Default: false."
+                        "description": "Optional: if true, skip the write and return a unified diff. Default: false."
+                    },
+                    "files": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "path": {"type": "string", "description": "Path to the file"},
+                                "edits": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "anchor": {"type": "string", "description": "Anchor word + § + expected line content (e.g. 'Apple§def foo():')"},
+                                            "end_anchor": {"type": "string", "description": "Optional: end anchor for multi-line replacements"},
+                                            "edit_type": {"type": "string", "enum": ["replace", "insert_after", "insert_before"], "description": "Default: 'replace'"},
+                                            "text": {"type": "string", "description": "Replacement or insertion text"}
+                                        },
+                                        "required": ["anchor", "text"]
+                                    },
+                                    "description": "Array of edits for this file"
+                                }
+                            },
+                            "required": ["path", "edits"]
+                        },
+                        "description": "Anchor-based edit mode: array of {path, edits} for multi-file batch editing"
                     }
                 },
                 "required": [
-                    "path",
-                    "old_string",
-                    "new_string"
+                    "path"
                 ]
             }
         }
@@ -1226,6 +1258,106 @@ TOOLS = [
                     }
                 },
                 "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_file_skeleton",
+            "description": "Read the structural outline of one or more files by extracting classes, functions, and methods with their line signatures while stripping all implementation logic. Use this to quickly understand file structure before requesting specific functions. Use 'include_anchors=true' to get stable word anchors for use with edit_file.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "paths": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of file paths to analyze"
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "Single file path (alternative to 'paths')"
+                    },
+                    "include_anchors": {
+                        "type": "boolean",
+                        "description": "If true, prefix each definition line with a stable word anchor (e.g. 'Apple§def foo():') for use with edit_file. Default: false."
+                    }
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_function",
+            "description": "Retrieve specific function or class bodies from a file with stable word anchors. More token-efficient than read_file for surgical edits -- only returns the requested symbols. Use include_anchors=true to get anchors for edit_file targeting.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the file"
+                    },
+                    "names": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of function/class names to retrieve"
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Single function/class name (alternative to 'names')"
+                    },
+                    "include_anchors": {
+                        "type": "boolean",
+                        "description": "If true, prefix each line with a stable word anchor. Default: false."
+                    }
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "replace_symbol",
+            "description": "Replace one or more symbols (functions, methods, or classes) in one or more files with new code. More robust than edit_file because it targets specific AST nodes directly by byte range -- no string matching required. IMPORTANT: Provide the COMPLETE replacement including all decorators, docstrings, and export keywords.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "replacements": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "path": {"type": "string", "description": "Path to the file"},
+                                "symbol": {"type": "string", "description": "Name of the function/class to replace"},
+                                "text": {"type": "string", "description": "Complete replacement code"},
+                                "type": {"type": "string", "enum": ["def", "class"], "description": "Optional: disambiguate if name is ambiguous"}
+                            },
+                            "required": ["path", "symbol", "text"]
+                        },
+                        "description": "Array of symbol replacements to apply"
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "Path to file (single replacement alternative to 'replacements')"
+                    },
+                    "symbol": {
+                        "type": "string",
+                        "description": "Symbol name (single replacement mode)"
+                    },
+                    "text": {
+                        "type": "string",
+                        "description": "Replacement code (single replacement mode)"
+                    },
+                    "type": {
+                        "type": "string",
+                        "enum": ["def", "class"],
+                        "description": "Optional: symbol type for disambiguation"
+                    }
+                },
+                "required": []
             }
         }
     },
