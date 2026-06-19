@@ -465,6 +465,13 @@ function AppShell() {
       } else {
         addToolLine({ text: `  ${status} ${data.detail}`, cls });
       }
+      // Show diff_preview for write/edit tools when available
+      if (data.diff_preview) {
+        addToolLine({
+          component: <CodeBlock code={data.diff_preview} language="diff" fontSize="0.72em" theme={theme} />,
+          cls: '',
+        });
+      }
     }));
 
     unsubs.push(api.on('stream:turn_complete', (data) => {

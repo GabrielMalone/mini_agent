@@ -587,11 +587,17 @@ def _write_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolRes
 @_summarize("write_file")
 def _write_file_summary(args: dict) -> str:
     path = args.get("path", "?")
+    # Multi-file batch mode
+    paths = args.get("paths", [])
+    if paths:
+        return f"write_file({len(paths)} files: {', '.join(paths[:3])}{'...' if len(paths) > 3 else ''})"
     content = args.get("content", "")
-    preview = content[:60].replace("\n", "\\n")
-    if len(content) > 60:
-        preview += "..."
-    return f"write_file({path}, {len(content)}B -> \"{preview}\")"
+    # Extract first line for a cleaner summary; show "..." if multi-line
+    lines = content.split("\n")
+    first_line = lines[0][:100].strip()
+    truncated_first = "..." if len(lines[0]) > 100 else ""
+    has_more_lines = "..." if len(lines) > 1 else ""
+    return f"write_file({path}, {len(content)}B) \"{first_line}{truncated_first}{has_more_lines}\""
 
 
 # ---------------------------------------------------------------------------
@@ -1352,14 +1358,42 @@ def _edit_file_anchored(
 
 @_summarize("edit_file")
 def _edit_file_summary(args: dict) -> str:
+    # Anchor-based multi-file edit mode
+    files = args.get("files", [])
+    if files:
+        total_edits = sum(len(f.get("edits", [])) for f in files)
+        filenames = [f["path"] for f in files[:3]]
+        suffix = "..." if len(files) > 3 else ""
+        return f"edit_file({len(files)} file(s), {total_edits} edit(s): {', '.join(filenames)}{suffix})"
+
+    # Legacy mode with paths[]
+    paths = args.get("paths", [])
+    if paths:
+        old = args.get("old_string", "")
+        new = args.get("new_string", "")
+        old_preview = old[:80].replace("\n", "\\n")
+        if len(old) > 80:
+            old_preview += "..."
+        new_preview = new[:60].replace("\n", "\\n")
+        if len(new) > 60:
+            new_preview += "..."
+        preview_flag = args.get("preview", False)
+        suffix = " [preview]" if preview_flag else ""
+        return f"edit_file({len(paths)} files: {', '.join(paths[:3])}) \"{old_preview}\" -> \"{new_preview}\"{suffix}"
+
+    # Single-file legacy mode
     path = args.get("path", "?")
     old = args.get("old_string", "")
-    old_preview = old[:40].replace("\n", "\\n")
-    if len(old) > 40:
+    new = args.get("new_string", "")
+    old_preview = old[:80].replace("\n", "\\n")
+    if len(old) > 80:
         old_preview += "..."
+    new_preview = new[:60].replace("\n", "\\n")
+    if len(new) > 60:
+        new_preview += "..."
     preview_flag = args.get("preview", False)
     suffix = " [preview]" if preview_flag else ""
-    return f"edit_file({path}, \"{old_preview}\"){suffix}"
+    return f"edit_file({path}) \"{old_preview}\" -> \"{new_preview}\"{suffix}"
 
 
 # ---------------------------------------------------------------------------

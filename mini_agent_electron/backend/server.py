@@ -171,7 +171,10 @@ class StreamCallbacks:
         send_msg({"type": "tool_start", "summary": summary, "parallel": parallel})
 
     def on_tool_end(self, ok: bool, detail: str, turn_id: int = 0, diff_preview=None, content: str = "") -> None:
-        send_msg({"type": "tool_end", "ok": ok, "detail": detail, "content": content})
+        msg: dict = {"type": "tool_end", "ok": ok, "detail": detail, "content": content}
+        if diff_preview:
+            msg["diff_preview"] = diff_preview
+        send_msg(msg)
 
     def on_tool_output(self, line: str, turn_id: int = 0) -> None:
         send_msg({"type": "tool_output", "line": line})

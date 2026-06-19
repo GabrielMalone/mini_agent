@@ -395,10 +395,10 @@ class TestToolSummary(unittest.TestCase):
         self.assertIn("hello world", s)
 
     def test_write_file_long_content_truncated(self):
-        tc = _make_tool_call("write_file", path="x", content="a" * 100)
+        tc = _make_tool_call("write_file", path="x", content="a" * 200)
         s = tool_summary(tc)
         self.assertIn("...", s)
-        self.assertLess(len(s), 150)
+        self.assertLess(len(s), 180)
 
     def test_edit_file_summary(self):
         tc = _make_tool_call("edit_file", path="f.txt",
