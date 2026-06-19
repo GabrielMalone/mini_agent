@@ -223,13 +223,6 @@ def _write_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolRes
                 f"before writing. This prevents accidental overwrites of recent changes."
             ),
         )
-    # File reservation check -- prevent sub-agent collisions
-    agent_id = getattr(_current_agent_id, "task_id", None)
-    if agent_id is not None:
-        from tools import reserve_file
-        ok, msg = reserve_file(path, agent_id)
-        if not ok:
-            return ToolResult(success=False, content=msg)
     try:
         # Generate diff preview before writing
         diff = wg.generate_diff("write_file", args)
