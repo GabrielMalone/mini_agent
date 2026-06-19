@@ -634,6 +634,27 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "explore",
+            "description": "PRIMARY TOOL — call FIRST for understanding how something works or before an edit. Takes a natural-language question (e.g. 'how does auth handle login') or a bag of symbol/file names, finds the relevant symbols, returns their verbatim source code grouped by file with line numbers PLUS call relationships among them — all in one budget-capped response. Much more efficient than a find_symbol/search_files/read_file loop. Budget scales with project size: 3-4 files for small repos, 6-8 for larger ones.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Natural-language question OR bag of symbol/file names to explore (e.g. 'AuthService loginUser session-manager', 'how does ToolResult propagate errors', 'renderScene animation loop')."
+                    },
+                    "max_files": {
+                        "type": "integer",
+                        "description": "Maximum number of files to include source code from (default: auto-scaled by project size, 1-20)."
+                    }
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "verify",
             "description": "Run lint + relevant tests for files modified in the current session. Uses tracked writes/edits to find matching test files. Falls back to running all tests if nothing has been modified yet. Use after code changes to verify nothing broke before moving on.",
             "parameters": {

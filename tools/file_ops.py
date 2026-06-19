@@ -11,12 +11,16 @@ from __future__ import annotations
 
 import os
 import stat as stat_module
+import time
 
 from tools.result import ToolResult
 from tools import _register, _summarize, clear_tool_cache
 
 # Shared utilities (triggers @_register for nothing; just helpers)
 from tools._file_utils import (
+    _BACKUPS,
+    _line_hash,
+    _compute_line_hashes,
     _read_file_windows_worker,
     _read_file_direct,
     _validate_python_syntax,

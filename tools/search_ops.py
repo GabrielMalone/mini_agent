@@ -1700,3 +1700,522 @@ def _fetch_url_summary(args: dict) -> str:
     url = args.get("url", "?")
     short = url[:50] + "..." if len(url) > 50 else url
     return f"fetch_url({short})"
+
+
+# ---------------------------------------------------------------------------
+# explore — natural language → relevant symbols + source + call relationships
+# ---------------------------------------------------------------------------
+
+# Common English words that are unlikely to be code symbols
+_EXPLORE_STOP_WORDS: frozenset[str] = frozenset({
+    "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
+    "have", "has", "had", "do", "does", "did", "will", "would", "could",
+    "should", "may", "might", "shall", "can", "need", "dare", "ought",
+    "used", "to", "of", "in", "for", "on", "with", "at", "by", "from",
+    "as", "into", "through", "during", "before", "after", "above", "below",
+    "between", "under", "again", "further", "then", "once", "here",
+    "there", "when", "where", "why", "how", "all", "both", "each",
+    "every", "few", "more", "most", "other", "some", "such", "no",
+    "not", "only", "own", "same", "so", "than", "too", "very",
+    "just", "because", "but", "and", "or", "if", "while", "about",
+    "up", "out", "off", "over", "down", "its", "it", "this", "that",
+    "these", "those", "which", "what", "who", "whom", "doesnt",
+    "also", "now", "like", "get", "set", "use", "using", "make",
+    "one", "two", "see", "way", "part", "work", "find", "need",
+})
+
+
+def _explore_extract_terms(query: str) -> list[str]:
+    """Extract meaningful search terms from a natural-language query.
+
+    Splits camelCase/PascalCase/snake_case into individual words,
+    filters stop words, and preserves original compound terms.
+    """
+    tokens: set[str] = set()
+
+    # Preserve original compound identifiers (camelCase, PascalCase, snake_case)
+    compound = _re.compile(r'\b([a-zA-Z][a-zA-Z0-9]*(?:[A-Z][a-z]+)+|[A-Z][a-z]+(?:[A-Z][a-z]*)+)\b')
+    for m in compound.finditer(query):
+        t = m.group(1).lower()
+        if len(t) >= 3:
+            tokens.add(t)
+
+    snake = _re.compile(r'\b([a-zA-Z][a-zA-Z0-9]*(?:_[a-zA-Z0-9]+)+)\b')
+    for m in snake.finditer(query):
+        t = m.group(1).lower()
+        if len(t) >= 3:
+            tokens.add(t)
+
+    # Split on camelCase boundaries
+    split = query
+    split = _re.sub(r'([a-z])([A-Z])', r'\1 \2', split)
+    split = _re.sub(r'([A-Z]+)([A-Z][a-z])', r'\1 \2', split)
+    split = split.replace('_', ' ').replace('.', ' ').replace('-', ' ')
+
+    for word in split.split():
+        word = word.strip().lower()
+        # Filter non-alpha, short words, stop words
+        word = _re.sub(r'[^a-z0-9]', '', word)
+        if len(word) < 3 or word in _EXPLORE_STOP_WORDS:
+            continue
+        tokens.add(word)
+
+    # Stem variants: "caching" → "cache", "handling" → "handle"
+    stems: set[str] = set()
+    for t in tokens:
+        if t.endswith("ing") and len(t) > 4:
+            stems.add(t[:-3])
+            if t.endswith("ling") or t.endswith("ring"):
+                stems.add(t[:-3] + "e")
+        elif t.endswith("ed") and len(t) > 4:
+            stems.add(t[:-1])
+            stems.add(t[:-2])
+        elif t.endswith("er") and len(t) > 4:
+            stems.add(t[:-2])
+            stems.add(t[:-2] + "e")
+        elif t.endswith("s") and len(t) > 3 and not t.endswith("ss"):
+            stems.add(t[:-1])
+    for s in stems:
+        if s not in tokens and s not in _EXPLORE_STOP_WORDS and len(s) >= 3:
+            tokens.add(s)
+
+    # Also keep original space-separated tokens
+    for word in query.lower().split():
+        word = _re.sub(r'[^a-z0-9]', '', word)
+        if len(word) >= 3 and word not in _EXPLORE_STOP_WORDS:
+            tokens.add(word)
+
+    return list(tokens)
+
+
+def _explore_score_symbol(name: str, kind: str, filepath: str, terms: list[str]) -> int:
+    """Score a symbol against search terms. Higher = more relevant."""
+    name_lower = name.lower()
+    score = 0
+
+    for term in terms:
+        if name_lower == term:
+            score += 80  # exact match
+        elif name_lower.startswith(term):
+            score += 30  # prefix match
+        elif term in name_lower:
+            score += 10  # substring match
+
+    # Kind bonus: functions/classes more relevant than variables
+    kind_bonus = {"def": 10, "class": 8, "method": 10}
+    score += kind_bonus.get(kind, 0)
+
+    # Path bonus: term in filename
+    fname = os.path.basename(filepath).lower()
+    for term in terms:
+        if term in fname:
+            score += 15
+
+    return score
+
+
+def _explore_rank_symbols(
+    terms: list[str],
+    idx: dict[str, list[dict]],
+    root: str,
+) -> list[tuple[str, dict]]:
+    """Rank symbol index entries by relevance to search terms.
+
+    Returns list of (symbol_name, entry_dict) sorted by score descending.
+    Deduplicates by (name, path) — keeps the first (highest-scoring) occurrence.
+    """
+    scored: list[tuple[int, str, dict]] = []
+    seen: set[tuple[str, str]] = set()
+
+    for name, entries in idx.items():
+        for entry in entries:
+            key = (name.lower(), entry["path"])
+            if key in seen:
+                continue
+            seen.add(key)
+            score = _explore_score_symbol(name, entry.get("kind", ""), entry["path"], terms)
+            if score > 0:
+                scored.append((score, name, entry))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [(name, entry) for _, name, entry in scored]
+
+
+def _explore_budget(file_count: int, user_max_files: int) -> dict:
+    """Return output budget based on project size.
+
+    Tiered like CodeGraph: smaller projects get tighter budgets so the
+    agent is forced to focus on the most relevant symbols.
+    """
+    # Defaults from user preference, scaled by project size
+    if user_max_files > 0:
+        default_max = min(user_max_files, 20)
+    elif file_count < 150:
+        default_max = 4
+    elif file_count < 500:
+        default_max = 6
+    elif file_count < 5000:
+        default_max = 8
+    else:
+        default_max = 8
+
+    if file_count < 150:
+        return {
+            "max_files": default_max,
+            "max_chars_per_file": 3000,
+            "max_output_chars": 13000,
+            "gap_threshold": 7,
+            "max_symbols_header": 5,
+            "max_edges": 4,
+        }
+    elif file_count < 500:
+        return {
+            "max_files": default_max,
+            "max_chars_per_file": 3800,
+            "max_output_chars": 18000,
+            "gap_threshold": 8,
+            "max_symbols_header": 6,
+            "max_edges": 6,
+        }
+    elif file_count < 5000:
+        return {
+            "max_files": default_max,
+            "max_chars_per_file": 6500,
+            "max_output_chars": 24000,
+            "gap_threshold": 12,
+            "max_symbols_header": 10,
+            "max_edges": 10,
+        }
+    else:
+        return {
+            "max_files": default_max,
+            "max_chars_per_file": 7000,
+            "max_output_chars": 24000,
+            "gap_threshold": 15,
+            "max_symbols_header": 15,
+            "max_edges": 15,
+        }
+
+
+def _explore_read_source_window(filepath: str, line: int, max_chars: int) -> str:
+    """Read a window of source around a given line, capped at max_chars.
+
+    Returns the source with line numbers (cat -n style).
+    """
+    try:
+        with open(filepath, "r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+    except (OSError, PermissionError):
+        return ""
+
+    if not lines:
+        return ""
+
+    total = len(lines)
+    # Center window around the definition line, bias toward more code below it
+    half = max(40, max_chars // 80)  # rough: 80 chars/line
+    start = max(0, line - half // 2)
+    end = min(total, start + half)
+    # Adjust start if we hit the end
+    if end == total:
+        start = max(0, end - half)
+
+    # Build output, tracking char count
+    out: list[str] = []
+    char_count = 0
+    for i in range(start, end):
+        num = i + 1
+        prefix = f"{num}\t"
+        snippet = lines[i].rstrip("\n")
+        line_str = prefix + snippet
+        char_count += len(line_str) + 1  # +1 for newline
+        if char_count > max_chars:
+            out.append(f"... (truncated at {max_chars} chars)")
+            break
+        out.append(line_str)
+
+    return "\n".join(out)
+
+
+def _explore_find_relationships(
+    symbols: list[tuple[str, str]],  # [(name, filepath), ...]
+) -> list[str]:
+    """Find call relationships between the selected symbols.
+
+    Returns a list of formatted relationship strings like:
+    "function1 → function2 (calls)"
+    "class1.method ← other_func (called by)"
+    """
+    symbol_names: set[str] = {name for name, _ in symbols}
+    edges: list[tuple[str, str, str, str]] = []  # (from, to, kind, file)
+
+    for name in symbol_names:
+        # Outgoing: who does this symbol call?
+        for callee_name, fpath, line in _CALL_GRAPH.get(name, []):
+            if callee_name in symbol_names:
+                edges.append((name, callee_name, "calls", fpath))
+        # Incoming: who calls this symbol?
+        for caller_name, fpath, line in _CALLER_GRAPH.get(name, []):
+            if caller_name in symbol_names:
+                edges.append((caller_name, name, "calls", fpath))
+
+    # Deduplicate
+    seen: set[tuple[str, str, str]] = set()
+    unique: list[tuple[str, str, str, str]] = []
+    for src, tgt, kind, fpath in edges:
+        key = (src, tgt, kind)
+        if key not in seen:
+            seen.add(key)
+            unique.append((src, tgt, kind, fpath))
+
+    lines: list[str] = []
+    for src, tgt, kind, fpath in unique:
+        if kind == "calls":
+            lines.append(f"  {src} → {tgt}")
+        else:
+            lines.append(f"  {src} — {tgt} ({kind})")
+
+    return lines
+
+
+def _explore_build_output(
+    ranked: list[tuple[str, dict]],
+    budget: dict,
+    root: str,
+) -> ToolResult:
+    """Build the explore output: group by file, extract source, show relationships."""
+    max_files = budget["max_files"]
+    max_chars_per_file = budget["max_chars_per_file"]
+    max_output = budget["max_output_chars"]
+    gap_threshold = budget["gap_threshold"]
+    max_symbols_header = budget["max_symbols_header"]
+    max_edges = budget["max_edges"]
+
+    # Group symbols by file, preserving rank order
+    file_symbols: dict[str, list[tuple[str, dict]]] = {}
+    file_order: list[str] = []
+    for name, entry in ranked:
+        fpath = entry["path"]
+        if fpath not in file_symbols:
+            file_symbols[fpath] = []
+            file_order.append(fpath)
+        file_symbols[fpath].append((name, entry))
+
+    # Select top files
+    selected_files = file_order[:max_files]
+    rest_files = file_order[max_files:]
+
+    # Build sections
+    sections: list[str] = []
+    total_chars = 0
+    selected_symbols: list[tuple[str, str]] = []  # for relationship discovery
+
+    for fpath in selected_files:
+        symbols = file_symbols[fpath]
+        selected_symbols.extend((name, fpath) for name, _ in symbols)
+
+        # Collect line ranges for each symbol
+        ranges: list[tuple[int, int]] = []
+        for _, entry in symbols:
+            line = entry.get("line", 1)
+            ranges.append((line, line + 5))  # small window per symbol
+
+        # Merge nearby ranges (within gap_threshold)
+        ranges.sort()
+        merged: list[tuple[int, int]] = []
+        for start, end in ranges:
+            if merged and start - merged[-1][1] <= gap_threshold:
+                merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+            else:
+                merged.append((start, end))
+
+        # Read source for merged ranges
+        try:
+            with open(fpath, "r", encoding="utf-8", errors="replace") as f:
+                all_lines = f.readlines()
+        except (OSError, PermissionError):
+            continue
+
+        total_file_lines = len(all_lines)
+        source_chunks: list[str] = []
+        chars_used = 0
+
+        for chunk_start, chunk_end in merged:
+            if chars_used >= max_chars_per_file:
+                break
+            # Expand chunk slightly to show context
+            ctx_start = max(0, chunk_start - 3)
+            ctx_end = min(total_file_lines, chunk_end + 3)
+
+            # If we're cutting between chunks, add a separator
+            if source_chunks:
+                source_chunks.append(f"  ... (gap) ...")
+
+            chunk_lines: list[str] = []
+            for i in range(ctx_start, ctx_end):
+                num = i + 1
+                snippet = all_lines[i].rstrip("\n")
+                chunk_lines.append(f"{num}\t{snippet}")
+
+            chunk_text = "\n".join(chunk_lines)
+            if chars_used + len(chunk_text) > max_chars_per_file and source_chunks:
+                remaining = max_chars_per_file - chars_used
+                if remaining > 200:
+                    chunk_text = chunk_text[:remaining] + "\n... (truncated)"
+                else:
+                    source_chunks.append("  ... (truncated)")
+                    break
+            source_chunks.append(chunk_text)
+            chars_used += len(chunk_text)
+
+        # Build symbol list for header
+        symbol_names = [name for name, _ in symbols[:max_symbols_header]]
+        if len(symbols) > max_symbols_header:
+            symbol_names.append(f"+{len(symbols) - max_symbols_header} more")
+
+        rel_path = fpath
+        try:
+            rel_path = os.path.relpath(fpath, root)
+        except ValueError:
+            pass
+
+        header = f"\n### {rel_path} — {', '.join(symbol_names)}"
+        body = "\n```\n" + "\n".join(source_chunks) + "\n```"
+
+        section = header + "\n" + body
+        if total_chars + len(section) > max_output:
+            remaining = max_output - total_chars
+            if remaining > 500:
+                section = section[:remaining] + "\n... (output truncated)"
+                sections.append(section)
+            else:
+                sections.append(f"\n### ... ({len(rest_files) + len(selected_files) - len(sections)} more files not shown)")
+            break
+
+        sections.append(section)
+        total_chars += len(section)
+
+    # Relationship section
+    relationships = _explore_find_relationships(selected_symbols)
+    if relationships and max_edges > 0:
+        lines = ["\n**Relationships:**"]
+        shown = relationships[:max_edges]
+        lines.extend(shown)
+        if len(relationships) > max_edges:
+            lines.append(f"  ... and {len(relationships) - max_edges} more")
+        rel_section = "\n".join(lines)
+        if total_chars + len(rel_section) <= max_output:
+            sections.append(rel_section)
+
+    # Additional relevant files (not shown)
+    if rest_files:
+        rest_rel: list[str] = []
+        for f in rest_files[:10]:
+            try:
+                rest_rel.append(os.path.relpath(f, root))
+            except ValueError:
+                rest_rel.append(f)
+        note = f"\n**Additional relevant files (not shown):** {', '.join(rest_rel)}"
+        if len(rest_files) > 10:
+            note += f", +{len(rest_files) - 10} more"
+        if total_chars + len(note) <= max_output:
+            sections.append(note)
+
+    if not sections:
+        return ToolResult(
+            success=True,
+            content=f"Found {len(ranked)} matching symbols but couldn't fit any in the output budget. Try a more specific query.",
+        )
+
+    full_output = "\n".join(sections)
+    return ToolResult(success=True, content=full_output)
+
+
+@_register("explore")
+def _explore(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
+    """Explore codebase: natural language query → relevant symbols with source and call relationships.
+
+    Takes a natural-language question (e.g. "how does auth handle login") or a bag
+    of symbol/file names and returns the relevant source code grouped by file PLUS
+    the call relationships among them — all in a single, budget-capped response.
+    Use this as your FIRST tool for understanding how something works, before an edit,
+    or when you need to survey an area of the codebase.
+    """
+    query = (args.get("query") or "").strip()
+    if not query:
+        return ToolResult(success=False, content="Missing required parameter: 'query'.")
+
+    max_files = int(args.get("max_files", 0) or 0)
+
+    root = rg.workspace_root
+
+    # 1. Get symbol index and call graph
+    idx = _get_symbol_index(root)
+    _build_call_graph(root)
+
+    # 2. Extract search terms from query
+    terms = _explore_extract_terms(query)
+
+    if not terms:
+        return ToolResult(
+            success=True,
+            content=f"No searchable terms found in '{query}'. Try including function, class, or file names.",
+        )
+
+    # 3. Rank symbols by relevance to query
+    ranked = _explore_rank_symbols(terms, idx, root)
+
+    if not ranked:
+        # Fallback: try searching by filename patterns
+        for name, entries in idx.items():
+            name_lower = name.lower()
+            for term in terms:
+                if term in name_lower:
+                    for e in entries:
+                        ranked.append((name, e))
+                    break
+        # Still nothing — try very fuzzy: look for any symbol whose name shares 3+ chars
+        if not ranked:
+            for name, entries in idx.items():
+                name_lower = name.lower()
+                for term in terms:
+                    # check if they share a 3-char substring
+                    for i in range(len(term) - 2):
+                        if term[i:i+3] in name_lower:
+                            for e in entries:
+                                ranked.append((name, e))
+                            break
+                    if ranked:
+                        break
+                if len(ranked) >= 50:
+                    break
+
+    if not ranked:
+        return ToolResult(
+            success=True,
+            content=f"No symbols found matching '{query}'. Try different terms or use find_symbol/search_files.",
+        )
+
+    # Deduplicate while preserving order
+    seen: set[tuple[str, str]] = set()
+    deduped: list[tuple[str, dict]] = []
+    for name, entry in ranked:
+        key = (name.lower(), entry["path"])
+        if key not in seen:
+            seen.add(key)
+            deduped.append((name, entry))
+    ranked = deduped
+
+    # 4. Determine budget based on project size
+    file_count = len({e["path"] for entries in idx.values() for e in entries})
+    budget = _explore_budget(file_count, max_files)
+
+    # 5. Build output
+    return _explore_build_output(ranked, budget, root)
+
+
+@_summarize("explore")
+def _explore_summary(args: dict) -> str:
+    query = args.get("query", "?")
+    short = query[:60] + "..." if len(query) > 60 else query
+    return f"explore({short})"

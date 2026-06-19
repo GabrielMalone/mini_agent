@@ -618,12 +618,6 @@ function AppShell() {
         gitDirty={gitDirty}
         botStatus={botStatus}
         setBotStatus={setBotStatus}
-        isLive={isLive}
-        elapsedSec={elapsedSec}
-        turnCountVal={turnCountVal}
-        turnCost={turnCost}
-        subagentRunning={subagentRunning}
-        restoredCount={restoredCount}
         workspace={workspace}
         sessionName={sessionName}
         themeEntry={themeEntry}
@@ -635,7 +629,6 @@ function AppShell() {
         themeToggleRef={themeToggleRef}
         dropdownPos={dropdownPos}
         applyTheme={applyTheme}
-        handleCancel={handleCancel}
         handleWorkspaceClick={handleWorkspaceClick}
         handleSessionSwitch={handleSessionSwitch}
       />

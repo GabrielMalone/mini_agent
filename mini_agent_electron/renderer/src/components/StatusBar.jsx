@@ -5,11 +5,10 @@ const BOT_SCRIPTS = { 'mini-agent': 'workspace_bot.py', 'emotion-game': 'discord
 
 export default function StatusBar({
   balanceDisplay, gitBranch, gitDirty, botStatus, setBotStatus,
-  isLive, elapsedSec, turnCountVal, turnCost, subagentRunning,
-  restoredCount, workspace, sessionName,
+  workspace, sessionName,
   themeEntry, PALETTE_SVG, THEMES, theme, themePickerOpen, setThemePickerOpen,
   themeToggleRef, dropdownPos, applyTheme,
-  handleCancel, handleWorkspaceClick, handleSessionSwitch,
+  handleWorkspaceClick, handleSessionSwitch,
 }) {
   const [botMenuOpen, setBotMenuOpen] = useState(false);
   const botMenuToggleRef = useRef(null);
@@ -106,12 +105,7 @@ export default function StatusBar({
           </div>
         )}
       </span>
-      {isLive && (
-        <span id="live-indicator" onClick={handleCancel} title="Cancel"><svg viewBox="0 0 12 12" width="10" height="10" className="icon-sm"><circle cx="6" cy="6" r="4" fill="currentColor" className="live-dot"/></svg></span>
-      )}
-      {elapsedSec != null && (
-        <span id="timer"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.5" className="icon-sm"><circle cx="8" cy="8" r="6.5"/><path d="M8 4.5V8l2.5 2"/></svg>{elapsedSec}s</span>
-      )}
+
       <span id="theme-toggle" ref={themeToggleRef} onClick={() => setThemePickerOpen((p) => !p)} title={`Theme: ${themeEntry.name}`}>
         {PALETTE_SVG}
         {themePickerOpen && dropdownPos && (
@@ -130,19 +124,8 @@ export default function StatusBar({
           </div>
         )}
       </span>
-      {turnCountVal != null && (
-        <span id="turn-counter"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.5" className="icon-sm"><path d="M2 8a6 6 0 0 1 6-6 5.5 5.5 0 0 1 5 3.5M14 8a6 6 0 0 1-6 6"/><polyline points="11,3 13,1 15,3"/></svg> turn <span id="turn-count">{turnCountVal}</span></span>
-      )}
-      {turnCost !== '-' && (
-        <span id="turn-cost" title="Last turn cost">{turnCost}</span>
-      )}
-      {subagentRunning > 0 && (
-        <span id="subagent-count" title={`${subagentRunning} sub-agents running`}>{'\u2225'}{subagentRunning}</span>
-      )}
+
       <div className="status-right">
-        {restoredCount != null && (
-          <span id="restored-info">restored {restoredCount} msgs</span>
-        )}
         <span id="workspace-info" className="clickable" onClick={handleWorkspaceClick} title="Click to change workspace">{workspace}</span>
         <SessionPicker sessionName={sessionName} onSwitch={handleSessionSwitch} />
       </div>

@@ -127,7 +127,10 @@ class _ContextProxy:
             setattr(self._cv.get(), name, value)
 
     def __delattr__(self, name: str):
-        delattr(self._cv.get(), name)
+        try:
+            delattr(self._cv.get(), name)
+        except AttributeError:
+            pass  # Best-effort: attribute may be a class-level default already deleted
 
     @property
     def __dict__(self):
