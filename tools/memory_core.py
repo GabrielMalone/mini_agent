@@ -122,6 +122,231 @@ def _memory_core(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolR
         return ToolResult(success=False, content=f"Core memory error: {e}")
 
 
+# ---------------------------------------------------------------------------
+# Structured observation tool (claude-mem inspired)
+# ---------------------------------------------------------------------------
+
+@_register("record_observation")
+def _record_observation(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
+    """Record a structured observation about a tool call, discovery, or decision.
+
+    Observations are typed, tagged, file-linked entries that persist across
+    sessions. They're injected into future session context so the agent
+    remembers what happened without re-reading full transcripts.
+
+    Types (pick one):
+        bugfix     -- a bug was fixed
+        discovery  -- something new was learned or found
+        decision   -- a design or architectural decision was made
+        refactor   -- code was restructured without changing behavior
+        other      -- anything else worth remembering
+
+    Provide either 'narrative' (paragraph summary) or 'facts' (bullet points),
+    or both. Concepts are tags for filtering. Files track what was touched.
+    Content-based deduplication prevents duplicate entries.
+    """
+    memory_store = getattr(_TOOL_CONTEXT, "_memory_store", None)
+    if memory_store is None:
+        return ToolResult(
+            success=False,
+            content="No memory store available. Requires an active session.",
+        )
+
+    obs_type = args.get("type", "other")
+    title = args.get("title", "")
+    subtitle = args.get("subtitle", "")
+    narrative = args.get("narrative", "")
+    facts = args.get("facts")
+    concepts = args.get("concepts")
+    files_read = args.get("files_read")
+    files_modified = args.get("files_modified")
+    tool_name = args.get("tool_name", "")
+
+    # Get session context
+    session_id = getattr(_TOOL_CONTEXT, "scratchpad_path", None)
+    if session_id:
+        import os
+        session_id = os.path.basename(session_id).replace(".db", "")
+
+    obs_id = memory_store.record_observation(
+        type=obs_type,
+        title=title or None,
+        subtitle=subtitle or None,
+        narrative=narrative or None,
+        facts=facts if isinstance(facts, list) else None,
+        concepts=concepts if isinstance(concepts, list) else None,
+        files_read=files_read if isinstance(files_read, list) else None,
+        files_modified=files_modified if isinstance(files_modified, list) else None,
+        tool_name=tool_name or None,
+        session_id=session_id,
+    )
+
+    if obs_id:
+        return ToolResult(
+            success=True,
+            content=f"Observation #{obs_id} recorded: [{obs_type}] {title[:80] if title else '(untitled)'}",
+        )
+    else:
+        return ToolResult(
+            success=True,
+            content="Observation deduplicated (same content already exists for this session).",
+        )
+
+
+@_summarize("record_observation")
+def _record_observation_summary(args: dict) -> str:
+    obs_type = args.get("type", "other")
+    title = args.get("title", "?")
+    return f"record_observation({obs_type}, \"{title[:50]}\")"
+
+
+# ---------------------------------------------------------------------------
+# Session summary tool (claude-mem inspired)
+# ---------------------------------------------------------------------------
+
+@_register("write_session_summary")
+def _write_session_summary(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
+    """Write a structured session summary for cross-session continuity.
+
+    The summary is injected into future sessions so the agent picks up where
+    it left off. Fill in the 5 canonical fields:
+
+        request       -- what the user asked for this session
+        investigated  -- what was looked into / explored
+        learned       -- key discoveries and insights
+        completed     -- what was accomplished / delivered
+        next_steps    -- what remains to be done
+
+    Also optionally provide files_read, files_edited lists.
+    """
+    memory_store = getattr(_TOOL_CONTEXT, "_memory_store", None)
+    if memory_store is None:
+        return ToolResult(
+            success=False,
+            content="No memory store available. Requires an active session.",
+        )
+
+    session_id = getattr(_TOOL_CONTEXT, "scratchpad_path", None)
+    if session_id:
+        import os
+        session_id = os.path.basename(session_id).replace(".db", "")
+
+    workspace = getattr(_TOOL_CONTEXT, "workspace", None)
+    project = workspace if workspace else None
+
+    request = args.get("request", "")
+    investigated = args.get("investigated", "")
+    learned = args.get("learned", "")
+    completed = args.get("completed", "")
+    next_steps = args.get("next_steps", "")
+    files_read = args.get("files_read")
+    files_edited = args.get("files_edited")
+    notes = args.get("notes", "")
+
+    summary_id = memory_store.store_session_summary(
+        session_id=session_id or "",
+        project=project,
+        request=request or None,
+        investigated=investigated or None,
+        learned=learned or None,
+        completed=completed or None,
+        next_steps=next_steps or None,
+        files_read=files_read if isinstance(files_read, list) else None,
+        files_edited=files_edited if isinstance(files_edited, list) else None,
+        notes=notes or None,
+    )
+
+    if summary_id:
+        return ToolResult(
+            success=True,
+            content=f"Session summary #{summary_id} stored. Will be injected into next session context.",
+        )
+    else:
+        return ToolResult(
+            success=False,
+            content="Failed to store session summary.",
+        )
+
+
+@_summarize("write_session_summary")
+def _write_session_summary_summary(args: dict) -> str:
+    request = args.get("request", "?")
+    return f"write_session_summary(\"{request[:50]}\")"
+
+
+# ---------------------------------------------------------------------------
+# Read observations tool
+# ---------------------------------------------------------------------------
+
+@_register("read_observations")
+def _read_observations(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
+    """Query structured observations from the session database.
+
+    Filter by type (bugfix, discovery, decision, refactor, other),
+    concepts (tags), or session_id. Returns observations ordered by recency.
+    Use this to review past discoveries, decisions, or bugfixes.
+    """
+    memory_store = getattr(_TOOL_CONTEXT, "_memory_store", None)
+    if memory_store is None:
+        return ToolResult(
+            success=False,
+            content="No memory store available. Requires an active session.",
+        )
+
+    types = args.get("types")
+    concepts = args.get("concepts")
+    limit = args.get("limit", 20)
+    offset = args.get("offset", 0)
+    session_id = args.get("session_id")
+
+    observations = memory_store.query_observations(
+        types=types if isinstance(types, list) else None,
+        concepts=concepts if isinstance(concepts, list) else None,
+        limit=min(int(limit), 100),
+        offset=int(offset),
+        session_id=session_id or None,
+    )
+
+    if not observations:
+        return ToolResult(
+            success=True,
+            content="No observations found matching the given filters.",
+        )
+
+    from memory.observations import estimate_observation_tokens
+    economics = estimate_observation_tokens(observations)
+
+    lines = [
+        f"Observations ({len(observations)} total, ~{economics['estimated_tokens']} tokens):",
+        "",
+    ]
+    for obs in observations:
+        type_tag = f"[{obs.type}]"
+        title_str = obs.title or "(untitled)"
+        lines.append(f"#{obs.id} {type_tag} {title_str}")
+        if obs.narrative:
+            narrative_preview = obs.narrative[:200]
+            if len(obs.narrative) > 200:
+                narrative_preview += "..."
+            lines.append(f"   {narrative_preview}")
+        if obs.facts:
+            for fact in obs.facts[:5]:
+                lines.append(f"   • {fact}")
+            if len(obs.facts) > 5:
+                lines.append(f"   ... and {len(obs.facts) - 5} more facts")
+        if obs.files_modified:
+            lines.append(f"   Files: {', '.join(obs.files_modified[:5])}")
+        lines.append("")
+
+    return ToolResult(success=True, content="\n".join(lines))
+
+
+@_summarize("read_observations")
+def _read_observations_summary(args: dict) -> str:
+    types = args.get("types", "all")
+    return f"read_observations(types={types})"
+
+
 @_summarize("memory_core")
 def _memory_core_summary(args: dict) -> str:
     action = args.get("action", "?")

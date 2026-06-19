@@ -420,6 +420,12 @@ class MemoryStore:
                 "CREATE INDEX IF NOT EXISTS idx_fp_confidence"
                 " ON failure_patterns(confidence DESC)"
             )
+            # --- Structured observations (claude-mem inspired) ---
+            from memory.observations import ensure_observations_table
+            ensure_observations_table(conn)
+            # --- Session summaries (claude-mem inspired) ---
+            from memory.session_summaries import ensure_summaries_table
+            ensure_summaries_table(conn)
             conn.commit()
         except sqlite3.Error as e:
             warnings.warn(
@@ -627,6 +633,119 @@ class MemoryStore:
         except sqlite3.Error:
             warnings.warn("Failed to list project knowledge", stacklevel=2)
             return []
+
+    # ------------------------------------------------------------------
+    # Structured observations (claude-mem inspired)
+    # ------------------------------------------------------------------
+
+    def record_observation(
+        self,
+        *,
+        type: str = "other",
+        title: str | None = None,
+        subtitle: str | None = None,
+        narrative: str | None = None,
+        facts: list[str] | None = None,
+        concepts: list[str] | None = None,
+        files_read: list[str] | None = None,
+        files_modified: list[str] | None = None,
+        tool_name: str | None = None,
+        session_id: str | None = None,
+        prompt_number: int | None = None,
+    ) -> int | None:
+        """Store a structured observation. Returns id or None on dedup/error."""
+        from memory.observations import store_observation
+        conn = self._get_conn()
+        return store_observation(
+            conn,
+            type=type,
+            title=title,
+            subtitle=subtitle,
+            narrative=narrative,
+            facts=facts,
+            concepts=concepts,
+            files_read=files_read,
+            files_modified=files_modified,
+            tool_name=tool_name,
+            session_id=session_id,
+            prompt_number=prompt_number,
+        )
+
+    def query_observations(
+        self,
+        *,
+        types: list[str] | None = None,
+        concepts: list[str] | None = None,
+        limit: int = 50,
+        offset: int = 0,
+        session_id: str | None = None,
+    ) -> list:
+        """Query observations with optional filtering."""
+        from memory.observations import query_observations
+        conn = self._get_conn()
+        return query_observations(
+            conn,
+            types=types,
+            concepts=concepts,
+            limit=limit,
+            offset=offset,
+            session_id=session_id,
+        )
+
+    def count_observations(self) -> int:
+        """Return total observation count."""
+        from memory.observations import count_observations
+        conn = self._get_conn()
+        return count_observations(conn)
+
+    # ------------------------------------------------------------------
+    # Session summaries (claude-mem inspired)
+    # ------------------------------------------------------------------
+
+    def store_session_summary(
+        self,
+        *,
+        session_id: str,
+        project: str | None = None,
+        prompt_number: int | None = None,
+        request: str | None = None,
+        investigated: str | None = None,
+        learned: str | None = None,
+        completed: str | None = None,
+        next_steps: str | None = None,
+        files_read: list[str] | None = None,
+        files_edited: list[str] | None = None,
+        notes: str | None = None,
+    ) -> int | None:
+        """Store a session summary. Returns id or None on error."""
+        from memory.session_summaries import store_summary
+        conn = self._get_conn()
+        return store_summary(
+            conn,
+            session_id=session_id,
+            project=project,
+            prompt_number=prompt_number,
+            request=request,
+            investigated=investigated,
+            learned=learned,
+            completed=completed,
+            next_steps=next_steps,
+            files_read=files_read,
+            files_edited=files_edited,
+            notes=notes,
+        )
+
+    def get_recent_summaries(self, limit: int = 5, project: str | None = None) -> list:
+        """Get most recent session summaries."""
+        from memory.session_summaries import get_recent_summaries
+        conn = self._get_conn()
+        return get_recent_summaries(conn, limit=limit, project=project)
+
+    def get_most_recent_summary(self, project: str | None = None):
+        """Get the single most recent session summary."""
+        from memory.session_summaries import get_most_recent_summary
+        conn = self._get_conn()
+        return get_most_recent_summary(conn, project=project)
 
     def write_handoff(
         self, changes: str, pending: str = "", modified_files: str = "",

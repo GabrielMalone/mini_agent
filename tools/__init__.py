@@ -191,6 +191,152 @@ _CACHEABLE = frozenset({
 })
 _TOOL_TIMEOUT = 120  # P3.1: per-tool execution timeout (seconds)
 
+# --- Auto-observation capture (claude-mem inspired) ---
+# Tools in this set automatically generate structured observations on success.
+# These are tools that meaningfully modify state or produce notable output.
+_AUTO_OBSERVE_TOOLS = frozenset({
+    "write_file",
+    "edit_file",
+    "run_shell",       # may run git, tests, lint, etc.
+    "web_search",      # discoveries from web research
+    "remember",        # explicit knowledge capture
+})
+
+# Map tool name -> default observation type for auto-capture
+_AUTO_OBSERVE_TYPE: dict[str, str] = {
+    "write_file": "refactor",
+    "edit_file": "bugfix",
+    "run_shell": "other",
+    "web_search": "discovery",
+    "remember": "discovery",
+}
+
+
+def _auto_capture_observation(
+    tool_name: str,
+    args: dict,
+    result: ToolResult,
+) -> None:
+    """Auto-record a structured observation after a tool succeeds.
+
+    Runs synchronously (tool dispatch already blocks on the tool), but
+    failures are logged and never surfaced to the agent.
+    """
+    memory_store = getattr(_TOOL_CONTEXT, "_memory_store", None)
+    if memory_store is None:
+        return
+
+    obs_type = _AUTO_OBSERVE_TYPE.get(tool_name, "other")
+
+    # Build a title from the tool call
+    title = _build_observation_title(tool_name, args, result)
+
+    # Build a narrative from the result
+    narrative = _build_observation_narrative(tool_name, args, result)
+
+    # Extract file paths
+    files_read, files_modified = _extract_observation_files(tool_name, args)
+
+    # Extract concepts from the tool + args
+    concepts = _extract_observation_concepts(tool_name, args)
+
+    # Get session context
+    session_id = getattr(_TOOL_CONTEXT, "scratchpad_path", None)
+    if session_id:
+        import os
+        session_id = os.path.basename(session_id).replace(".db", "")
+
+    memory_store.record_observation(
+        type=obs_type,
+        title=title,
+        narrative=narrative,
+        files_read=files_read,
+        files_modified=files_modified,
+        concepts=concepts,
+        tool_name=tool_name,
+        session_id=session_id,
+    )
+
+
+def _build_observation_title(
+    tool_name: str, args: dict, result: ToolResult,
+) -> str:
+    """Build a compact title from the tool call."""
+    if tool_name == "write_file":
+        path = args.get("path", "?")
+        return f"Wrote {path}"
+    elif tool_name == "edit_file":
+        path = args.get("path", "?")
+        return f"Edited {path}"
+    elif tool_name == "run_shell":
+        cmd = args.get("command", "?")
+        return f"Ran: {cmd[:80]}"
+    elif tool_name == "web_search":
+        query = args.get("query", "?")
+        return f"Searched: {query[:80]}"
+    elif tool_name == "remember":
+        topic = args.get("topic", "?")
+        return f"Remembered: {topic[:80]}"
+    else:
+        return f"Called {tool_name}"
+
+
+def _build_observation_narrative(
+    tool_name: str, args: dict, result: ToolResult,
+) -> str | None:
+    """Build a narrative description from the result."""
+    # Use first line of result content as narrative
+    first_line = result.content.split("\n")[0][:300] if result.content else ""
+    if not first_line:
+        return None
+    return first_line
+
+
+def _extract_observation_files(
+    tool_name: str, args: dict,
+) -> tuple[list[str], list[str]]:
+    """Extract file paths read and modified from the tool call."""
+    files_read: list[str] = []
+    files_modified: list[str] = []
+
+    path = args.get("path", "") if isinstance(args, dict) else ""
+    paths = args.get("paths", []) if isinstance(args, dict) else []
+
+    if tool_name in ("write_file", "edit_file"):
+        if path:
+            files_modified.append(path)
+    elif tool_name == "read_file":
+        if path:
+            files_read.append(path)
+        if isinstance(paths, list):
+            files_read.extend(paths)
+
+    return files_read, files_modified
+
+
+def _extract_observation_concepts(
+    tool_name: str, args: dict,
+) -> list[str]:
+    """Extract relevant concepts/tags from the tool call."""
+    concepts: list[str] = []
+
+    if tool_name == "run_shell":
+        cmd = args.get("command", "")
+        if "git" in cmd:
+            concepts.append("version-control")
+        if "pytest" in cmd or "test" in cmd:
+            concepts.append("testing")
+        if "pip" in cmd or "npm" in cmd or "yarn" in cmd:
+            concepts.append("dependencies")
+        if "ruff" in cmd or "lint" in cmd or "mypy" in cmd:
+            concepts.append("linting")
+    elif tool_name == "web_search":
+        concepts.append("research")
+    elif tool_name in ("write_file", "edit_file"):
+        concepts.append("code-change")
+
+    return concepts
+
 
 def add_modified_file(path: str) -> None:
     """Record a file as modified (thread-safe). Used by write_file/edit_file."""
@@ -785,6 +931,17 @@ def execute_tool(
     # (count even failed calls — they indicate the agent tried to use the tool)
     with _TOOL_USAGE_LOCK:
         _TOOL_USAGE_COUNT[name] = _TOOL_USAGE_COUNT.get(name, 0) + 1
+
+    # --- Auto-capture structured observations (claude-mem inspired) ---
+    # For state-modifying tools that succeed, automatically record a
+    # structured observation. This builds a searchable, cross-session
+    # memory of discoveries, decisions, bugfixes, and refactors without
+    # requiring the agent to manually call record_observation.
+    if result.success and name in _AUTO_OBSERVE_TOOLS:
+        try:
+            _auto_capture_observation(name, args, result)
+        except Exception:
+            _log.warning("auto-capture observation failed for %s", name, exc_info=True)
 
     return result
 

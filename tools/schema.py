@@ -608,6 +608,141 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "record_observation",
+            "description": "Record a structured observation about a tool call, discovery, or decision. Observations are typed (bugfix, discovery, decision, refactor, other), tagged with concepts, linked to files, and persist across sessions. Content-based deduplication prevents duplicates. Use this to remember important discoveries, design decisions, bugfixes, and patterns. Provide 'narrative' (paragraph) or 'facts' (bullet points), or both.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "description": "Observation type: 'bugfix', 'discovery', 'decision', 'refactor', or 'other'."
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "Short title summarizing this observation."
+                    },
+                    "subtitle": {
+                        "type": "string",
+                        "description": "Optional subtitle with additional context."
+                    },
+                    "narrative": {
+                        "type": "string",
+                        "description": "Paragraph narrative describing what happened and why it matters."
+                    },
+                    "facts": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Bullet-point facts extracted from this observation."
+                    },
+                    "concepts": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Tags/concepts for filtering (e.g. 'architecture', 'performance', 'security')."
+                    },
+                    "files_read": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "File paths that were read."
+                    },
+                    "files_modified": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "File paths that were modified."
+                    },
+                    "tool_name": {
+                        "type": "string",
+                        "description": "Name of the tool that triggered this observation (if auto-captured)."
+                    }
+                },
+                "required": ["type"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "write_session_summary",
+            "description": "Write a structured session summary for cross-session continuity. The summary is injected into future sessions so the agent picks up where it left off. Canonical fields: request (what the user asked for), investigated (what was explored), learned (key discoveries), completed (what was accomplished), next_steps (what remains). Also supports files_read and files_edited lists.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "request": {
+                        "type": "string",
+                        "description": "What the user asked for this session."
+                    },
+                    "investigated": {
+                        "type": "string",
+                        "description": "What was looked into / explored."
+                    },
+                    "learned": {
+                        "type": "string",
+                        "description": "Key discoveries and insights gained."
+                    },
+                    "completed": {
+                        "type": "string",
+                        "description": "What was accomplished / delivered."
+                    },
+                    "next_steps": {
+                        "type": "string",
+                        "description": "What remains to be done."
+                    },
+                    "files_read": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Files that were read during the session."
+                    },
+                    "files_edited": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Files that were edited during the session."
+                    },
+                    "notes": {
+                        "type": "string",
+                        "description": "Optional additional notes for the next session."
+                    }
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_observations",
+            "description": "Query structured observations from the session database. Filter by type (bugfix, discovery, decision, refactor, other), concepts (tags), or session_id. Returns observations ordered by recency with token economics. Use this to review past discoveries, decisions, or bugfixes.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "types": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Filter by observation types (e.g. ['discovery', 'decision'])."
+                    },
+                    "concepts": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Filter by concepts/tags (e.g. ['architecture', 'performance'])."
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max results to return (default 20, max 100)."
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "Pagination offset (default 0)."
+                    },
+                    "session_id": {
+                        "type": "string",
+                        "description": "Filter by specific session ID."
+                    }
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "fetch_url",
             "description": "Fetch a web page URL and return its text content (truncated). Supports text/html and text/plain content types. Use this to read documentation, API references, or any web page.",
             "parameters": {
