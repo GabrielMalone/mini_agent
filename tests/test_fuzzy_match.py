@@ -251,12 +251,14 @@ class TestFindClosestLines(unittest.TestCase):
 # preservation, confidence scoring, read-before-edit
 # ---------------------------------------------------------------------------
 
-from tools.file_ops import (
+from tools._file_utils import (
     _normalize_quotes,
     _normalize_unicode_whitespace,
     _canonicalize_for_match,
-    _preserve_indentation,
     _READ_FILES,
+)
+from tools._edit_ops import (
+    _preserve_indentation,
 )
 
 
