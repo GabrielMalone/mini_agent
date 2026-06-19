@@ -1935,7 +1935,6 @@ html, body {
   border-color: rgb(var(--accent-rgb) / 0.12);
   box-shadow: 0 0 6px rgb(var(--accent-rgb) / 0.02);
 }
-}
 /* Code blocks -- smooth appearance */
 .shiki-block {
   animation: fadeIn 0.4s ease-out;
