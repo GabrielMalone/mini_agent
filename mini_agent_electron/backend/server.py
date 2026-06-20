@@ -304,13 +304,12 @@ class AgentRunner:
         status["subagent_running"] = self._running_subagent_count
         status["subagent_total"] = self._total_subagents
 
-        # Plan state
+        # Plan state — always send so stale plans don't linger in the UI
         from tools import _TOOL_CONTEXT
         plan_steps = getattr(_TOOL_CONTEXT, "_plan_steps", [])
-        if plan_steps:
-            plan_done = getattr(_TOOL_CONTEXT, "_plan_done", set())
-            status["plan_steps"] = list(plan_steps)
-            status["plan_done"] = sorted(plan_done)
+        plan_done = getattr(_TOOL_CONTEXT, "_plan_done", set())
+        status["plan_steps"] = list(plan_steps) if plan_steps else []
+        status["plan_done"] = sorted(plan_done) if plan_done else []
 
         send_msg(status)
 

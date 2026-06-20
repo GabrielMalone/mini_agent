@@ -194,9 +194,12 @@ def _extract_facts(
         conversation_snippet=conversation_snippet
     )
 
+    # Use an isolated Session (not the main agent's connection pool) to
+    # avoid connection collision when consolidation fires mid-turn.
     import requests
+    _session = requests.Session()
     try:
-        resp = requests.post(
+        resp = _session.post(
             f"{api_base}/chat/completions",
             json={
                 "model": consolidation_model,
@@ -229,6 +232,8 @@ def _extract_facts(
                 pass
         log_error_trace("consolidation_extract", error_detail)
         return None
+    finally:
+        _session.close()
 
 
 # ---------------------------------------------------------------------------

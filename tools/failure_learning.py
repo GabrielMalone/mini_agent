@@ -495,6 +495,30 @@ class FailurePatternStore:
             except sqlite3.Error:
                 return {"total_patterns": 0, "high_confidence_patterns": 0, "top_tools": []}
 
+    def get_all_patterns_for_seeding(self) -> dict[str, int]:
+        """Return {tool_name:fingerprint: failure_count} for seeding in-memory cache.
+
+        Used at session init to restore failure counts from the persistent store
+        so _learn_from_failure doesn't reset escalation state each session.
+        """
+        with self._lock:
+            try:
+                conn = self._get_conn()
+                rows = conn.execute(
+                    "SELECT tool_name, error_fingerprint, failure_count"
+                    " FROM failure_patterns"
+                    " WHERE failure_count > 0"
+                    " ORDER BY last_seen DESC LIMIT 200",
+                ).fetchall()
+
+                result: dict[str, int] = {}
+                for tool_name, fingerprint, count in rows:
+                    key = f"{tool_name}:{fingerprint}"
+                    result[key] = max(result.get(key, 0), count)
+                return result
+            except sqlite3.Error:
+                return {}
+
 
 # ---------------------------------------------------------------------------
 # Self-critique: post-turn failure analysis
@@ -1094,6 +1118,36 @@ class MistakeNotebook:
                 }
             except sqlite3.Error:
                 return {"total_entries": 0, "accepted_entries": 0}
+
+    def get_dynamic_hints(
+        self, min_confidence: float | None = None,
+    ) -> dict[str, dict[str, str]]:
+        """Export accepted notebook entries as a _FAILURE_PATTERNS-compatible dict.
+
+        Returns {tool_name: {fingerprint: fix_strategy}} for all entries
+        with confidence >= *min_confidence* (default: _NOTEBOOK_ACCEPTANCE_CONFIDENCE).
+
+        These feed into the real-time hint injection in _learn_from_failure,
+        so dynamically learned fixes augment the hardcoded _FAILURE_PATTERNS dict.
+        """
+        threshold = min_confidence or _NOTEBOOK_ACCEPTANCE_CONFIDENCE
+        with self._lock:
+            try:
+                conn = self._get_conn()
+                rows = conn.execute(
+                    "SELECT tool_name, error_fingerprint, generalized_fix"
+                    " FROM mistake_notebook"
+                    " WHERE confidence >= ? AND generalized_fix != ''"
+                    " ORDER BY confidence DESC",
+                    (threshold,),
+                ).fetchall()
+
+                result: dict[str, dict[str, str]] = {}
+                for tool_name, fingerprint, fix in rows:
+                    result.setdefault(tool_name, {})[fingerprint] = fix
+                return result
+            except sqlite3.Error:
+                return {}
 
 
 # ---------------------------------------------------------------------------

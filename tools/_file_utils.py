@@ -283,23 +283,60 @@ _FILE_CACHE_MAX = 50
 # and auto-complete it.
 # ---------------------------------------------------------------------------
 
+# Words that indicate a "read/observe" step rather than a "write/create" step.
+# Auto-advance skips steps that start with these verbs, since the trigger is a
+# file write/edit -- a "Read" step shouldn't auto-complete from a write action.
+_AUTO_ADVANCE_READ_VERBS = frozenset({
+    "read", "review", "inspect", "check", "examine", "audit",
+    "look", "view", "open", "browse", "scan", "search",
+})
+
+_AUTO_ADVANCE_MIN_MATCH_WORDS = 2  # require at least 2 step-words in the haystack
+
+
 def _auto_advance_plan(file_path: str, edit_text: str = "") -> None:
-    """Check plan steps against file_path and edit_text; auto-complete matches."""
+    """Check plan steps against file_path and edit_text; auto-complete matches.
+
+    To avoid false positives, each step must have at least
+    *{_AUTO_ADVANCE_MIN_MATCH_WORDS}* of its content-words
+    appear as *whole words* (on word boundaries) in the combined
+    file-path + edit-text haystack.  Steps whose first word is a
+    "read" verb (e.g. "Read config.py") are skipped entirely
+    because a write/edit trigger cannot logically complete a
+    read-only step.
+    """
     steps = getattr(_TOOL_CONTEXT, "_plan_steps", None)
     done = getattr(_TOOL_CONTEXT, "_plan_done", None)
     if not steps or done is None:
         return
-    # Build set of words from the file path + edit text
-    haystack = (file_path + " " + edit_text).lower()
+    # Build a set of *whole* tokens from the file path + edit text.
+    # Split on non-alphanumeric boundaries so "main" won't false-match
+    # inside "domain.py".
+    import re as _re
+    _token_pat = _re.compile(r"[a-zA-Z0-9]+")
+    haystack_tokens = set(_token_pat.findall((file_path + " " + edit_text).lower()))
     incomplete_indices = [i for i, _ in enumerate(steps) if i not in done]
     for idx in incomplete_indices:
         step_text = steps[idx].lower()
-        # Tokenise the step into meaningful words (2+ chars, skip very common words)
-        words = {w for w in step_text.split() if len(w) >= 4}
-        if not words:
-            # Fallback: use the whole step text as one token
-            words = {step_text}
-        if any(w in haystack for w in words):
+        step_tokens = _token_pat.findall(step_text)
+        if not step_tokens:
+            continue
+        # Skip read-only / inspection steps
+        if step_tokens[0] in _AUTO_ADVANCE_READ_VERBS:
+            continue
+        # Collect meaningful content words (4+ chars, skip first word which
+        # is typically the action verb).
+        content_words = [w for w in step_tokens[1:] if len(w) >= 4]
+        if not content_words:
+            # Fallback: use all tokens except the first
+            content_words = step_tokens[1:] if len(step_tokens) > 1 else step_tokens
+        # Count how many content words appear in the haystack (whole-word match).
+        # Require at least _AUTO_ADVANCE_MIN_MATCH_WORDS matches, or all
+        # available content words if there are fewer (handles simple steps
+        # like "Create main.py" which only have 1 content word).
+        matched = sum(1 for w in content_words if w in haystack_tokens)
+        needed = min(_AUTO_ADVANCE_MIN_MATCH_WORDS, len(content_words))
+        if matched >= needed:
             done.add(idx)
     _TOOL_CONTEXT._plan_done = done
     if incomplete_indices and any(i in done for i in incomplete_indices):

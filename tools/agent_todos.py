@@ -158,14 +158,23 @@ def _write_scratchpad_summary(args: dict) -> str:
 
 @_register("plan")
 def _plan(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
-    """Declare a structured task plan."""
+    """Declare a structured task plan. Pass an empty steps list to clear."""
     steps = args["steps"]
-    if not isinstance(steps, list) or not steps:
+    if not isinstance(steps, list):
         return ToolResult(
             success=False,
-            content="Plan must have at least one step.",
-            hint="Provide a non-empty array of step descriptions.",
+            content="'steps' must be an array.",
+            hint="Provide an array of step descriptions, or an empty array to clear.",
         )
+    # Empty list -> clear the current plan
+    if not steps:
+        had_plan = bool(getattr(_TOOL_CONTEXT, "_plan_steps", []))
+        _TOOL_CONTEXT._plan_steps = []
+        _TOOL_CONTEXT._plan_done = set()
+        _TOOL_CONTEXT._plan_last_advanced_turn = 0
+        _maybe_persist_plan()
+        msg = "Plan cleared." if had_plan else "No plan was active."
+        return ToolResult(success=True, content=msg)
     _MAX_PLAN_STEPS = 15
     if len(steps) > _MAX_PLAN_STEPS:
         return ToolResult(

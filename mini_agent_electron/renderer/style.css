@@ -903,6 +903,61 @@ html, body {
 .bot-menu-start { color: #22c55e; }
 .bot-menu-stop  { color: #ef4444; }
 
+/* Plan menu (popup on plan indicator click) */
+.plan-menu {
+  position: fixed;
+  z-index: 999;
+  background: var(--bg2, #1e2030);
+  border: 1px solid var(--border, #2a2d3f);
+  border-radius: 6px;
+  padding: 8px 0;
+  min-width: 280px;
+  max-width: 420px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+  font-size: 11px;
+}
+.plan-menu-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 6px;
+  border-bottom: 1px solid var(--border, #2a2d3f);
+  margin-bottom: 4px;
+  color: #5865F2;
+  font-weight: 600;
+  font-size: 11px;
+}
+.plan-menu-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 10px;
+  color: var(--text-dim, #6b7080);
+  transition: background 0.15s;
+}
+.plan-menu-item:hover {
+  background: var(--hover, #2a2d3f);
+}
+.plan-menu-item.plan-current {
+  color: var(--text, #c8ccd4);
+  background: var(--hover, #2a2d3f);
+}
+.plan-menu-item.plan-done {
+  color: #22c55e;
+  opacity: 0.65;
+}
+.plan-menu-marker {
+  flex-shrink: 0;
+  width: 14px;
+  text-align: center;
+  font-size: 11px;
+  padding-top: 1px;
+}
+.plan-menu-text {
+  line-height: 1.4;
+  word-break: break-word;
+}
+
 /* Live indicator pulsing dot */
 .live-dot { animation: pulse-dot 1.5s ease-in-out infinite; }
 @keyframes pulse-dot {

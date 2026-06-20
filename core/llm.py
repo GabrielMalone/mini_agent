@@ -665,6 +665,22 @@ def _tool_execution_phase(
     all_results = deferred_stream_results + tool_results
     _record_tool_sequence_to_graph(all_results)
 
+    # --- SelfCritique: post-turn failure analysis ---
+    # Inject corrective context when multiple failures occur in a turn
+    # or when failures persist across consecutive turns.
+    try:
+        sc = getattr(_TOOL_CONTEXT, "_self_critique", None)
+        if sc is not None:
+            critique = sc.assess_turn_results(all_results, turn_count)
+            if critique:
+                messages.append({
+                    "role": "user",
+                    "content": critique,
+                    "_transient": True,
+                })
+    except Exception:
+        pass  # Self-critique is best-effort, never blocks the main loop
+
     _save_turn_summary(turn_count, msg, tool_results, messages)
     return True  # continue the turn loop
 
@@ -794,7 +810,7 @@ def run_agent_turn(
                     msg["_turn_count"] = turn_count
                 messages.append(msg)
                 _save_turn_summary(turn_count, msg, [], messages)
-                # _run_consolidation(messages, config)  # disabled: causes API connection collision + cost surge
+                _run_consolidation(messages, config)
                 return msg
 
             # ----- phase 3: tool execution -----
@@ -828,7 +844,7 @@ def run_agent_turn(
                     storm_msg_dict["_turn_count"] = turn_count
                 return storm_msg_dict
 
-            # _run_consolidation(messages, config)  # disabled: causes API connection collision + cost surge
+            _run_consolidation(messages, config)
 
             # --- Track consecutive read-only turns ---
             _write_tools = {"write_file", "edit_file", "run_shell"}

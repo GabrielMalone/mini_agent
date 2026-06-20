@@ -323,7 +323,14 @@ def _learn_from_failure(name: str, result: "ToolResult | None") -> None:
     patterns[key] = count
 
     # --- Inject same-turn recovery hint ---
-    recovery = _FAILURE_PATTERNS.get(name, {}).get(fingerprint)
+    # Check dynamically learned patterns first (from MistakeNotebook distillation),
+    # then fall back to the hardcoded _FAILURE_PATTERNS dict.
+    recovery = None
+    dynamic = getattr(_TOOL_CONTEXT, "_dynamic_failure_patterns", None)
+    if dynamic:
+        recovery = dynamic.get(name, {}).get(fingerprint)
+    if not recovery:
+        recovery = _FAILURE_PATTERNS.get(name, {}).get(fingerprint)
     if recovery and count >= 2:
         if result.hint:
             result.hint += "\nRecovery: " + recovery

@@ -13,6 +13,9 @@ export default function StatusBar({
   const [botMenuOpen, setBotMenuOpen] = useState(false);
   const botMenuToggleRef = useRef(null);
   const [botMenuPos, setBotMenuPos] = useState(null);
+  const [planMenuOpen, setPlanMenuOpen] = useState(false);
+  const planMenuToggleRef = useRef(null);
+  const [planMenuPos, setPlanMenuPos] = useState(null);
 
   const handleBotToggle = useCallback(async (botName) => {
     const api = window.miniAgent;
@@ -62,17 +65,78 @@ export default function StatusBar({
     return () => document.removeEventListener('click', close);
   }, [botMenuOpen]);
 
+  // Position the plan menu relative to the plan indicator
+  useEffect(() => {
+    if (!planMenuOpen || !planMenuToggleRef.current) {
+      setPlanMenuPos(null);
+      return;
+    }
+    const rect = planMenuToggleRef.current.getBoundingClientRect();
+    const menuW = 320;
+    let left = rect.left;
+    if (left + menuW > window.innerWidth - 8) {
+      left = Math.max(4, window.innerWidth - menuW - 8);
+    }
+    setPlanMenuPos({
+      bottom: window.innerHeight - rect.top + 4,
+      left,
+    });
+  }, [planMenuOpen]);
+
+  // Close plan menu on outside click
+  useEffect(() => {
+    if (!planMenuOpen) return;
+    const close = (e) => {
+      if (!e.target.closest('.plan-menu') && !e.target.closest('.plan-indicator')) {
+        setPlanMenuOpen(false);
+      }
+    };
+    document.addEventListener('click', close);
+    return () => document.removeEventListener('click', close);
+  }, [planMenuOpen]);
+
   return (
     <div id="status-bar" className="status-bar dim">
       <span id="git-status">
         {gitBranch && (<><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.5" className="icon-sm"><path d="M3 4v6a2 2 0 0 0 2 2h2M7 12l-2-2 2-2M11 5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM3 4.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"/></svg>{gitBranch}{gitDirty ? '*' : ''}</>)}
       </span>
-      {planSteps && planSteps.length > 0 && (
-        <span className="plan-indicator" title={planSteps.map((s, i) => `${planDone.includes(i) ? '✓' : '○'} ${s}`).join('\n')}>
-          <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="1.5" className="icon-sm"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M5.5 8l2 2 3-4"/></svg>
-          {planDone.length}/{planSteps.length}
-        </span>
-      )}
+      {planSteps && planSteps.length > 0 && (() => {
+        const doneSet = new Set(planDone);
+        let current = planSteps.length;
+        for (let i = 0; i < planSteps.length; i++) {
+          if (!doneSet.has(i)) { current = i + 1; break; }
+        }
+        const allDone = current === planSteps.length && doneSet.has(planSteps.length - 1);
+        const label = allDone ? 'Done' : `Plan ${current}/${planSteps.length}`;
+        return (
+          <>
+            <span
+              className={`plan-indicator clickable${planMenuOpen ? ' plan-open' : ''}`}
+              ref={planMenuToggleRef}
+              title="View plan steps"
+              onClick={() => setPlanMenuOpen((p) => !p)}
+            >
+              <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="1.5" className="icon-sm"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M5.5 8l2 2 3-4"/></svg>
+              {label}
+            </span>
+            {planMenuOpen && planMenuPos && (
+              <div className="plan-menu" style={planMenuPos} onClick={(e) => e.stopPropagation()}>
+                <div className="plan-menu-header">Plan</div>
+                {planSteps.map((step, i) => {
+                  const done = doneSet.has(i);
+                  const isCurrent = i + 1 === current && !allDone;
+                  return (
+                    <div key={i} className={`plan-menu-item${isCurrent ? ' plan-current' : ''}${done ? ' plan-done' : ''}`}>
+                      <span className="plan-menu-marker">{done ? '\u2713' : '\u25cb'}</span>
+                      <span className="plan-menu-text">{step}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        );
+      })()}
       <span className="bot-indicators" ref={botMenuToggleRef}>
         <span
           className="discord-label clickable"

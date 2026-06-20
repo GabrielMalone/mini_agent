@@ -121,6 +121,17 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
         fps.init_schema()
         sc = SelfCritique()
         set_context(_failure_pattern_store=fps, _self_critique=sc)
+
+        # Seed in-memory failure counts from the persistent store so
+        # _learn_from_failure doesn't start from zero each session.
+        # This allows same-turn escalation hints to carry over across
+        # session boundaries and multiple turns.
+        try:
+            seed_patterns = fps.get_all_patterns_for_seeding()
+            if seed_patterns:
+                _TOOL_CONTEXT._failure_patterns = seed_patterns
+        except Exception:
+            pass  # Non-critical, in-memory counts will build fresh if needed
     except Exception:
         pass  # Self-learning is best-effort, never blocks startup
 

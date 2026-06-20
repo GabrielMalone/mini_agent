@@ -102,6 +102,11 @@ class AgentContext:
     # -- Failure pattern learning (in-memory) --
     _failure_patterns: dict = field(default_factory=dict)
 
+    # -- Dynamic failure patterns fed from MistakeNotebook distillation --
+    # Populated by _inject_pre_execution_context; checked by _learn_from_failure
+    # before falling back to the hardcoded _FAILURE_PATTERNS dict.
+    _dynamic_failure_patterns: dict | None = None
+
 
 _TOOL_CONTEXT_VAR: contextvars.ContextVar[AgentContext] = contextvars.ContextVar(
     "tool_context", default=AgentContext()

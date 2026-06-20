@@ -972,7 +972,7 @@ def _inject_plan_status(messages: list[dict]) -> None:
     # --- Plan staleness detection ---
     turn_count = getattr(_TOOL_CONTEXT, "_turn_count", 0)
     last_advanced = getattr(_TOOL_CONTEXT, "_plan_last_advanced_turn", 0)
-    _PLAN_STALE_TURNS = 3
+    _PLAN_STALE_TURNS = 5
     stale_turns = turn_count - last_advanced
     if len(plan_done) < len(plan_steps) and stale_turns >= _PLAN_STALE_TURNS:
         lines.append(
@@ -1456,6 +1456,36 @@ def _inject_experience_context(
                 "content": ctx_msg,
                 "_transient": True,
             })
+
+        # --- Auto-inject recent observations from the current session ---
+        # So the agent benefits from past discoveries without manually
+        # calling read_observations.
+        try:
+            recent_obs = memory_store.query_observations(
+                limit=5,
+                session_id=getattr(_TOOL_CONTEXT, "_session_id", None),
+            )
+            if recent_obs:
+                obs_lines = ["RECENT OBSERVATIONS (from this session):"]
+                for obs in recent_obs:
+                    type_tag = f"[{obs.type}]"
+                    title_str = obs.title or "(untitled)"
+                    obs_lines.append(f"  #{obs.id} {type_tag} {title_str}")
+                    if obs.narrative:
+                        preview = obs.narrative[:150]
+                        if len(obs.narrative) > 150:
+                            preview += "..."
+                        obs_lines.append(f"    {preview}")
+                obs_msg = "\n".join(obs_lines)
+                # Only inject if different from what we just injected
+                if not ctx_msg or obs_msg not in ctx_msg:
+                    messages.append({
+                        "role": "user",
+                        "content": obs_msg,
+                        "_transient": True,
+                    })
+        except Exception:
+            pass  # Best-effort, observations are non-critical
     except (AttributeError, KeyError, ValueError, TypeError):
         pass
 
@@ -1546,6 +1576,17 @@ def _inject_pre_execution_context(
                     "content": notebook_ctx,
                     "_transient": True,
                 })
+
+            # --- Feed dynamically learned fixes into real-time hints ---
+            # After distillation, export high-confidence notebook entries
+            # into _TOOL_CONTEXT._dynamic_failure_patterns so
+            # _learn_from_failure can use them for same-turn correction.
+            try:
+                dynamic_hints = mn.get_dynamic_hints()
+                if dynamic_hints:
+                    _TOOL_CONTEXT._dynamic_failure_patterns = dynamic_hints
+            except Exception:
+                pass
 
         # --- 3. Tool graph: read-before-write detection ---
         tg = getattr(_TOOL_CONTEXT, "_tool_graph", None)

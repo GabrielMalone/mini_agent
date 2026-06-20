@@ -990,7 +990,9 @@ def _edit_lines(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolRes
         from tools.search_ops import _reindex_file
         _reindex_file(resolved, wg.workspace_root)
 
-    _auto_advance_plan(resolved)
+    # Build edit_text from new_text fields for auto-advance matching
+    _edit_text = " ".join(e.get("new_text", "") for e in edits)
+    _auto_advance_plan(resolved, _edit_text)
 
     added = len(updated_lines) - len(lines)
     label = "s" if len(edits) != 1 else ""

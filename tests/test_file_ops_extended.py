@@ -231,11 +231,27 @@ class TestPlan(unittest.TestCase):
         self.assertIn("[2] step two", result.content)
         self.assertIn("[3] step three", result.content)
 
-    def test_empty_steps_rejected(self):
+    def test_empty_steps_clears_plan(self):
+        # First, create a plan
+        execute_tool(
+            _make_tool_call("plan", steps=["step one", "step two"]),
+            self.write_gate, self.read_gate,
+        )
+        self.assertEqual(len(_TOOL_CONTEXT._plan_steps), 2)
+        # Now clear it with an empty steps list
         tc = _make_tool_call("plan", steps=[])
         result = execute_tool(tc, self.write_gate, self.read_gate)
-        self.assertFalse(result.success)
-        self.assertIn("at least one step", result.content.lower())
+        self.assertTrue(result.success)
+        self.assertIn("cleared", result.content.lower())
+        self.assertEqual(_TOOL_CONTEXT._plan_steps, [])
+        self.assertEqual(_TOOL_CONTEXT._plan_done, set())
+
+    def test_empty_steps_noop_when_no_plan(self):
+        """Clearing when no plan is active reports 'No plan was active'."""
+        tc = _make_tool_call("plan", steps=[])
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertTrue(result.success)
+        self.assertIn("no plan", result.content.lower())
 
     def test_non_list_steps_rejected(self):
         tc = _make_tool_call("plan", steps="not a list")
@@ -387,6 +403,47 @@ class TestPlan(unittest.TestCase):
         result = execute_tool(tc, self.write_gate, self.read_gate)
         self.assertTrue(result.success)
         self.assertEqual(_TOOL_CONTEXT._plan_done, set(), "No step should auto-complete")
+
+    def test_auto_advance_read_verb_skipped(self):
+        """Auto-advance skips steps whose first word is a read verb."""
+        execute_tool(
+            _make_tool_call("plan", steps=["Read config.py", "Edit config.py"]),
+            self.write_gate, self.read_gate,
+        )
+        filepath = os.path.join(self.workspace, "config.py")
+        tc = _make_tool_call("write_file", path=filepath, content="# updated")
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertTrue(result.success)
+        # Step 1 ("Read config.py") should NOT auto-complete from a write
+        self.assertNotIn(0, _TOOL_CONTEXT._plan_done,
+                        "Read-verb step should not auto-complete on write")
+
+    def test_auto_advance_substring_no_false_match(self):
+        """Whole-word matching prevents 'main' matching inside 'domain.py'."""
+        execute_tool(
+            _make_tool_call("plan", steps=["Create main.py", "Verify output"]),
+            self.write_gate, self.read_gate,
+        )
+        filepath = os.path.join(self.workspace, "domain.py")
+        tc = _make_tool_call("write_file", path=filepath, content="# domain")
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertTrue(result.success)
+        # 'main' is a substring of 'domain' but should NOT match (whole-word)
+        self.assertNotIn(0, _TOOL_CONTEXT._plan_done,
+                        "'main' should not substring-match inside 'domain.py'")
+
+    def test_auto_advance_single_content_word_still_works(self):
+        """A step like 'Create main.py' (1 content word) should still auto-advance."""
+        execute_tool(
+            _make_tool_call("plan", steps=["Create main.py"]),
+            self.write_gate, self.read_gate,
+        )
+        filepath = os.path.join(self.workspace, "main.py")
+        tc = _make_tool_call("write_file", path=filepath, content="# main")
+        result = execute_tool(tc, self.write_gate, self.read_gate)
+        self.assertTrue(result.success)
+        self.assertIn(0, _TOOL_CONTEXT._plan_done,
+                      "Single content-word step should still auto-advance")
 
 
 # ---------------------------------------------------------------------------
