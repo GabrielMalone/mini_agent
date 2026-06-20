@@ -595,28 +595,25 @@ class TestCacheThreadSafety:
 
     def test_cache_hit_counts_accurate_under_contention(self):
         """Cache hit/miss counters should be consistent under parallel access."""
-        from tools import _TOOL_CACHE, _TOOL_CACHE_HITS, _TOOL_CACHE_MISSES, _TOOL_CACHE_LOCK
-        from tools import _CACHEABLE
+        import tools as tmod
 
         # Directly exercise the locked cache
-        with _TOOL_CACHE_LOCK:
-            _TOOL_CACHE.clear()
-            initial_hits = _TOOL_CACHE_HITS
-            initial_misses = _TOOL_CACHE_MISSES
+        with tmod._TOOL_CACHE_LOCK:
+            tmod._TOOL_CACHE.clear()
 
         hit_events = []
         miss_events = []
 
         def cache_worker(key: str, should_hit: bool):
-            with _TOOL_CACHE_LOCK:
-                if key in _TOOL_CACHE:
-                    _TOOL_CACHE_HITS += 1  # type: ignore[unreachable]
+            with tmod._TOOL_CACHE_LOCK:
+                if key in tmod._TOOL_CACHE:
+                    tmod._TOOL_CACHE_HITS += 1
                     hit_events.append(True)
                 else:
-                    _TOOL_CACHE_MISSES += 1  # type: ignore[unreachable]
+                    tmod._TOOL_CACHE_MISSES += 1
                     miss_events.append(True)
                     if should_hit:
-                        _TOOL_CACHE[key] = (time.monotonic(), ToolResult(True, "ok"))
+                        tmod._TOOL_CACHE[key] = (time.monotonic(), ToolResult(True, "ok"))
 
         with ThreadPoolExecutor(max_workers=8) as pool:
             # First wave: all misses, populate cache
