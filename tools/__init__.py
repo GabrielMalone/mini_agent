@@ -99,6 +99,7 @@ _TOOL_SUMMARIES: dict[str, callable] = {}
 # Cache: dispatch function signature inspection (P0.1 perf)
 # Maps tool name -> bool (whether dispatch fn accepts on_output kwarg)
 _DISPATCH_SIGNATURES: dict[str, bool] = {}
+_DISPATCH_SIGNATURES_LOCK = threading.Lock()
 
 # ---------------------------------------------------------------------------
 # Agent context -- extracted to tools/context.py (re-exported for backward compat)
