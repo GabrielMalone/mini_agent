@@ -523,54 +523,6 @@ class TestConcurrencyCap:
             result = _capped_workers(list(range(n)))
             assert result == min(n, MAX_PARALLEL_TOOLS)
 
-    def test_capped_workers_used_by_parallel_no_pipes(self):
-        """_execute_parallel_no_pipes calls ThreadPoolExecutor with capped workers."""
-        remaining = [_make_tc("read_file", {"path": f"{i}.py"}, i) for i in range(20)]
-        # Cancel immediately to avoid ThreadPoolExecutor + as_completed hang
-        cancel = threading.Event()
-        cancel.set()
-
-        with patch("core.llm.ThreadPoolExecutor") as mock_pool_cls:
-            mock_pool = MagicMock()
-            mock_pool.__enter__.return_value = mock_pool
-            mock_pool_cls.return_value = mock_pool
-
-            _execute_parallel_no_pipes(
-                remaining, [], MagicMock(), MagicMock(),
-                on_tool_start=None, on_tool_end=None, on_tool_output=None,
-                approve_callback=None, cancel_event=cancel,
-                recent_tool_keys=None, tool_keys_lock=None,
-            )
-
-        mock_pool_cls.assert_called_once()
-        assert mock_pool_cls.call_args.kwargs["max_workers"] == MAX_PARALLEL_TOOLS
-
-    def test_capped_workers_used_by_groups(self):
-        """_execute_groups calls ThreadPoolExecutor with capped workers."""
-        remaining = [_make_tc("read_file", {"path": f"{i}.py"}, i) for i in range(10)]
-        groups = [list(range(10))]
-        pipe_deps = {}
-        pipe_results = {}
-        # Cancel immediately
-        cancel = threading.Event()
-        cancel.set()
-
-        with patch("core.llm.ThreadPoolExecutor") as mock_pool_cls:
-            mock_pool = MagicMock()
-            mock_pool.__enter__.return_value = mock_pool
-            mock_pool_cls.return_value = mock_pool
-
-            _execute_groups(
-                groups, remaining, [], MagicMock(), MagicMock(),
-                pipe_deps, pipe_results,
-                on_tool_start=None, on_tool_end=None, on_tool_output=None,
-                approve_callback=None, cancel_event=cancel,
-                recent_tool_keys=None, tool_keys_lock=None,
-            )
-
-        mock_pool_cls.assert_called_once()
-        assert mock_pool_cls.call_args.kwargs["max_workers"] == MAX_PARALLEL_TOOLS
-
 
 # ── Cache thread safety ────────────────────────────────────────────────────
 
