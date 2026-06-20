@@ -307,7 +307,7 @@ const ShellInput = forwardRef(function ShellInput({
         shellKeymap,
         autocompletion({ override: [shellCompletions] }),
         keymap.of([...defaultKeymap, ...historyKeymap]),
-        shellTheme(),
+        themeCompartment.current.of(shellTheme()),
         EditorState.transactionFilter.of((tr) => {
           if (disabledRef.current && tr.isUserEvent('input')) {
             return [];
