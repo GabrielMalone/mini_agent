@@ -1081,6 +1081,18 @@ class AgentRunner:
                 send_msg({"type": "shell_output", "lines": [f"(error: {e})"], "exit_code": -1, "command": shell_cmd})
             return
 
+        if cmd.startswith("/autocomplete "):
+            partial = command[len("/autocomplete "):].strip()
+            if not partial:
+                send_msg({"type": "autocomplete_result", "completions": []})
+                return
+            try:
+                completions = self._llm_autocomplete(partial)
+                send_msg({"type": "autocomplete_result", "completions": completions})
+            except Exception:
+                send_msg({"type": "autocomplete_result", "completions": []})
+            return
+
         if cmd == "/help":
             lines = [
                 "Available commands:",
