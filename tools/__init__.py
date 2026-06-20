@@ -748,9 +748,12 @@ def execute_tool(
     # Pass on_output to the tool if it accepts it (P0.1: cached signature check)
     accepts_on_output = _DISPATCH_SIGNATURES.get(name)
     if accepts_on_output is None:
-        import inspect
-        accepts_on_output = "on_output" in inspect.signature(dispatch).parameters
-        _DISPATCH_SIGNATURES[name] = accepts_on_output
+        with _DISPATCH_SIGNATURES_LOCK:
+            accepts_on_output = _DISPATCH_SIGNATURES.get(name)
+            if accepts_on_output is None:
+                import inspect
+                accepts_on_output = "on_output" in inspect.signature(dispatch).parameters
+                _DISPATCH_SIGNATURES[name] = accepts_on_output
 
     # P3.1: Per-tool execution timeout via background thread
     # Using threading.Thread instead of ThreadPoolExecutor avoids
