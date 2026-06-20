@@ -68,8 +68,7 @@ function AppShell() {
   const [turnCost, setTurnCost] = useState('-');
   const [cacheHitRate, setCacheHitRate] = useState(null);
   const [subagentRunning, setSubagentRunning] = useState(0);
-  const [planSteps, setPlanSteps] = useState([]);
-  const [planDone, setPlanDone] = useState([]);
+  // plan UI removed — plan feature doesn't work
 
   // Theme hook (extracted)
   const {
