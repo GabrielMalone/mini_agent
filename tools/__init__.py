@@ -764,17 +764,6 @@ def execute_tool(
     def _run_and_capture():
         _t0 = _time.monotonic()
         try:
-            # --- Git checkpoint before risky operations (Dirac-inspired) ---
-            if name in ("write_file", "edit_file", "run_shell"):
-                try:
-                    from core.checkpoint import checkpoint_before_risky
-                    checkpoint_before_risky(
-                        write_gate.workspace_root,
-                        f"pre-{name}",
-                    )
-                except Exception:
-                    pass  # checkpoint is best-effort; never block the tool
-
             if accepts_on_output:
                 _result_container.append(dispatch(args, write_gate, read_gate, on_output=on_output))
             else:

@@ -472,11 +472,11 @@ class TestEditFileCheckpointIntegration(unittest.TestCase):
         )
         self.assertTrue(result.success)
 
-        # Checkpoint should be 1 (the dirty hello.py was committed)
-        self.assertEqual(cm.checkpoint_count(), 1)
+        # Auto-checkpoint removed; no checkpoint from edit_file
+        self.assertEqual(cm.checkpoint_count(), 0)
 
-    def test_two_writes_same_turn_single_checkpoint(self):
-        """Two write_file calls in same turn → only first triggers checkpoint."""
+    def test_two_writes_same_turn_no_auto_checkpoint(self):
+        """Two write_file calls in same turn → no auto-checkpoints created."""
         from tools import execute_tool
 
         cm = get_checkpoint_manager(self.workspace)
@@ -506,7 +506,7 @@ class TestEditFileCheckpointIntegration(unittest.TestCase):
             self.read_gate,
         )
         self.assertTrue(r1.success)
-        self.assertEqual(cm.checkpoint_count(), 1, "First write should create checkpoint")
+        self.assertEqual(cm.checkpoint_count(), 0, "Auto-checkpoint removed; no checkpoint expected")
 
         # Second write in same turn — NO new checkpoint
         execute_tool(
@@ -530,7 +530,7 @@ class TestEditFileCheckpointIntegration(unittest.TestCase):
             self.read_gate,
         )
         self.assertTrue(r2.success)
-        self.assertEqual(cm.checkpoint_count(), 1, "Second write in same turn should NOT create another checkpoint")
+        self.assertEqual(cm.checkpoint_count(), 0, "No auto-checkpoints; still zero after second write")
 
 
 # ---------------------------------------------------------------------------

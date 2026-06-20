@@ -349,9 +349,8 @@ class TestExecuteToolCheckpointIntegration(unittest.TestCase):
             self.read_gate,
         )
         self.assertTrue(result.success)
-        # Checkpoint should have been created (captured the dirty existing.py)
-        self.assertEqual(cm.checkpoint_count(), 1)
-        self.assertIn("pre-write_file", cm.list_checkpoints()[0]["message"])
+        # Auto-checkpoint has been removed; write_file no longer creates checkpoints
+        self.assertEqual(cm.checkpoint_count(), 0)
 
     def test_edit_file_triggers_checkpoint(self):
         """edit_file should trigger a git checkpoint."""
@@ -552,11 +551,13 @@ class TestRestoreFileWithCheckpoint(unittest.TestCase):
             self.read_gate,
         )
         self.assertTrue(result.success)
-        self.assertIn("git checkpoint", result.content)
+        # No auto-checkpoint; restore falls back to session backup (original 0.9, not 1.0)
+        self.assertIn("backup", result.content)
 
         with open(config_path) as f:
             content = f.read()
-        self.assertIn("VERSION = \"1.0\"", content)
+        # Backup system captures the *first* write's original state (0.9)
+        self.assertIn("VERSION = '0.9'", content)
 
 
 if __name__ == "__main__":
