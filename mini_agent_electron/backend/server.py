@@ -27,17 +27,22 @@ Protocol (Python -> Electron):
 from __future__ import annotations
 
 import json
-import fcntl
 import os
-import pty
 import re
-import select
 import struct
 import subprocess
 import sys
-import termios
 import threading
 import time
+
+# Unix-only modules (not available on Windows).  Guarded here so the import
+# doesn't crash the backend at module-load time.  They are used only inside
+# _run_shell_pty() which has its own Windows fallback.
+if sys.platform != "win32":
+    import fcntl
+    import pty
+    import select
+    import termios
 
 # ---------------------------------------------------------------------------
 # Windows: force UTF-8 for all I/O.  Without this, Python defaults to the
