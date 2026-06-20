@@ -422,7 +422,6 @@ const ShellInput = forwardRef(function ShellInput({
   }, [showGhost, placeholder]);
 
   // -- ghost text (dimmed text shown when input is empty) -------------------
-  const showGhost = focused && value === '' && ghostText && !disabled;
 
   return (
     <div style={{ position: 'relative', flex: 1 }}>
