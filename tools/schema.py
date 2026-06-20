@@ -1610,4 +1610,30 @@ TOOLS = [
             }
         }
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "rename_symbol",
+            "description": "Renames ALL occurrences of a symbol (function, class, method, or variable) inside the specified files or directories. Uses tree-sitter AST to identify symbols precisely -- more accurate than a simple search-and-replace because it understands Python and TypeScript language structure. For renaming tasks, strongly prefer this as the first pass.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "existing_symbol": {
+                        "type": "string",
+                        "description": "The exact name of the symbol to be renamed."
+                    },
+                    "new_symbol": {
+                        "type": "string",
+                        "description": "The new name for the symbol."
+                    },
+                    "paths": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "An array of relative paths to the directories or files to perform the rename in."
+                    }
+                },
+                "required": ["existing_symbol", "new_symbol", "paths"]
+            }
+        }
+    },
 ]

@@ -20,7 +20,7 @@ import os
 import re
 from typing import Any, Optional
 
-from core.anchor_manager import AnchorStateManager, format_line_with_anchor
+from core.anchor_manager import AnchorStateManager, format_line_for_model
 from core.symbol_context_resolver import resolve_symbol_context
 from core.tree_sitter_parser import _get_parser_for_ext, _TREE_SITTER_AVAILABLE
 
@@ -890,3 +890,171 @@ def _get_extended_range(
             break
 
     return start_index, end_index, start_line
+
+
+# ---------------------------------------------------------------------------
+# rename_symbol (Dirac-style AST-guided rename)
+# ---------------------------------------------------------------------------
+
+
+def rename_symbol(
+    file_path: str,
+    existing_name: str,
+    new_name: str,
+) -> tuple[int, int]:
+    """Rename all occurrences of *existing_name* to *new_name* using AST.
+
+    Walks the tree-sitter AST to find every identifier node whose text
+    matches *existing_name*, then replaces them bottom-up in the source.
+
+    Args:
+        file_path: Absolute path to the source file.
+        existing_name: Exact symbol name to rename.
+        new_name: New name to use.
+
+    Returns:
+        (occurrences_renamed, occurrences_found) tuple.
+    """
+    ext = os.path.splitext(file_path)[1].lower()
+    parser = _get_parser_for_ext(ext)
+
+    if parser is None:
+        # Fall back to regex-based rename when tree-sitter isn't available
+        return _rename_symbol_regex(file_path, existing_name, new_name)
+
+    try:
+        with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+            source = f.read()
+    except (OSError, UnicodeDecodeError):
+        return 0, 0
+
+    if not source.strip():
+        return 0, 0
+
+    try:
+        tree = parser.parse(source.encode("utf-8"))
+    except Exception:
+        return 0, 0
+
+    # Collect all identifier nodes matching existing_name
+    occurrences: list[dict[str, Any]] = []
+    source_bytes = source.encode("utf-8")
+
+    def _walk_node(node: Any, depth: int = 0):
+        if node.type == "identifier":
+            name_text = source_bytes[node.start_byte : node.end_byte].decode("utf-8")
+            if name_text == existing_name:
+                # Determine context: definition, call, attribute, or plain reference
+                parent = node.parent
+                context = "reference"
+                if parent:
+                    ptype = parent.type
+                    if ptype in (
+                        "function_definition", "class_definition",
+                        "method_definition",
+                    ):
+                        # Only count as definition if this is the actual name child
+                        if parent.child_by_field_name("name") is node:
+                            context = "definition"
+                    elif ptype in ("call",):
+                        func_node = parent.child_by_field_name("function")
+                        if func_node is node:
+                            context = "call"
+                        elif func_node and func_node.type == "attribute":
+                            # obj.method() -- the attribute's last child is the method name
+                            attr_last = func_node.named_children
+                            if attr_last and attr_last[-1] is node:
+                                context = "call_method"
+
+                occurrences.append({
+                    "start_byte": node.start_byte,
+                    "end_byte": node.end_byte,
+                    "start_line": node.start_point[0] + 1,
+                    "context": context,
+                })
+            return  # identifiers have no named children to walk
+
+        # Generic TS/JS patterns handled separately
+        if node.type in ("property_identifier", "shorthand_property_identifier"):
+            name_text = source_bytes[node.start_byte : node.end_byte].decode("utf-8")
+            if name_text == existing_name:
+                occurrences.append({
+                    "start_byte": node.start_byte,
+                    "end_byte": node.end_byte,
+                    "start_line": node.start_point[0] + 1,
+                    "context": "property",
+                })
+            return
+
+        for child in node.children:
+            _walk_node(child, depth + 1)
+
+    _walk_node(tree.root_node)
+
+    if not occurrences:
+        return 0, len(occurrences)
+
+    # Sort by start_byte descending for safe in-place replacement
+    occurrences.sort(key=lambda o: o["start_byte"], reverse=True)
+
+    modified = source
+    renamed_count = 0
+    for occ in occurrences:
+        start_byte = occ["start_byte"]
+        end_byte = occ["end_byte"]
+        name_text = source_bytes[start_byte:end_byte].decode("utf-8")
+        # Re-validate: source may have shifted but byte offsets are in original
+        if name_text == existing_name:
+            modified = modified[:start_byte] + new_name + modified[end_byte:]
+            renamed_count += 1
+
+    try:
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(modified)
+    except OSError:
+        return renamed_count, len(occurrences)
+
+    # Invalidate anchor state for this file
+    AnchorStateManager.clear_state(file_path)
+
+    return renamed_count, len(occurrences)
+
+
+def _rename_symbol_regex(
+    file_path: str,
+    existing_name: str,
+    new_name: str,
+) -> tuple[int, int]:
+    """Regex-based fallback for rename_symbol when tree-sitter is unavailable.
+
+    Uses word-boundary matching to replace symbol names in source files.
+    Less precise than AST-based renaming but works without tree-sitter.
+    """
+    try:
+        with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+            source = f.read()
+    except (OSError, UnicodeDecodeError):
+        return 0, 0
+
+    if not source.strip():
+        return 0, 0
+
+    # Count occurrences before replacing
+    pattern = re.compile(r"\b" + re.escape(existing_name) + r"\b")
+    matches = list(pattern.finditer(source))
+    found_count = len(matches)
+
+    if found_count == 0:
+        return 0, 0
+
+    # Replace all
+    modified = pattern.sub(new_name, source)
+
+    try:
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(modified)
+    except OSError:
+        return 0, found_count
+
+    AnchorStateManager.clear_state(file_path)
+    return found_count, found_count

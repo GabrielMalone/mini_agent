@@ -487,3 +487,117 @@ def _replace_symbol_summary(args: dict) -> str:
     if replacements:
         return f"replace_symbol({len(replacements)} replacement(s))"
     return f"replace_symbol({args.get('path', '?')}, {args.get('symbol', '?')})"
+
+
+# ---------------------------------------------------------------------------
+# rename_symbol
+# ---------------------------------------------------------------------------
+
+
+@_register("rename_symbol")
+def _rename_symbol(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
+    """Rename ALL occurrences of a symbol inside specified files or directories.
+
+    Uses tree-sitter AST to identify symbols precisely -- more accurate than
+    a simple search-and-replace because it understands Python/TypeScript
+    language structure.
+
+    Args:
+        existing_symbol: Exact name of the symbol to rename.
+        new_symbol: New name for the symbol.
+        paths: Array of file or directory paths to rename in.
+    """
+    from tools.ast_ops import rename_symbol
+    from tools import add_modified_file, clear_tool_cache
+
+    existing_symbol = args.get("existing_symbol", "")
+    new_symbol = args.get("new_symbol", "")
+
+    if not existing_symbol or not new_symbol:
+        return ToolResult(
+            success=False,
+            content="Both 'existing_symbol' and 'new_symbol' are required.",
+        )
+
+    paths = args.get("paths", [])
+    if isinstance(paths, str):
+        paths = [paths]
+    if not paths:
+        return ToolResult(
+            success=False,
+            content="'paths' must be a non-empty array of file or directory paths.",
+        )
+
+    # Expand directories to files
+    expanded_files: list[str] = []
+    for p in paths:
+        # Safety check
+        safety_result = wg.check(p)
+        resolved = safety_result.resolved_path
+        if os.path.isdir(resolved):
+            for root, _dirs, files in os.walk(resolved):
+                for f in files:
+                    ext = os.path.splitext(f)[1].lower()
+                    if ext in (".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"):
+                        expanded_files.append(os.path.join(root, f))
+        elif os.path.isfile(resolved):
+            ext = os.path.splitext(resolved)[1].lower()
+            if ext in (".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"):
+                expanded_files.append(resolved)
+
+    if not expanded_files:
+        return ToolResult(
+            success=False,
+            content=f"No source files found in: {paths}",
+        )
+
+    results: list[str] = []
+    total_files = 0
+    total_occurrences = 0
+    total_renamed = 0
+
+    for file_path in expanded_files:
+        # Safety check
+        safety_result = wg.check(file_path)
+        if not safety_result.allowed:
+            results.append(f"[SKIP] {file_path}: blocked: {safety_result.reason}")
+            continue
+
+        try:
+            renamed_count, found_count = rename_symbol(
+                file_path, existing_symbol, new_symbol
+            )
+        except Exception as e:
+            results.append(f"[FAIL] {file_path}: error: {e}")
+            continue
+
+        if found_count > 0:
+            total_files += 1
+            total_occurrences += found_count
+            total_renamed += renamed_count
+            add_modified_file(file_path)
+            results.append(
+                f"[OK] {file_path}: renamed {renamed_count} of {found_count} "
+                f"occurrence(s) of '{existing_symbol}' -> '{new_symbol}'"
+            )
+        else:
+            results.append(f"[--] {file_path}: no occurrences of '{existing_symbol}'")
+
+    clear_tool_cache()
+
+    summary = (
+        f"Renamed '{existing_symbol}' -> '{new_symbol}' across "
+        f"{total_files} file(s): {total_renamed}/{total_occurrences} occurrence(s)."
+    )
+
+    return ToolResult(success=True, content=summary + "\n\n" + "\n".join(results))
+
+
+@_summarize("rename_symbol")
+def _rename_symbol_summary(args: dict) -> str:
+    return (
+        f"rename_symbol("
+        f"'{args.get('existing_symbol', '?')}' -> "
+        f"'{args.get('new_symbol', '?')}', "
+        f"paths={args.get('paths', [])})"
+    )

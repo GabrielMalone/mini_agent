@@ -486,6 +486,10 @@ CORE_TOOLS: list[str] = [
     "todo_read",
     "plan",
     "plan_status",
+    # AST/code-structure tools
+    "get_file_skeleton",
+    "get_function",
+    "replace_symbol",
 ]
 
 
