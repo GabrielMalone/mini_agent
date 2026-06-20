@@ -8,7 +8,7 @@
 :root {
   --font-family: 'JetBrains Mono', 'Cascadia Code', 'Cascadia Mono', 'Consolas',
                   'SF Mono', 'Fira Code', 'Menlo', 'DejaVu Sans Mono',
-                  'Segoe UI Variable', 'Segoe UI', system-ui, monospace;
+                  monospace;
   --font-size: 13px;
   --line-height: 1.5;
 }
