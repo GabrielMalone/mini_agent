@@ -400,7 +400,7 @@ class AgentRunner:
                 session_name = m.group(1)
         status = {
             "type": "status",
-            "model": self.config.model,
+            "model": fast_model,
             "provider": getattr(self.config, 'api_provider', 'deepseek'),
             "workspace": self.workspace,
             "session_name": session_name,
