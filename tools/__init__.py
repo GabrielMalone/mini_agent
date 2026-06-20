@@ -785,11 +785,10 @@ def execute_tool(
     _sys.stderr.flush()
     _t_dispatch_start = _time.monotonic()
     _t_start = _time.monotonic()
-    # Set the module-level cancel event so tool functions like _run_shell
+    # Set the per-thread cancel event so tool functions like _run_shell
     # can detect cancellation and stop blocking on subprocess I/O.
-    global _CURRENT_CANCEL_EVENT
-    _prev_cancel = _CURRENT_CANCEL_EVENT
-    _CURRENT_CANCEL_EVENT = cancel_event
+    # ContextVar propagates to child threads and is isolated per parallel tool.
+    _cancel_token = _CURRENT_CANCEL_EVENT.set(cancel_event)
     try:
         t = threading.Thread(target=_run_and_capture, daemon=True)
         t.start()
