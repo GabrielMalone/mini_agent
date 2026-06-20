@@ -13,6 +13,9 @@ contextBridge.exposeInMainWorld('miniAgent', {
   // Send slash command
   command: (cmd) => ipcRenderer.invoke('backend:command', cmd),
 
+  // Get LLM-powered shell command completions
+  autocomplete: (text) => ipcRenderer.invoke('backend:autocomplete', text),
+
   // Cancel current turn
   cancel: () => ipcRenderer.invoke('backend:cancel'),
 
