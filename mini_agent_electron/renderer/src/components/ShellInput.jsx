@@ -62,7 +62,8 @@ function shellTheme() {
       boxShadow: 'none !important',
     },
     '.cm-cursor': {
-      borderLeftColor: v.accent,
+      borderLeftWidth: '2px',
+      borderLeftColor: v.text,
     },
     '.cm-selectionBackground': {
       backgroundColor: `${v.accent}33 !important`,
