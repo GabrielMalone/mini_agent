@@ -35,10 +35,19 @@ function shellTheme() {
       backgroundColor: v.bg,
       color: v.text,
       caretColor: v.accent,
+      outline: 'none',
+      border: 'none',
+    },
+    '&.cm-focused': {
+      outline: 'none',
+    },
+    '.cm-scroller': {
+      outline: 'none',
     },
     '.cm-content': {
       fontFamily: `"${v.fontFamily}", monospace`,
       padding: '0 !important',
+      outline: 'none',
     },
     '.cm-line': {
       padding: '0 !important',
@@ -46,8 +55,9 @@ function shellTheme() {
     '.cm-placeholder': {
       color: v.dim,
       fontStyle: 'italic',
-      outline: 'none',
-      border: 'none',
+      outline: 'none !important',
+      border: 'none !important',
+      boxShadow: 'none !important',
     },
     '.cm-cursor': {
       borderLeftColor: v.accent,
