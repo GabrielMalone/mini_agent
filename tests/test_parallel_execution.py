@@ -133,7 +133,9 @@ class TestExtractPipeDeps:
             _make_tc_with_pipe("write_file", {"path": "b.py"}, pipe_from=0, idx=1),
         ]
         deps, results = _extract_pipe_deps(remaining)
-        assert deps == {1: (0, "path")}
+        # into_param is "" when not specified; _apply_pipe auto-detects the first
+        # string parameter at substitution time.
+        assert deps == {1: (0, "")}
         assert results == {}
         # _pipe should be stripped
         tc1_args = json.loads(remaining[1]["function"]["arguments"])
