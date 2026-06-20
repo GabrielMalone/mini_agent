@@ -912,9 +912,10 @@ def execute_tool(
     if result.success and name in _WRITE_TOOLS:
         file_path = args.get("path", "") if isinstance(args, dict) else ""
         if file_path and file_path in _TOOL_CACHE_PATH_MAP:
-            for key in list(_TOOL_CACHE_PATH_MAP.get(file_path, ())):
-                _TOOL_CACHE.pop(key, None)
-            _TOOL_CACHE_PATH_MAP.pop(file_path, None)
+            with _TOOL_CACHE_LOCK:
+                for key in list(_TOOL_CACHE_PATH_MAP.get(file_path, ())):
+                    _TOOL_CACHE.pop(key, None)
+                _TOOL_CACHE_PATH_MAP.pop(file_path, None)
 
     # --- Post-edit auto-verification: run LSP diagnostics after file writes ---
     # LSP connections use subprocess pipes + per-connection locks, so they are
