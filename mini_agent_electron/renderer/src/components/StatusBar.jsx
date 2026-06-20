@@ -63,36 +63,6 @@ export default function StatusBar({
     return () => document.removeEventListener('click', close);
   }, [botMenuOpen]);
 
-  // Position the plan menu relative to the plan indicator
-  useEffect(() => {
-    if (!planMenuOpen || !planMenuToggleRef.current) {
-      setPlanMenuPos(null);
-      return;
-    }
-    const rect = planMenuToggleRef.current.getBoundingClientRect();
-    const menuW = 320;
-    let left = rect.left;
-    if (left + menuW > window.innerWidth - 8) {
-      left = Math.max(4, window.innerWidth - menuW - 8);
-    }
-    setPlanMenuPos({
-      bottom: window.innerHeight - rect.top + 4,
-      left,
-    });
-  }, [planMenuOpen]);
-
-  // Close plan menu on outside click
-  useEffect(() => {
-    if (!planMenuOpen) return;
-    const close = (e) => {
-      if (!e.target.closest('.plan-menu') && !e.target.closest('.plan-indicator')) {
-        setPlanMenuOpen(false);
-      }
-    };
-    document.addEventListener('click', close);
-    return () => document.removeEventListener('click', close);
-  }, [planMenuOpen]);
-
   return (
     <div id="status-bar" className="status-bar dim">
       <span id="git-status">
