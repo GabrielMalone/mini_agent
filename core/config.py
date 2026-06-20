@@ -242,9 +242,11 @@ class AgentConfig:
 
     api_provider: str = DEFAULT_API_PROVIDER  # "deepseek" or "claude"
     model: str = DEFAULT_MODEL
+    # DEPRECATED: sub-agent system removed in commit 25d41eb
     sub_agent_model: str = DEFAULT_SUB_AGENT_MODEL
-    sub_agent_api_key: str = DEFAULT_API_KEY  # separate key for sub-agents
+    sub_agent_api_key: str = DEFAULT_API_KEY
     sub_agent_max_concurrent: int = DEFAULT_SUB_AGENT_MAX_CONCURRENT
+    sub_agent_max_turns: int = DEFAULT_SUB_AGENT_MAX_TURNS
     api_key: str = DEFAULT_API_KEY
     api_url: str = DEFAULT_API_URL
     workspace: str = ""
@@ -255,7 +257,6 @@ class AgentConfig:
     max_messages: int = DEFAULT_MAX_MESSAGES
     max_tokens: int = DEFAULT_MAX_TOKENS
     context_window: int = DEFAULT_CONTEXT_WINDOW  # memory budget for pruning; defaults to provider context window
-    sub_agent_max_turns: int = DEFAULT_SUB_AGENT_MAX_TURNS
     temperature: float = 0.0
     frequency_penalty: float = 0.3
     presence_penalty: float = 0.1

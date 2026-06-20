@@ -97,7 +97,7 @@ def main() -> None:
         _flush_boot_log()
         sys.exit(1)
 
-    # Clear sub-agent callback to avoid Electron noise
+    # Clear any stale sub-agent callback (system removed in 25d41eb)
     try:
         from tools import _TOOL_CONTEXT
         _TOOL_CONTEXT._subagent_callback = None

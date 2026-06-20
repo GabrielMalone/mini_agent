@@ -131,6 +131,7 @@ class TestFileReservationConcurrency(unittest.TestCase):
 # 3. Coordination patterns with real AgentRuntime
 # ---------------------------------------------------------------------------
 
+@unittest.skip("Sub-agent system removed in commit 25d41eb")
 class TestCoordinationPatternsEndToEnd(unittest.TestCase):
     """Test fan_out, fan_in, barrier with real AgentRuntime and threads."""
 
@@ -209,6 +210,7 @@ class TestCoordinationPatternsEndToEnd(unittest.TestCase):
 # 4. Pipeline ordering
 # ---------------------------------------------------------------------------
 
+@unittest.skip("Sub-agent system removed in commit 25d41eb")
 class TestPipelineOrdering(unittest.TestCase):
     """Verify pipeline stages execute in order."""
 
@@ -290,6 +292,7 @@ class TestAutoExtend(unittest.TestCase):
 # 6. Stale agent GC
 # ---------------------------------------------------------------------------
 
+@unittest.skip("Sub-agent system removed in commit 25d41eb")
 class TestStaleAgentGC(unittest.TestCase):
     """Verify stale agent threads from previous sessions are cleaned up."""
 
@@ -339,6 +342,7 @@ class TestStaleAgentGC(unittest.TestCase):
 # 7. Agent handoff inbox delivery (via append_inbox)
 # ---------------------------------------------------------------------------
 
+@unittest.skip("Sub-agent system removed in commit 25d41eb")
 class TestAgentHandoffInbox(unittest.TestCase):
     """Verify agent_handoff messages are delivered and readable via inbox."""
 
@@ -415,6 +419,7 @@ class TestAgentHandoffInbox(unittest.TestCase):
 # 8. Sub-agent recursion guard
 # ---------------------------------------------------------------------------
 
+@unittest.skip("Sub-agent system removed in commit 25d41eb")
 class TestSubAgentRecursion(unittest.TestCase):
     """Verify sub-agents can spawn sub-agents (recursive decomposition)."""
 

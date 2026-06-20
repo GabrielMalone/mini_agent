@@ -40,9 +40,12 @@
 - `core/symbol_context_resolver.py` -- tree-sitter context resolution for imports and class properties
   BFS shortest-path, subgraph, caller-finding. Wired into edit risk + post-edit verification.
 
-### Sub-Agent System
-- `agents/agent_runtime.py` -- sub-agent lifecycle, broadcast inbox, turn budgets
-- `agents/sub_agent.py` -- sub-agent engine, task delegation, result collection (806 lines)
+### Sub-Agent System (REMOVED in commit 25d41eb)
+The sub-agent/multi-agent system was removed. Files deleted:
+- `agents/agent_runtime.py`, `agents/sub_agent.py`, `agents/__init__.py`
+- `tools/agent_spawn.py`, `tools/agent_collect.py`, `tools/agent_messages.py`,
+  `tools/agent_patterns.py`, `tools/reservations.py`
+- `skills/agents/SKILL.md`
 
 ### API & Communication
 - `api.py` -- OpenAI/Anthropic API client. Flash/Pro routing, fallback chain, semantic cache integration.
@@ -70,13 +73,8 @@
 - `tools/shell_ops.py` -- run_shell, search_files, run_tests, verify. Dangerous command detection,
   _communicate_windows() for Windows subprocess safety.
 - `tools/search_ops.py` -- find_symbol, web_search, semantic_search
-- `tools/agent_spawn.py` -- spawn_agent, _spawn_one (1070 lines)
-- `tools/agent_collect.py` -- agent_status, collect_agent, collect_any (860 lines)
 - `tools/agent_ops.py` -- extend, cancel, wait, restore, session_stats, recall_turn, remember (1330 lines)
-- `tools/agent_messages.py` -- typed inter-agent messaging (handoff, fan-out/in, pipeline)
-- `tools/agent_patterns.py` -- fan_out, fan_in, pipeline, barrier, scatter_gather
 - `tools/context.py` -- AgentContext, _ContextProxy, _TOOL_CONTEXT, set_context
-- `tools/reservations.py` -- file reservation system (per-agent file locks)
 - `tools/result.py` -- ToolResult dataclass, JSON repair, error formatting
 - `tools/agent_todos.py` -- plan, plan_status, todo_write, todo_read
 - `tools/skills.py` -- Hermes-style skill discovery: SKILL.md files with YAML frontmatter.
@@ -144,9 +142,8 @@
 - Startup warmup: cmd.exe /c rem runs during bootstrap to absorb antivirus scan delay.
 - Bash path quoting: MSYS2 paths must be quoted when building bash wrapper commands.
 
-### Agent Ops Split (2026-06-14)
-- 3,880-line agent_ops.py monolith split: agent_spawn.py, agent_collect.py, agent_ops.py.
-  Cross-references updated in agent_patterns.py, test_comprehensive.py, etc.
+### Agent Ops Split (2026-06-14) — REVERSED in commit 25d41eb
+- The sub-agent system (agent_spawn.py, agent_collect.py, agent_patterns.py) was removed.
 
 ### Constants Consolidation (2026-06-14)
 - MEMORY_FILENAME, HTTP_CONNECT_TIMEOUT, HTTP_READ_TIMEOUT moved to core/constants.py
@@ -216,11 +213,8 @@
 ### Modify Shell / Processes
 - `tools/shell_ops.py` — run_shell, search_files, run_tests, verify
 
-### Modify Agent Orchestration
-- `tools/agent_spawn.py` — spawn_agent
-- `tools/agent_collect.py` — agent_status, collect_agent, collect_any
-- `tools/agent_patterns.py` — fan_out, fan_in, pipeline, barrier, scatter_gather
-- `agents/sub_agent.py` — sub-agent engine
+### Modify Agent Orchestration (REMOVED in commit 25d41eb)
+- The sub-agent orchestration system was removed.
 
 ### Modify Planning / Todos
 - `tools/agent_todos.py` — plan, plan_status, todo_write, todo_read

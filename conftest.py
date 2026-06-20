@@ -138,7 +138,7 @@ def make_mock_config(**overrides) -> object:
     """Create a lightweight mock config object with sensible test defaults.
 
     Pass any keyword argument to override a default field (e.g.
-    ``make_mock_config(sub_agent_max_turns=10)``).
+    ``make_mock_config(verbose=False)``).
     """
     defaults: dict = {
         "model": "test-model",
@@ -146,10 +146,6 @@ def make_mock_config(**overrides) -> object:
         "api_url": "https://test.api",
         "stream": False,
         "verbose": True,
-        "sub_agent_model": "test-model",
-        "sub_agent_api_key": "",
-        "sub_agent_max_concurrent": 5,
-        "sub_agent_max_turns": 5,
         "workspace": "/tmp",
         "unrestricted": False,
         "allow_overwrites": True,

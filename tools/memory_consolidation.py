@@ -50,17 +50,14 @@ def _get_memory_store() -> Any | None:
 def _get_consolidation_model(config: Any) -> str:
     """Pick a cheap model for consolidation.
 
-    Priority: CONSOLIDATION_MODEL env var > FAST_MODEL env var > sub_agent_model > main model.
+    Priority: CONSOLIDATION_MODEL env var > FAST_MODEL env var > main model > provider default.
     All models are assumed compatible with the configured provider.
     """
     import os
     env_model = os.environ.get("CONSOLIDATION_MODEL") or os.environ.get("FAST_MODEL")
     if env_model:
         return env_model
-    # Use sub_agent_model (cheaper worker model) if available, else main model, else provider default
-    sub = getattr(config, "sub_agent_model", "")
-    if sub:
-        return sub
+    # sub_agent_model removed (commit 25d41eb); fall through to main model
     model = getattr(config, "model", "")
     if model:
         return model

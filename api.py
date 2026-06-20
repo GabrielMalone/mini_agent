@@ -6,9 +6,9 @@ Provides ``call_llm()`` for non-streaming and streaming API
 requests, with provider dispatch for DeepSeek and Claude (via
 Anthropic's OpenAI-compatible endpoint).  Extracted from llm.py
 to break the circular dependency chain:
-llm.py -> tools -> agent_ops -> sub_agent -> llm.py.
+llm.py -> tools -> agent_ops -> llm.py.
 
-Both ``llm.py`` and ``sub_agent.py`` import from here -- no cycle.
+(NOTE: sub_agent.py was removed in commit 25d41eb.)
 """
 
 from __future__ import annotations

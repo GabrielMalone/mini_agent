@@ -496,8 +496,7 @@ def main() -> None:
     # http_session is intentionally not used -- requests.Session is not
     # thread-safe for concurrent use across Discord channels.
 
-    # We don't need the Electron sub-agent callback; clear it to avoid
-    # accidental Electron JSON-lines noise on stdout.
+    # Clear any stale sub-agent callback (system removed in 25d41eb)
     try:
         from tools import _TOOL_CONTEXT
         _TOOL_CONTEXT._subagent_callback = None

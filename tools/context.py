@@ -75,14 +75,16 @@ class AgentContext:
     _self_critique: object | None = None          # SelfCritique
     _tool_graph: object | None = None             # ToolGraph
     _mistake_notebook: object | None = None       # MistakeNotebook
-    _agent_runtime: object | None = None          # AgentRuntime (sub-agent orchestration)
-    _agent_config: object | None = None           # AgentConfig
-    _agent_depth: int = 0                          # recursion guard for sub-agents
+    # NOTE: _agent_runtime, _agent_config, _agent_depth, _subagent_callback
+    # are dead fields (sub-agent system removed in commit 25d41eb).
+    # Kept for backward compat — some code still references them.
+    _agent_runtime: object | None = None          # DEPRECATED: sub-agent orchestration removed
+    _agent_config: object | None = None           # DEPRECATED
+    _agent_depth: int = 0                          # DEPRECATED: recursion guard removed
     _read_gate: object | None = None              # ReadSafetyGate
     _provider: str = "deepseek"                    # API provider label
 
-    # -- Sub-agent callback (Electron IPC bridge) --
-    _subagent_callback: object | None = None  # callable | None
+    _subagent_callback: object | None = None  # DEPRECATED: Electron IPC bridge removed
 
     # -- Orchestration / verification state --
     _last_orch_state: str | None = None

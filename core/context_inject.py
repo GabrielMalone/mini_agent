@@ -313,17 +313,8 @@ def _inject_git_diff(
 
 
 def _inject_orchestration_context(messages: list[dict]) -> None:
-    """Inject sub-agent orchestration status ONLY when state changes.
-
-    Suppresses injection when nothing new happened since last turn:
-    - No new completions (pending_results unchanged)
-    - No new broadcast messages
-    - No auto-extensions performed
-    - Running set unchanged
-
-    This prevents ~500-1000 tokens of orchestration overhead per turn
-    when sub-agents are steadily working but nothing has completed yet.
-    """
+    """No-op: sub-agent orchestration system removed in commit 25d41eb."""
+    return  # keep call site intact; function body is dead code below
     try:
         runtime = getattr(_TOOL_CONTEXT, "_agent_runtime", None)
         if runtime is None:
@@ -967,15 +958,10 @@ def _inject_scratchpad_nudge(messages: list[dict], *, turn_count: int) -> None:
 
 
 def _inject_plan_status(messages: list[dict]) -> None:
-    """Inject active plan status if a plan is in progress and no sub-agents are running."""
+    """Inject active plan status if a plan is in progress."""
     plan_steps = _TOOL_CONTEXT._plan_steps
     if not plan_steps:
         return
-    # Suppress plan when sub-agents are running -- avoids confusion
-    runtime = getattr(_TOOL_CONTEXT, "_agent_runtime", None)
-    if runtime is not None:
-        if runtime.get_running_ids():
-            return
     plan_done = _TOOL_CONTEXT._plan_done
     lines = [f"Active plan ({len(plan_done)}/{len(plan_steps)} done):"]
     for i, s in enumerate(plan_steps, 1):
