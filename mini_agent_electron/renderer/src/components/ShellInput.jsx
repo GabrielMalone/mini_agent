@@ -5,6 +5,8 @@ import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { StreamLanguage } from '@codemirror/language';
 import { shell } from '@codemirror/legacy-modes/mode/shell';
 import { autocompletion } from '@codemirror/autocomplete';
+// NOTE: llmShellCompletions removed — LLM-based autocomplete returned incoherent
+// suggestions. Static /command completion (shellCompletions) is sufficient.
 
 // ---------------------------------------------------------------------------
 // Dynamic theme -- reads CSS custom properties at render time so the editor
