@@ -172,6 +172,8 @@ def _run_shell_pty(cmd: str, cwd: str, timeout: float = 30.0) -> tuple[str, int]
         env = os.environ.copy()
         env.setdefault("CLICOLOR_FORCE", "1")
         env.setdefault("FORCE_COLOR", "1")
+        env["PAGER"] = "cat"
+        env["GIT_PAGER"] = "cat"
         r = subprocess.run(
             cmd, shell=True, cwd=cwd, capture_output=True, text=True,
             timeout=timeout, env=env,
@@ -189,6 +191,10 @@ def _run_shell_pty(cmd: str, cwd: str, timeout: float = 30.0) -> tuple[str, int]
         env = os.environ.copy()
         env.setdefault("CLICOLOR_FORCE", "1")
         env.setdefault("FORCE_COLOR", "1")
+        # Disable pagers so tools like `git diff` don't hang waiting for
+        # input on a PTY whose stdin is /dev/null.
+        env["PAGER"] = "cat"
+        env["GIT_PAGER"] = "cat"
 
         # Set terminal window size so tools like `ls` format in columns.
         # Without this, the PTY defaults to 0 rows/cols and `ls` falls back
