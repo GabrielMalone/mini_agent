@@ -440,14 +440,15 @@ def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: 
                 timer.daemon = True; timer.start()
                 try:
                     # Poll t_out.join with short intervals so we can detect
-                    # cancellation (via the module-level _CURRENT_CANCEL_EVENT).
+                    # cancellation (via the per-thread _CURRENT_CANCEL_EVENT ContextVar).
                     # A single t_out.join(timeout=70) blocks the tool thread
                     # and prevents cancellation from working.
                     _poll_deadline = _time.monotonic() + timeout + 10
                     while t_out.is_alive() and _time.monotonic() < _poll_deadline:
-                        # Check module-level cancel event
+                        # Check per-thread cancel event
                         try:
-                            from tools import _CURRENT_CANCEL_EVENT as _cce
+                            from tools import _CURRENT_CANCEL_EVENT as _cce_var
+                            _cce = _cce_var.get()
                             if _cce is not None and _cce.is_set():
                                 kill_fired.set()
                                 _kill_process_tree_windows(proc)
