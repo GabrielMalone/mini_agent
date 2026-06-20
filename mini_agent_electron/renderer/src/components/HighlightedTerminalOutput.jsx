@@ -3,22 +3,163 @@ import { getHighlighter } from './CodeBlock';
 import AnsiBlock from './AnsiBlock';
 
 // ---------------------------------------------------------------------------
-// HighlightedTerminalOutput — Shiki syntax-highlighted terminal output
+// HighlightedTerminalOutput — syntax-highlighted terminal output
 //
-// Takes raw ANSI terminal output and a command string.  Strips ANSI codes,
-// guesses a language from the command args, runs Shiki highlighting, and
-// falls back to plain AnsiBlock when no language is detected or Shiki fails.
+// 1. ls -la / ll output → custom per-file-type coloring (dirs blue, exe green,
+//    symlinks cyan, devices yellow …)
+// 2. Shiki-detected language (from command args) → full syntax highlight
+// 3. Fallback → AnsiBlock (plain ANSI rendering)
 // ---------------------------------------------------------------------------
 
 // -- strip ANSI escape sequences --------------------------------------------
 
 function stripAnsi(text) {
   if (!text) return '';
-  // Remove ESC[...m and OSC sequences, but keep the underlying content
   return text
     .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
     .replace(/\x1b\].*?(\x1b\\|\x07)/g, '')
     .replace(/\x1b[PX^_].*?(\x1b\\|\x07)/g, '');
+}
+
+// -- ls -la output detection & highlighting ----------------------------------
+
+/**
+ * Match a single line of `ls -l` output, e.g.
+ *   drwxr-xr-x  12 user  staff   384 Jan 15 10:30 src
+ *   -rw-r--r--   1 user  staff  1234 Jan 15 10:28 README.md
+ *   lrwxr-xr-x   1 user  staff    10 Jan 15 10:29 link -> target
+ *
+ * Groups:
+ *   [1] file-type char  (d, -, l, c, b, p, s)
+ *   [2] permissions     (rwxr-xr-x etc.)
+ *   [3] rest of line    (link count, owner, group, size, date, name …)
+ */
+const LS_LINE_RE = /^([d\-lcbps])([r\-wxsStT]{9})(\s+.*)$/;
+
+function looksLikeLsOutput(text) {
+  if (!text) return false;
+  const lines = text.split('\n').filter(Boolean);
+  if (lines.length === 0) return false;
+
+  // Skip a leading "total N" line
+  let matchable = 0;
+  let matched = 0;
+  for (const line of lines) {
+    if (/^total\s+\d+/i.test(line.trim())) continue;
+    matchable++;
+    if (LS_LINE_RE.test(line)) matched++;
+  }
+  // At least half of non-total lines should look like `ls -l` rows
+  return matchable > 0 && matched / matchable >= 0.5;
+}
+
+// -- color helpers -----------------------------------------------------------
+
+const CSS = {
+  // permissions and metadata columns — muted
+  meta:   'color:#6a737d',
+  // file-type colors (mimic `ls --color=auto`)
+  dir:    'color:#569CD6;font-weight:bold',   // blue – directories
+  exe:    'color:#6A9955;font-weight:bold',   // green – executables (x bit set)
+  sym:    'color:#4EC9B0;font-weight:bold',   // cyan – symlinks
+  dev:    'color:#CE9178;font-weight:bold',   // orange – device files
+  broken: 'color:#F44747',                     // red – broken symlinks
+  normal: 'color:#D4D4D4',                    // default text
+};
+
+function colorizeLsLine(line) {
+  const m = line.match(LS_LINE_RE);
+  if (!m) {
+    // Non-matching line (e.g. "total 48") — render as-is, muted
+    return `<span style="${CSS.meta}">${esc(line)}</span>`;
+  }
+
+  const typeChar = m[1];
+  const perms    = m[2];
+  const rest     = m[3]; // includes leading spaces
+
+  // Parse the rest to separate metadata from filename
+  // Format: sp linkCount sp owner sp group sp size sp month sp day sp time/year sp name...
+  const restTrimmed = rest.trim();
+  const tokens = restTrimmed.split(/\s+/);
+
+  // We need at least: linkCount owner group size month day time name
+  if (tokens.length < 8) {
+    return `<span style="${CSS.normal}">${esc(line)}</span>`;
+  }
+
+  // The filename starts at token index 7 (0-based), but may include spaces
+  // if the filename itself contains spaces (rare in ls output but possible).
+  // Simpler: find where the date columns end.
+  // Columns: 0=links, 1=owner, 2=group, 3=size, 4=month, 5=day, 6=time/year
+  // Token 7+ = filename (may contain spaces if quoted, but ls doesn't quote)
+  const metaTokens = tokens.slice(0, 7); // links, owner, group, size, month, day, time
+  const nameTokens = tokens.slice(7);
+  let name = nameTokens.join(' ');
+
+  // Check for symlink arrow "-> target"
+  let linkTarget = '';
+  const arrowIdx = name.indexOf(' -> ');
+  if (arrowIdx !== -1) {
+    linkTarget = name.slice(arrowIdx + 4);
+    name = name.slice(0, arrowIdx);
+  }
+
+  // Determine file-type style
+  let nameStyle = CSS.normal;
+  if (typeChar === 'd') {
+    nameStyle = CSS.dir;
+  } else if (typeChar === 'l') {
+    nameStyle = CSS.sym;
+  } else if (typeChar === 'c' || typeChar === 'b') {
+    nameStyle = CSS.dev;
+  } else if (/[xX]/.test(perms)) {
+    // Executable bit set (user, group, or other)
+    nameStyle = CSS.exe;
+  }
+
+  // Build the HTML
+  let html = '';
+  // Type char + permissions
+  html += `<span style="${CSS.meta}">${esc(typeChar)}</span>`;
+  html += `<span style="${CSS.meta}">${esc(perms)}</span>`;
+
+  // Metadata columns (links, owner, group, size, date)
+  // Rebuild the spacing from the original `rest` string before the filename
+  const beforeName = rest.slice(0, rest.lastIndexOf(nameTokens[0]));
+  html += `<span style="${CSS.meta}">${esc(beforeName)}</span>`;
+
+  // Filename
+  if (typeChar === 'l' && linkTarget) {
+    html += `<span style="${nameStyle}">${esc(name)}</span>`;
+    html += `<span style="${CSS.meta}"> -&gt; </span>`;
+    html += `<span style="${nameStyle}">${esc(linkTarget)}</span>`;
+  } else {
+    html += `<span style="${nameStyle}">${esc(name)}</span>`;
+  }
+
+  return html;
+}
+
+function highlightLsOutput(text) {
+  const lines = text.split('\n');
+  return lines.map((line, i) => {
+    const trimmed = line.trimEnd();
+    if (!trimmed) return ''; // preserve blank lines
+    return colorizeLsLine(trimmed);
+  }).filter(h => h !== '').join('\n');
+}
+
+function esc(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// -- is it an ls command? ----------------------------------------------------
+
+function isLsCommand(command) {
+  if (!command) return false;
+  const cmd = command.replace(/^\/sh\s+/, '').trim();
+  return /^(ls|ll|dir|vdir)(\s|$)/.test(cmd);
 }
 
 // -- language detection from /sh command ------------------------------------
@@ -52,30 +193,23 @@ const CMD_LANG_MAP = {
 
 function guessLangFromCommand(command) {
   if (!command) return null;
-
-  // Strip leading /sh if present
   const cmd = command.replace(/^\/sh\s+/, '').trim();
 
-  // Check command-pattern matches first (stronger signal)
   for (const [pattern, lang] of Object.entries(CMD_LANG_MAP)) {
     if (cmd.startsWith(pattern)) return lang;
   }
 
-  // Extract file paths from command args
-  const args = cmd.split(/\s+/).slice(1); // skip the command itself
+  const args = cmd.split(/\s+/).slice(1);
   for (const arg of args) {
-    // Strip quotes and leading dashes (options)
     const clean = arg.replace(/^['"]|['"]$/g, '');
     if (clean.startsWith('-')) continue;
 
-    // Check for extension
     const dotIdx = clean.lastIndexOf('.');
     if (dotIdx !== -1) {
       const ext = clean.slice(dotIdx + 1).toLowerCase();
       if (EXT_TO_LANG[ext]) return EXT_TO_LANG[ext];
     }
 
-    // Check for well-known filenames
     const basename = clean.split('/').pop().toLowerCase();
     if (EXT_TO_LANG[basename]) return EXT_TO_LANG[basename];
   }
@@ -83,17 +217,39 @@ function guessLangFromCommand(command) {
   return null;
 }
 
-// -- Shiki highlight wrapper ------------------------------------------------
+// -- Shiki wrapper -----------------------------------------------------------
 
 function stripBg(html) {
   return html.replace(/(<pre[^>]*style=")background-color:#[0-9a-fA-F]+;?/g, '$1');
 }
 
-function PlainFallback({ text }) {
-  return <AnsiBlock text={text} />;
+// -- component ---------------------------------------------------------------
+
+function LsHighlightedOutput({ text }) {
+  const clean = stripAnsi(text);
+  const html = highlightLsOutput(clean);
+
+  return (
+    <pre
+      className="terminal-ls-output"
+      style={{
+        margin: 0,
+        padding: '6px 10px',
+        fontFamily: 'var(--font-family)',
+        fontSize: '0.82em',
+        lineHeight: 1.5,
+        background: 'transparent',
+        color: '#D4D4D4',
+        whiteSpace: 'pre-wrap',
+        wordBreak: 'break-word',
+        overflowX: 'auto',
+      }}
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
 }
 
-export default function HighlightedTerminalOutput({ text, command }) {
+function ShikiHighlightedOutput({ text, command }) {
   const [html, setHtml] = useState(null);
   const [failed, setFailed] = useState(false);
   const mountedRef = useRef(true);
@@ -131,14 +287,8 @@ export default function HighlightedTerminalOutput({ text, command }) {
     return () => { mountedRef.current = false; };
   }, []);
 
-  // No language detected or Shiki failed — fall back to AnsiBlock for ANSI colors
-  if (!lang || failed) {
-    return <PlainFallback text={text} />;
-  }
-
-  // Shiki still loading — show AnsiBlock as placeholder
-  if (!html) {
-    return <PlainFallback text={text} />;
+  if (!lang || failed || !html) {
+    return <AnsiBlock text={text} />;
   }
 
   return (
@@ -148,4 +298,26 @@ export default function HighlightedTerminalOutput({ text, command }) {
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );
+}
+
+export default function HighlightedTerminalOutput({ text, command }) {
+  // 1. ls commands → custom per-file-type coloring
+  if (isLsCommand(command) && looksLikeLsOutput(text)) {
+    return <LsHighlightedOutput text={text} />;
+  }
+
+  // 2. Shiki-detected language
+  const lang = guessLangFromCommand(command);
+  if (lang) {
+    return <ShikiHighlightedOutput text={text} command={command} />;
+  }
+
+  // 3. Also try ls detection on output alone (command might be something like
+  //    /sh run.sh that happens to output a file listing)
+  if (looksLikeLsOutput(text)) {
+    return <LsHighlightedOutput text={text} />;
+  }
+
+  // 4. Fallback to ANSI
+  return <AnsiBlock text={text} />;
 }
