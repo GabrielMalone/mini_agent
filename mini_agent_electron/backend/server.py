@@ -1128,7 +1128,7 @@ class AgentRunner:
         # ── pick the fastest model for this provider ──────────────────────────
         provider = getattr(self.config, 'api_provider', 'deepseek')
         _AUTOCOMPLETE_MODEL = {
-            'deepseek': 'deepseek-v4-flash',
+            'deepseek': 'deepseek-chat',     # non-reasoning v3; v4 models burn tokens on thinking
             'moonshot':  'kimi-k2.6',
             'claude':    'claude-haiku-4-5',
             'xai':       'grok-4.1',
