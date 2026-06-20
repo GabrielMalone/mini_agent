@@ -384,7 +384,7 @@ def _execute_groups(
                                             approve_callback=approve_callback,
                                             cancel_event=cancel_event)
 
-            with ThreadPoolExecutor(max_workers=len(group)) as pool:
+            with ThreadPoolExecutor(max_workers=_capped_workers(group)) as pool:
                 futures = {pool.submit(_run_piped, i): i for i in group}
                 completed_in_group: set[int] = set()
                 for future in as_completed(futures):
