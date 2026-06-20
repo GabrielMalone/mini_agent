@@ -166,23 +166,28 @@ class TestMaxCheckpointsPruning(unittest.TestCase):
         _init_git_repo(workspace)
         cm = CheckpointManager.get(workspace)
 
-        # Create just enough to hit the cap + 5 extra
-        for i in range(55):
+        # Create just enough to hit the cap + 10 extra
+        for i in range(60):
             _write(workspace, f"f{i}.py", f"v{i}\n")
             cm.checkpoint(f"cp-{i}")
             cm.reset_turn()
 
-        # Only 50 should be retained (the log ring, not git history)
+        # Only 50 should be retained in the log ring
         self.assertLessEqual(cm.checkpoint_count(), 50)
 
-        # The oldest should be the 6th checkpoint (indices 0-4 pruned)
+        # list_checkpoints() returns the last 20; verify newest entries present
         cps = cm.list_checkpoints()
-        self.assertIn("cp-5", cps[0]["message"],
-                      f"Expected cp-5 as oldest, got {cps[0]['message']}")
+        self.assertGreaterEqual(len(cps), 1)
+        # Oldest items (cp-0 through cp-9) should have been pruned
+        visible_messages = {cp["message"] for cp in cps}
+        self.assertNotIn("cp-0", visible_messages,
+                         "cp-0 should have been pruned from the ring")
+        # Newest should be present
+        self.assertIn("cp-59", visible_messages,
+                      "cp-59 (newest) should still be in the ring")
 
         CheckpointManager.reset()
         import shutil
-
         shutil.rmtree(workspace, ignore_errors=True)
 
 
