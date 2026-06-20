@@ -935,14 +935,15 @@ def execute_tool(
     # Cache successful read-only results (only when not streaming).
     # Session-level LRU with TTL: evict oldest entry when over _TOOL_CACHE_MAX_SIZE.
     if cache_key and result.success:
-        if cache_key not in _TOOL_CACHE and len(_TOOL_CACHE) >= _TOOL_CACHE_MAX_SIZE:
-            # Evict oldest entry (Python 3.7+ dicts are insertion-ordered)
-            _TOOL_CACHE.pop(next(iter(_TOOL_CACHE)), None)
-        _TOOL_CACHE[cache_key] = (time.monotonic(), result)
-        # Track file-path-to-cache-key mapping for targeted invalidation
-        file_path = args.get("path", "") if isinstance(args, dict) else ""
-        if file_path:
-            _TOOL_CACHE_PATH_MAP.setdefault(file_path, set()).add(cache_key)
+        with _TOOL_CACHE_LOCK:
+            if cache_key not in _TOOL_CACHE and len(_TOOL_CACHE) >= _TOOL_CACHE_MAX_SIZE:
+                # Evict oldest entry (Python 3.7+ dicts are insertion-ordered)
+                _TOOL_CACHE.pop(next(iter(_TOOL_CACHE)), None)
+            _TOOL_CACHE[cache_key] = (time.monotonic(), result)
+            # Track file-path-to-cache-key mapping for targeted invalidation
+            file_path = args.get("path", "") if isinstance(args, dict) else ""
+            if file_path:
+                _TOOL_CACHE_PATH_MAP.setdefault(file_path, set()).add(cache_key)
 
     # Increment per-session tool usage counter for dead-tool pruning
     # (count even failed calls — they indicate the agent tried to use the tool)
