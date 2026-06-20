@@ -1320,7 +1320,8 @@ def _communicate_windows(proc, timeout):
         _deadline = _time.monotonic() + timeout + 10
         while t_out.is_alive() and _time.monotonic() < _deadline:
             try:
-                from tools import _CURRENT_CANCEL_EVENT as _cce
+                from tools import _CURRENT_CANCEL_EVENT as _cce_var
+                _cce = _cce_var.get()
                 if _cce is not None and _cce.is_set():
                     kill_fired.set()
                     _kill_process_tree_windows(proc)
