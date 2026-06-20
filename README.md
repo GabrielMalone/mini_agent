@@ -218,6 +218,34 @@ workspace = "/Users/you/my-project"
 - `MINI_AGENT_CONFIG` — path to custom config file
 - `MINI_AGENT_WORKSPACE` — override workspace directory
 
+### MCP Servers
+
+Add servers under `[agent.mcp_servers.<name>]` in `.mini_agent.toml`. When configured,
+`mcp_discover` and `mcp_call` tools are auto-injected.
+
+#### Unreal Engine
+
+Control the Unreal Editor through natural language. Two options:
+
+**Option A: API-aware (recommended)** — agent can search the UE Python API before writing code:
+
+```toml
+[agent.mcp_servers.unreal]
+command = ["uvx", "unreal-python-mcp"]
+```
+
+One-time setup: `uvx unreal-python-mcp-refresh` (indexes ~1,400 UE Python classes).
+
+**Option B: Lightweight** — raw Python execution only, no API search:
+
+```toml
+[agent.mcp_servers.unreal]
+command = ["npx", "-y", "@runreal/unreal-mcp"]
+```
+
+Requirements for both: Unreal Engine 5.4+, Python Editor Script Plugin enabled,
+Remote Execution checked in Project Settings → Python.
+
 ## License
 
 MIT

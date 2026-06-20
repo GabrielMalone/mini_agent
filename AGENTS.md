@@ -42,6 +42,23 @@ Long-term facts and preferences go in core memory.
 ## Confidence & Knowledge
 - **Confidence nudge**: After 3+ search misses, 2+ tool failures, or 6+ read-only turns,
   agent is nudged to use `web_search`. 4-turn cooldown.
+## Unreal Engine MCP
+
+When the user wants to work with Unreal Engine, check if `mcp_discover` shows
+`unreal-python-mcp` tools (`search_unreal_api`, `get_class_overview`, `exec_unreal_python`).
+If not, they need to add the server to `.mini_agent.toml` (see README → MCP Servers).
+
+Workflow for Unreal tasks:
+1. `search_unreal_api("<query>")` — find relevant classes/functions
+2. `get_class_overview("<ClassName>")` — list all methods/properties
+3. `get_member_info("<ClassName>", "<method>")` — get exact signature + docs
+4. `exec_unreal_python("<code>")` — run the correct code
+
+NEVER guess Unreal Python API names — always search first.
+
+Use `unreal.get_editor_subsystem()` for editor subsystems (EditorActorSubsystem,
+EditorAssetSubsystem, etc.) rather than deprecated global functions.
+
 ## Memory Architecture
 - **Core memory**: Long-term persistent facts, preferences, conventions (SQLite).
 - **AGENTS.md**: Behavioral rules only (this file).
