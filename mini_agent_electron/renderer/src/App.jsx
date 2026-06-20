@@ -138,8 +138,7 @@ function AppShell() {
       if (data.turn_cost != null) setTurnCost(data.turn_cost);
       if (data.cache_hit_rate != null) setCacheHitRate(data.cache_hit_rate);
       if (data.subagent_running != null) setSubagentRunning(data.subagent_running);
-      if (data.plan_steps != null) setPlanSteps(data.plan_steps);
-      if (data.plan_done != null) setPlanDone(data.plan_done);
+      // plan_steps/plan_done ignored — plan UI removed
     };
     const unsub = api.on('backend:status', onStatus);
     api.getStatus?.().then((data) => { if (data) onStatus(data); });
