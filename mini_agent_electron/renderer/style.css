@@ -786,7 +786,7 @@ html, body {
 }
 
 .shell-input-cm .cm-editor .cm-content {
-  caret-color: var(--accent);
+  caret-color: #00cc44;
   font-family: var(--font-family);
   padding: 0;
   outline: none;
