@@ -516,7 +516,7 @@ class TestConcurrencyCap:
         """_execute_parallel_no_pipes should use at most MAX_PARALLEL_TOOLS workers."""
         remaining = [_make_tc("read_file", {"path": f"{i}.py"}, i) for i in range(20)]
 
-        with patch("concurrent.futures.ThreadPoolExecutor") as mock_pool_cls:
+        with patch("core.llm.ThreadPoolExecutor") as mock_pool_cls:
             mock_pool = MagicMock()
             mock_pool.__enter__.return_value = mock_pool
             mock_pool_cls.return_value = mock_pool
