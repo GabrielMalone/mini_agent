@@ -5,7 +5,7 @@ const BOT_SCRIPTS = { 'mini-agent': 'workspace_bot.py', 'emotion-game': 'discord
 
 export default function StatusBar({
   balanceDisplay, gitBranch, gitDirty, botStatus, setBotStatus,
-  workspace, sessionName, planSteps, planDone,
+  workspace, sessionName,
   themeEntry, PALETTE_SVG, THEMES, theme, themePickerOpen, setThemePickerOpen,
   themeToggleRef, dropdownPos, applyTheme,
   handleWorkspaceClick, handleSessionSwitch,
