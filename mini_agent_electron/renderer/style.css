@@ -6,8 +6,9 @@
    CSS Variables -- two themes: dark (default) + light
    --------------------------------------------------------------------------- */
 :root {
-  --font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', 'Cascadia Code',
-                  'Menlo', 'Consolas', 'DejaVu Sans Mono', monospace;
+  --font-family: 'JetBrains Mono', 'Cascadia Code', 'Cascadia Mono', 'Consolas',
+                  'SF Mono', 'Fira Code', 'Menlo', 'DejaVu Sans Mono',
+                  'Segoe UI Variable', 'Segoe UI', system-ui, monospace;
   --font-size: 13px;
   --line-height: 1.5;
 }
@@ -434,15 +435,7 @@ html, body {
   contain: layout style paint;
 }
 
-.log {
-  scrollbar-width: thin;                     /* Firefox */
-  scrollbar-color: var(--border) transparent; /* Firefox */
-}
-
-.log::-webkit-scrollbar { width: 5px; }
-.log::-webkit-scrollbar-track { background: transparent; }
-.log::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-.log::-webkit-scrollbar-thumb:hover { background: var(--dim); }
+/* .log scrollbar styling removed — universal scrollbar-hide rule above covers all */
 
 /* ---------------------------------------------------------------------------
    Agent Tree -- 2D tree visualization
@@ -668,10 +661,7 @@ html, body {
   overflow-y: auto;
 }
 
-/* Custom scrollbar for tooltip */
-.agent-tree-tooltip::-webkit-scrollbar { width: 4px; }
-.agent-tree-tooltip::-webkit-scrollbar-track { background: transparent; }
-.agent-tree-tooltip::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+/* Tooltip scrollbar styling removed — universal scrollbar-hide rule above covers all */
 
 /* Fixed-height thinking area (left pane) */
 .thinking-log {
@@ -697,17 +687,15 @@ html, body {
   );
 }
 
-/* Hide scrollbars in all log areas */
-.thinking-log,
-.tools-log,
-.chat-log {
-  scrollbar-width: none;          /* Firefox */
-  -ms-overflow-style: none;       /* IE/Edge */
+/* Hide scrollbars everywhere (Windows + macOS + Linux) */
+* {
+  scrollbar-width: none;               /* Firefox */
+  -ms-overflow-style: none;            /* IE/Edge */
 }
-.thinking-log::-webkit-scrollbar,
-.tools-log::-webkit-scrollbar,
-.chat-log::-webkit-scrollbar {
-  display: none;                  /* Chrome/Safari/Electron */
+*::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none;                       /* Chrome/Safari/Electron */
 }
 
 

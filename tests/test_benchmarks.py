@@ -427,7 +427,7 @@ class TestBenchmarkCircuitBreaker:
 
     def test_tool_call_key_throughput(self):
         """_tool_call_key is called on every tool call -- measure throughput."""
-        from core.llm import _tool_call_key
+        from core.context_inject import _tool_call_key
 
         calls = [
             {
@@ -453,7 +453,7 @@ class TestBenchmarkCircuitBreaker:
 
     def test_circuit_trip_detection(self):
         """_check_circuit on a window full of repeated calls."""
-        from core.llm import _check_circuit
+        from core.context_inject import _check_circuit
 
         # Build a realistic window: mostly unique + some repeated
         keys: list[str] = []

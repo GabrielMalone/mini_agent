@@ -3,11 +3,11 @@
 
 from __future__ import annotations
 
-from core.llm import (
+from core.llm import _save_turn_summary
+from core.context_inject import (
     _tool_call_key,
     _check_circuit,
     _compress_stale_tool_results,
-    _save_turn_summary,
 )
 
 

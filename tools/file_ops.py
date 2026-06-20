@@ -13,6 +13,7 @@ import os
 import stat as stat_module
 import time
 
+from core.safety import ReadSafetyGate, WriteSafetyGate
 from tools.result import ToolResult
 from tools import _register, _summarize, clear_tool_cache
 
@@ -107,15 +108,11 @@ def _read_file(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResu
         except OSError:
             pass  # fall through to normal read on stat error
 
-    # On Windows, use the _worker subprocess to avoid kernel-filter hangs
-    if False:  # _WINDOWS bypassed - subprocess hangs on this system
-        result = _read_file_windows_worker(resolved, offset, limit, line_numbers)
-    else:
-        result = _read_file_direct(
-            resolved, offset, limit, line_numbers,
-            hash_lines=hash_lines,
-            include_anchors=include_anchors,
-        )
+    result = _read_file_direct(
+        resolved, offset, limit, line_numbers,
+        hash_lines=hash_lines,
+        include_anchors=include_anchors,
+    )
 
     if not result.success:
         return result

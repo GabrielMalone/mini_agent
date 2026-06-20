@@ -8,7 +8,7 @@ import unittest
 from memory.memory import _clean_messages
 from tools import execute_tool, _repair_json
 from core.safety import ReadSafetyGate, WriteSafetyGate
-from core.llm import _tool_call_key, _check_circuit
+from core.context_inject import _tool_call_key, _check_circuit
 
 
 # ---------------------------------------------------------------------------
