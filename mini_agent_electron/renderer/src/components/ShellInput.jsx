@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback, useMemo, useState, forwardRef, useImperativeHandle } from 'react';
-import { EditorView, keymap, placeholder as placeholderExt, drawSelection } from '@codemirror/view';
+import { EditorView, keymap, placeholder as placeholderExt, drawSelection, highlightSpecialChars, dropCursor } from '@codemirror/view';
 import { EditorState, Compartment } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { StreamLanguage } from '@codemirror/language';
