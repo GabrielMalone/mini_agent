@@ -870,12 +870,47 @@ class AgentRunner:
             send_msg({"type": "response", "lines": ["--- cancelled ---"]})
             return
 
+        if cmd.startswith("/sh "):
+            shell_cmd = command[4:].strip()
+            if not shell_cmd:
+                send_msg({"type": "response", "lines": ["Usage: /sh <command>"]})
+                return
+            try:
+                r = subprocess.run(
+                    shell_cmd,
+                    shell=True,
+                    cwd=self.workspace,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                lines = []
+                if r.stdout:
+                    lines.extend(r.stdout.rstrip("\n").split("\n"))
+                if r.stderr:
+                    lines.append("--- stderr ---")
+                    lines.extend(r.stderr.rstrip("\n").split("\n"))
+                if r.returncode != 0:
+                    lines.append(f"(exit {r.returncode})")
+                send_msg({
+                    "type": "shell_output",
+                    "lines": lines,
+                    "exit_code": r.returncode,
+                    "command": shell_cmd,
+                })
+            except subprocess.TimeoutExpired:
+                send_msg({"type": "shell_output", "lines": ["(timed out after 30s)"], "exit_code": -1, "command": shell_cmd})
+            except Exception as e:
+                send_msg({"type": "shell_output", "lines": [f"(error: {e})"], "exit_code": -1, "command": shell_cmd})
+            return
+
         if cmd == "/help":
             lines = [
                 "Available commands:",
                 "  /help               Show this help",
                 "  /cancel             Cancel the current running turn",
                 "  /clear              Clear conversation history and reset session",
+                "  /sh <command>       Run a shell command (e.g. /sh ls -la)",
                 "  /stats              Show session stats (turns, tokens, cost, cache)",
                 "  /export             Export conversation to workspace as markdown",
                 "  /init               Initialize project rules (.mini_agent.rules)",
@@ -885,7 +920,8 @@ class AgentRunner:
                 "  /session switch <n> Switch to an existing session",
                 "  /session delete <n> Delete a saved session",
                 "",
-                "Type a message to start a conversation with the agent.",
+                'Type a message to start a conversation with the agent.',
+                'Prefix with /sh to run a shell command directly.',
             ]
             send_msg({"type": "response", "lines": lines})
             return

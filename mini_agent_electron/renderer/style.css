@@ -822,8 +822,164 @@ html, body {
 }
 
 /* ---------------------------------------------------------------------------
-   Status bar
+   Terminal Panel — resizable input area with command history
    --------------------------------------------------------------------------- */
+#terminal-panel {
+  flex: 0 0 auto;
+  margin-top: 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  transition: border-color 0.15s ease;
+  display: flex;
+  flex-direction: column;
+  min-height: 48px;
+  overflow: hidden;
+}
+
+#terminal-panel.live {
+  animation: inputPulse 2s ease-in-out infinite;
+}
+
+#terminal-panel:focus-within {
+  border-color: var(--accent);
+}
+
+#terminal-panel.drag-over {
+  border-color: var(--accent);
+  background: rgb(var(--accent-rgb) / 0.04);
+  box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.08);
+}
+
+/* Drag handle at the top edge */
+.terminal-resize-handle {
+  height: 6px;
+  cursor: ns-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: transparent;
+  transition: background 0.15s ease;
+}
+
+.terminal-resize-handle:hover {
+  background: rgb(var(--accent-rgb) / 0.06);
+}
+
+.terminal-resize-grip {
+  width: 40px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border);
+  transition: background 0.15s ease, width 0.15s ease;
+}
+
+.terminal-resize-handle:hover .terminal-resize-grip {
+  background: var(--dim);
+  width: 56px;
+}
+
+/* Inner container: history on top, input at bottom */
+.terminal-inner {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: 8px 12px;
+  gap: 10px;
+}
+
+/* Scrollable command history */
+.terminal-history {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  font-family: var(--font-family);
+  font-size: var(--font-size);
+  line-height: var(--line-height);
+}
+
+.terminal-history-line {
+  display: flex;
+  align-items: baseline;
+  padding: 1px 0;
+  opacity: 0.55;
+}
+
+.terminal-history-line .prompt {
+  color: var(--dim);
+  flex-shrink: 0;
+  user-select: none;
+  font-weight: 600;
+  margin-right: 6px;
+}
+
+.terminal-history-text {
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-all;
+  user-select: text;
+}
+
+/* Shell command output blocks */
+.shell-output-block {
+  margin: 4px 0;
+  padding: 4px 0;
+}
+
+.shell-output-cmd {
+  display: flex;
+  align-items: baseline;
+  padding: 1px 0;
+  opacity: 0.7;
+}
+
+.shell-output-cmd .prompt {
+  color: var(--accent);
+}
+
+.shell-output-cmd .shell-cmd {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.shell-output-lines {
+  padding: 2px 0;
+}
+
+.shell-output-line {
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family: var(--font-family);
+  font-size: var(--font-size);
+  line-height: var(--line-height);
+  opacity: 0.85;
+}
+
+.shell-output-block.err .shell-output-line {
+  color: var(--err);
+}
+
+/* Input container at the bottom */
+#terminal-panel #input-container {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  width: 100%;
+}
+
+#terminal-panel .prompt {
+  color: var(--accent);
+  flex-shrink: 0;
+  user-select: none;
+  font-weight: 600;
+  margin-right: 6px;
+}
+
+/* ---------------------------------------------------------------------------
+  Status bar
+  --------------------------------------------------------------------------- */
 .status-bar {
   display: flex;
   align-items: center;
@@ -2092,7 +2248,8 @@ html, body {
 #tools-frame,
 #chat-frame,
 #subagents-frame,
-#input-frame {
+#input-frame,
+#terminal-panel {
   transition: border-color 0.3s ease, box-shadow 0.3s ease;
 }
 

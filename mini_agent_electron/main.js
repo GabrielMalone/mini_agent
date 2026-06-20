@@ -668,6 +668,11 @@ function handlePythonMessage(msg) {
       win.webContents.send('backend:response', data);
       break;
 
+    case 'shell_output':
+      // Shell command output (from /sh) — routed to terminal panel
+      win.webContents.send('stream:shell_output', data);
+      break;
+
     case 'session_list_result':
       win.webContents.send('session:list_result', data);
       break;

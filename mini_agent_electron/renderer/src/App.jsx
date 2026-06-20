@@ -10,7 +10,7 @@ import SettingsPanel from './components/SettingsPanel';
 import ToolCard from './components/ToolCard';
 import Header from './components/Header';
 import StatusBar from './components/StatusBar';
-import ShellInput from './components/ShellInput';
+import TerminalPanel from './components/TerminalPanel';
 
 
 // ---------------------------------------------------------------------------
@@ -24,6 +24,10 @@ function AppShell() {
 
   // Command history for Up/Down navigation in ShellInput
   const [commandHistory, setCommandHistory] = useState([]);
+  // User commands shown in the terminal panel history (scrollable)
+  const [userCommands, setUserCommands] = useState([]);
+  // Shell command output (from /sh) displayed in the terminal panel
+  const [shellOutput, setShellOutput] = useState([]);
   const activeBlockIdRef = useRef(null);  // ID of the currently streaming block
 
   // Tool Cards state -- Dirac-inspired card-based display
@@ -294,12 +298,42 @@ function AppShell() {
 
     unsubs.push(api.on('backend:response', (data) => {
       if (data.lines) {
+        const activeId = activeBlockIdRef.current;
+        const output = data.lines.join('\n');
+        const blockStatus = (data.exit_code !== undefined && data.exit_code !== 0) ? 'err' : 'ok';
         startTransition(() => {
-          setBlocks((prev) => [...prev, {
-            id: nextLineId(), command: data.command || '', output: data.lines.join('\n'), status: 'ok', timestamp: Date.now(),
-          }]);
+          if (activeId) {
+            // Update the existing running block created by handleSubmit
+            setBlocks((prev) =>
+              prev.map((b) =>
+                b.id === activeId
+                  ? { ...b, output, status: blockStatus }
+                  : b
+              )
+            );
+            activeBlockIdRef.current = null;
+          } else {
+            // Fallback: create a new block (shouldn't normally happen)
+            setBlocks((prev) => [...prev, {
+              id: nextLineId(), command: data.command || '', output, status: blockStatus, timestamp: Date.now(),
+            }]);
+          }
         });
       }
+    }));
+
+    // Shell command output (from /sh) — routed to terminal panel, not chat blocks
+    unsubs.push(api.on('stream:shell_output', (data) => {
+      setShellOutput((prev) => [
+        ...prev.slice(-49),  // keep last 50
+        {
+          id: `sh-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          command: data.command || '',
+          lines: data.lines || [],
+          exitCode: data.exit_code != null ? data.exit_code : -1,
+          timestamp: Date.now(),
+        },
+      ]);
     }));
 
     unsubs.push(api.on('backend:turn_start', () => {
@@ -420,16 +454,26 @@ function AppShell() {
       return [...prev.slice(-99), trimmed];  // keep last 100
     });
 
+    // Add to terminal panel history (visible in the expandable input area)
+    setUserCommands((prev) => [
+      ...prev.slice(-199),  // keep last 200
+      { id: `uc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, text: trimmed, timestamp: Date.now() },
+    ]);
+
     // Slash commands always go through the command handler
     if (trimmed.startsWith('/')) {
       setInputValue('');
-      const cmdId = nextLineId();
-      startTransition(() => {
-        setBlocks((prev) => [...prev, {
-          id: cmdId, command: trimmed, output: '', status: 'running', timestamp: Date.now(),
-        }]);
-      });
-      activeBlockIdRef.current = cmdId;
+      const isShellCmd = trimmed.startsWith('/sh ');
+      if (!isShellCmd) {
+        // Non-shell slash commands create a block in the chat area
+        const cmdId = nextLineId();
+        startTransition(() => {
+          setBlocks((prev) => [...prev, {
+            id: cmdId, command: trimmed, output: '', status: 'running', timestamp: Date.now(),
+          }]);
+        });
+        activeBlockIdRef.current = cmdId;
+      }
       window.miniAgent.command(trimmed);
       return;
     }
@@ -620,27 +664,18 @@ function AppShell() {
         )}
       </div>
 
-      {/* Input */}
-      <div id="input-frame" className={`rounded-frame${isLive ? ' live' : ''}`}>
-        <div className="frame-body">
-          <div className="frame-content">
-            <div id="input-container">
-              <span className="prompt">{'>'}</span>
-              <ShellInput
-                ref={inputRef}
-                value={inputValue}
-                onChange={setInputValue}
-                onSubmit={handleSubmit}
-                disabled={inputDisabled}
-                placeholder="Type a message, /command, or drop files here..."
-                ghostText={commandHistory.length > 0 ? commandHistory[commandHistory.length - 1] : ''}
-                commandHistory={commandHistory}
-                autoFocus
-              />
-            </div>
-          </div>
-        </div>
-      </div>
+      {/* Terminal panel — resizable input area with command history */}
+      <TerminalPanel
+        userCommands={userCommands}
+        shellOutput={shellOutput}
+        inputValue={inputValue}
+        onInputChange={setInputValue}
+        onSubmit={handleSubmit}
+        disabled={inputDisabled}
+        commandHistory={commandHistory}
+        isLive={isLive}
+        inputRef={inputRef}
+      />
 
       {/* Status bar */}
       <StatusBar
