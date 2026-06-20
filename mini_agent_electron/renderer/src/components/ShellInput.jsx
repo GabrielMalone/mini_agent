@@ -303,6 +303,7 @@ const ShellInput = forwardRef(function ShellInput({
         StreamLanguage.define(shell),
         shellKeymap,
         autocompletion({ override: [shellCompletions] }),
+        drawSelection({ cursorColor: '#00cc44' }),
         keymap.of([...defaultKeymap, ...historyKeymap]),
         themeCompartment.current.of(shellTheme()),
         EditorState.transactionFilter.of((tr) => {
