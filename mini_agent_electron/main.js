@@ -709,15 +709,6 @@ function setupIPC() {
     return { ok: true };
   });
 
-  // --- Autocomplete (LLM-powered shell command suggestions) ---
-  let _autocompleteResolve = null;
-  ipcMain.handle('backend:autocomplete', async (event, text) => {
-    return new Promise((resolve) => {
-      _autocompleteResolve = resolve;
-      sendToPython({ type: 'command', command: '/autocomplete ' + text });
-    });
-  });
-
   ipcMain.handle('backend:cancel', async () => {
     sendToPython({ type: 'cancel' });
     return { ok: true };
