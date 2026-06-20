@@ -1118,8 +1118,24 @@ class AgentRunner:
         send_msg({"type": "response", "lines": [f"Unknown command: {command}"]})
 
     def _llm_autocomplete(self, partial: str) -> list[dict]:
-        """Return a short list of shell command completions via the LLM."""
+        """Return a short list of shell command completions via the LLM.
+
+        Uses a fast/flash model (never the thinking model) so completions
+        appear within the 350ms debounce window on the frontend.
+        """
         import requests
+
+        # ── pick the fastest model for this provider ──────────────────────────
+        provider = getattr(self.config, 'api_provider', 'deepseek')
+        _AUTOCOMPLETE_MODEL = {
+            'deepseek': 'deepseek-v4-flash',
+            'moonshot':  'kimi-k2.6',
+            'claude':    'claude-haiku-4-5',
+            'xai':       'grok-4.1',
+            'qwen':      'qwen-flash',
+            'gemini':    'gemini-3.5-flash',
+        }
+        fast_model = _AUTOCOMPLETE_MODEL.get(provider, self.config.model)
 
         prompt = (
             "You are a command-line autocomplete system. "
