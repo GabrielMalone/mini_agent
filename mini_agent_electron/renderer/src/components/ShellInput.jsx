@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react';
+import { useEffect, useRef, useCallback, useMemo, useState, forwardRef, useImperativeHandle } from 'react';
 import { EditorView, keymap, placeholder as placeholderExt } from '@codemirror/view';
 import { EditorState, Compartment } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
@@ -135,6 +135,8 @@ const ShellInput = forwardRef(function ShellInput({
   const historyRef = useRef(commandHistory);
   const historyIdxRef = useRef(-1);       // -1 = not navigating history
   const savedInputRef = useRef('');        // saved input before history nav
+  const focusedRef = useRef(false);        // track focus for ghost text visibility
+  const [focused, setFocused] = useState(false);
   onChangeRef.current = onChange;
   onSubmitRef.current = onSubmit;
   disabledRef.current = disabled;
@@ -281,6 +283,11 @@ const ShellInput = forwardRef(function ShellInput({
             const txt = update.state.doc.toString();
             onChangeRef.current?.(txt);
           }
+          if (update.focusChanged) {
+            const hasFocus = update.view.hasFocus;
+            focusedRef.current = hasFocus;
+            setFocused(hasFocus);
+          }
         }),
         placeholderExt(placeholder),
         StreamLanguage.define(shell),
@@ -350,8 +357,8 @@ const ShellInput = forwardRef(function ShellInput({
         ref={containerRef}
         className="shell-input-cm"
       />
-      {/* Ghost text overlay -- shown when input is empty */}
-      {!value && ghostText && !disabled && (
+      {/* Ghost text overlay -- shown when input is empty AND not focused */}
+      {!value && ghostText && !disabled && !focused && (
         <div className="shell-input-ghost" aria-hidden="true">
           <span className="shell-input-ghost__text">{ghostText}</span>
           <span className="shell-input-ghost__hint">(tab)</span>
