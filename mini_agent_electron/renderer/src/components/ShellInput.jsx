@@ -46,6 +46,8 @@ function shellTheme() {
     '.cm-placeholder': {
       color: v.dim,
       fontStyle: 'italic',
+      outline: 'none',
+      border: 'none',
     },
     '.cm-cursor': {
       borderLeftColor: v.accent,
