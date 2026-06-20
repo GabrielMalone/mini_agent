@@ -171,6 +171,7 @@ const ShellInput = forwardRef(function ShellInput({
   const containerRef = useRef(null);
   const viewRef = useRef(null);
   const editableCompartment = useRef(new Compartment());
+  const placeholderCompartment = useRef(new Compartment());
   const onChangeRef = useRef(onChange);
   const onSubmitRef = useRef(onSubmit);
   const disabledRef = useRef(disabled);
