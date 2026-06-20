@@ -71,7 +71,7 @@ export const EXT_TO_LANG = {
   'git-commit': 'git-commit', 'git-rebase': 'git-rebase',
 };
 
-function guessLanguage(toolName, code) {
+export function guessLanguage(toolName, code) {
   const content = code || '';
   const firstLine = content.trimStart().split('\n')[0];
 

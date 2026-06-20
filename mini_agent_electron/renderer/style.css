@@ -923,15 +923,18 @@ html, body {
 
 /* Shell command output blocks */
 .shell-output-block {
-  margin: 4px 0;
-  padding: 4px 0;
+  margin: 6px 0;
+  padding: 6px 0;
+  border-top: 1px solid rgb(var(--border-rgb, 42 45 63) / 0.5);
 }
 
 .shell-output-cmd {
   display: flex;
   align-items: baseline;
-  padding: 1px 0;
-  opacity: 0.7;
+  gap: 6px;
+  padding: 2px 0 6px 2px;
+  opacity: 0.8;
+  user-select: none;
 }
 
 .shell-output-cmd .prompt {
@@ -941,24 +944,79 @@ html, body {
 .shell-output-cmd .shell-cmd {
   color: var(--accent);
   font-weight: 600;
+  flex: 1;
+}
+
+/* Exit status badge */
+.shell-exit-badge {
+  font-size: 0.7em;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+}
+
+.shell-exit-badge[data-ok="true"] {
+  color: var(--ok, #4caf50);
+  background: rgb(var(--ok-rgb, 76 175 80) / 0.12);
+}
+
+.shell-exit-badge[data-ok="false"] {
+  color: var(--err, #f44747);
+  background: rgb(var(--err-rgb, 244 71 71) / 0.12);
 }
 
 .shell-output-lines {
-  padding: 2px 0;
+  padding: 0;
+  font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
+  font-size: 0.82em;
+  line-height: 1.65;
+  tab-size: 8;
+  -moz-tab-size: 8;
+  overflow-x: auto;
+}
+
+/* Override AnsiBlock's pre-wrap and break-word for shell output
+   to preserve column alignment — use pre (no wrap) + horizontal scroll. */
+.shell-output-lines > span {
+  white-space: pre !important;
+  word-break: normal !important;
 }
 
 .shell-output-line {
+  display: flex;
+  align-items: baseline;
   color: var(--text);
-  white-space: pre-wrap;
-  word-break: break-all;
-  font-family: var(--font-family);
-  font-size: var(--font-size);
-  line-height: var(--line-height);
-  opacity: 0.85;
+  white-space: pre;
+  word-break: normal;
+  overflow-x: auto;
+  opacity: 0.88;
+  padding: 1px 0;
+}
+
+/* Dim empty lines and separators */
+.shell-output-line.shell-output-dim {
+  color: var(--dim, #888);
+  opacity: 0.45;
 }
 
 .shell-output-block.err .shell-output-line {
   color: var(--err);
+  opacity: 0.9;
+}
+
+/* Line numbers */
+.shell-line-no {
+  color: var(--dim, #555);
+  user-select: none;
+  display: inline-block;
+  min-width: 3.2em;
+  text-align: right;
+  margin-right: 0.6em;
+  flex-shrink: 0;
+  opacity: 0.55;
 }
 
 /* Input container at the bottom */

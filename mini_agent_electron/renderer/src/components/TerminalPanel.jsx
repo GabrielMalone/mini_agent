@@ -1,16 +1,49 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import ShellInput from './ShellInput';
+import AnsiBlock from './AnsiBlock';
 
 // ---------------------------------------------------------------------------
 // TerminalPanel — resizable terminal input area with command history
 //
 // Shows recently typed commands above the ShellInput, with a drag handle at
 // the top edge that lets the user expand the panel up to ~25% of the viewport.
+// Shell output (/sh commands) is rendered with ANSI color support and optional
+// Shiki syntax highlighting for code-like output.
 // ---------------------------------------------------------------------------
 
 const MIN_HEIGHT = 48;   // collapsed: just the input line
 const MAX_PCT = 0.25;    // max 25% of viewport
 const DEFAULT_PCT = 0.12; // default expanded ~12%
+
+// -- Shell output block component --------------------------------------------
+
+/** Renders a single shell output block with ANSI colours preserved.
+ *  The full output is rendered as one block so columnar layouts and
+ *  ANSI escape sequences from the PTY are shown exactly as emitted. */
+function ShellOutputBlock({ command, lines, exitCode }) {
+  const fullText = lines.join('\n');
+
+  return (
+    <div className={`shell-output-block ${exitCode === 0 ? 'ok' : 'err'}`}>
+      <div className="shell-output-cmd">
+        <span className="prompt">{'>'}</span>
+        <span className="terminal-history-text shell-cmd">/sh {command}</span>
+        <span className="shell-exit-badge" data-ok={exitCode === 0}>
+          {exitCode === 0 ? 'OK' : `exit ${exitCode}`}
+        </span>
+      </div>
+      <div className="shell-output-lines">
+        {fullText ? (
+          <AnsiBlock text={fullText} />
+        ) : (
+          <span className="shell-output-dim">{'\u00A0'}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// -- Main component -----------------------------------------------------------
 
 export default function TerminalPanel({
   userCommands = [],      // [{id, text, timestamp}]
@@ -29,7 +62,6 @@ export default function TerminalPanel({
   const draggingRef = useRef(false);
   const dragStartYRef = useRef(0);
   const dragStartHRef = useRef(0);
-  const expandedHeightRef = useRef(null);
 
   // Compute expanded height from viewport
   const getExpandedHeight = useCallback(() => {
@@ -66,7 +98,6 @@ export default function TerminalPanel({
     draggingRef.current = true;
     dragStartYRef.current = e.clientY;
     dragStartHRef.current = height ?? MIN_HEIGHT;
-    expandedHeightRef.current = height;
 
     const onMouseMove = (ev) => {
       if (!draggingRef.current) return;
@@ -138,17 +169,12 @@ export default function TerminalPanel({
                   ))}
                 {/* Shell command output blocks */}
                 {shellOutput.map((sh) => (
-                  <div key={sh.id} className={`shell-output-block ${sh.exitCode === 0 ? 'ok' : 'err'}`}>
-                    <div className="shell-output-cmd">
-                      <span className="prompt">{'>'}</span>
-                      <span className="terminal-history-text shell-cmd">/sh {sh.command}</span>
-                    </div>
-                    <div className="shell-output-lines">
-                      {sh.lines.map((line, i) => (
-                        <div key={i} className="shell-output-line">{line}</div>
-                      ))}
-                    </div>
-                  </div>
+                  <ShellOutputBlock
+                    key={sh.id}
+                    command={sh.command}
+                    lines={sh.lines}
+                    exitCode={sh.exitCode}
+                  />
                 ))}
               </div>
             )}

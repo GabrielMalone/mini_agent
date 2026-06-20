@@ -85,7 +85,7 @@ export default function AnsiBlock({ text, style = {}, className = '' }) {
 
   if (elements === null) return null;
   if (typeof elements === 'string') {
-    return <span style={style} className={className}>{elements}</span>;
+    return <span style={{ whiteSpace: 'pre-wrap', ...style }} className={className}>{elements}</span>;
   }
 
   return (

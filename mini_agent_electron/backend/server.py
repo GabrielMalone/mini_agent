@@ -27,10 +27,16 @@ Protocol (Python -> Electron):
 from __future__ import annotations
 
 import json
+import fcntl
 import os
+import pty
+import select
+import struct
 import subprocess
 import sys
+import termios
 import threading
+import time
 
 # ---------------------------------------------------------------------------
 # Windows: force UTF-8 for all I/O.  Without this, Python defaults to the
@@ -144,6 +150,116 @@ def read_msg() -> dict | None:
         raw_preview = repr(line)[:120] if line is not None else '<no line>'
         print(f"[server] Ignoring stdin parse error ({raw_preview}): {e}", file=_sys.stderr, flush=True)
         return None
+
+
+# ---------------------------------------------------------------------------
+# PTY shell runner -- gives subprocesses a real terminal so they produce
+# colours (ANSI escape codes) and columnar output (e.g. `ls` without -1).
+# ---------------------------------------------------------------------------
+
+def _run_shell_pty(cmd: str, cwd: str, timeout: float = 30.0) -> tuple[str, int]:
+    """Run *cmd* with a pseudo-terminal and return (stdout_text, exit_code).
+
+    When stdout is a pipe, many CLI tools (``ls``, ``grep``, ``git diff``)
+    suppress colour and default to one-entry-per-line.  A PTY makes them
+    behave as if attached to a real terminal.
+
+    On Windows (where PTYs are not available via the ``pty`` module) this
+    falls back to ``subprocess.run`` with ``CLICOLOR_FORCE`` set.
+    """
+    # -- Windows fallback: no pty.openpty() available --------------------
+    if sys.platform == "win32":
+        env = os.environ.copy()
+        env.setdefault("CLICOLOR_FORCE", "1")
+        env.setdefault("FORCE_COLOR", "1")
+        r = subprocess.run(
+            cmd, shell=True, cwd=cwd, capture_output=True, text=True,
+            timeout=timeout, env=env,
+        )
+        text = r.stdout
+        if r.stderr:
+            if text:
+                text += "\n"
+            text += r.stderr
+        return text, r.returncode
+
+    master_fd, slave_fd = pty.openpty()
+    try:
+        # Force colour even for tools that check isatty() after fork
+        env = os.environ.copy()
+        env.setdefault("CLICOLOR_FORCE", "1")
+        env.setdefault("FORCE_COLOR", "1")
+
+        # Set terminal window size so tools like `ls` format in columns.
+        # Without this, the PTY defaults to 0 rows/cols and `ls` falls back
+        # to one-entry-per-line (vertical) output.
+        _PTY_COLS = 120
+        _PTY_ROWS = 40
+        env["COLUMNS"] = str(_PTY_COLS)
+        env["LINES"] = str(_PTY_ROWS)
+        try:
+            winsz = struct.pack("HHHH", _PTY_ROWS, _PTY_COLS, 0, 0)
+            fcntl.ioctl(master_fd, termios.TIOCSWINSZ, winsz)
+        except OSError:
+            pass  # best-effort; not all platforms support TIOCSWINSZ
+
+        proc = subprocess.Popen(
+            cmd,
+            shell=True,
+            cwd=cwd,
+            stdout=slave_fd,
+            stderr=slave_fd,
+            stdin=subprocess.DEVNULL,
+            close_fds=True,
+            env=env,
+            preexec_fn=os.setsid if sys.platform != "win32" else None,
+        )
+        os.close(slave_fd)  # parent doesn't need the slave end
+
+        output_chunks: list[bytes] = []
+        deadline = time.monotonic() + timeout
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                proc.kill()
+                proc.wait()
+                raise subprocess.TimeoutExpired(cmd, timeout)
+
+            r, _, _ = select.select([master_fd], [], [], min(remaining, 1.0))
+            if r:
+                try:
+                    data = os.read(master_fd, 4096)
+                    if not data:
+                        break
+                    output_chunks.append(data)
+                except OSError:
+                    break
+
+            if proc.poll() is not None:
+                # Drain any last bytes buffered in the PTY
+                break
+
+        # Non-blocking drain of any remaining output
+        os.set_blocking(master_fd, False)
+        try:
+            while True:
+                data = os.read(master_fd, 4096)
+                if not data:
+                    break
+                output_chunks.append(data)
+        except (OSError, BlockingIOError):
+            pass
+
+        os.close(master_fd)
+        proc.wait()
+
+        text = b"".join(output_chunks).decode("utf-8", errors="replace")
+        return text, proc.returncode
+    finally:
+        try:
+            os.close(master_fd)
+        except OSError:
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -876,26 +992,21 @@ class AgentRunner:
                 send_msg({"type": "response", "lines": ["Usage: /sh <command>"]})
                 return
             try:
-                r = subprocess.run(
-                    shell_cmd,
-                    shell=True,
-                    cwd=self.workspace,
-                    capture_output=True,
-                    text=True,
-                    timeout=30,
+                stdout_text, exit_code = _run_shell_pty(
+                    shell_cmd, cwd=self.workspace, timeout=30.0
                 )
-                lines = []
-                if r.stdout:
-                    lines.extend(r.stdout.rstrip("\n").split("\n"))
-                if r.stderr:
-                    lines.append("--- stderr ---")
-                    lines.extend(r.stderr.rstrip("\n").split("\n"))
-                if r.returncode != 0:
-                    lines.append(f"(exit {r.returncode})")
+                # Strip trailing whitespace but keep internal formatting.
+                # Strip carriage returns that PTYs often inject.
+                clean_text = stdout_text.rstrip().replace("\r\n", "\n").replace("\r", "\n")
+                lines = clean_text.split("\n") if clean_text else []
+                if exit_code != 0 and not any(
+                    l.strip().startswith("(exit ") for l in lines
+                ):
+                    lines.append(f"(exit {exit_code})")
                 send_msg({
                     "type": "shell_output",
                     "lines": lines,
-                    "exit_code": r.returncode,
+                    "exit_code": exit_code,
                     "command": shell_cmd,
                 })
             except subprocess.TimeoutExpired:
