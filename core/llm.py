@@ -46,6 +46,11 @@ TURN_HISTORY_MAX_ENTRIES = 200        # cap on _turn_history entries
 # Parallel execution
 MAX_PARALLEL_TOOLS = 6  # max concurrent tool threads in ThreadPoolExecutor
 
+
+def _capped_workers(items: list | list[int]) -> int:
+    """Return the number of workers for a parallel group, capped at MAX_PARALLEL_TOOLS."""
+    return min(len(items), MAX_PARALLEL_TOOLS)
+
 # Orchestration / context injection -- constants now in context_inject.py
 # (imported below after the circuit breaker section)
 
