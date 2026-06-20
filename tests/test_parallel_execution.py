@@ -512,73 +512,64 @@ class TestCancelEventIsolation:
 
 
 class TestConcurrencyCap:
-    def test_capped_workers_applied_in_parallel_no_pipes(self):
-        """_execute_parallel_no_pipes should call _capped_workers with the full list."""
-        remaining = [_make_tc("read_file", {"path": f"{i}.py"}, i) for i in range(20)]
+    def test_max_parallel_tools_is_reasonable(self):
+        """The cap should be positive and not excessive."""
+        assert MAX_PARALLEL_TOOLS > 0
+        assert MAX_PARALLEL_TOOLS <= 32  # sane upper bound
 
-        with (
-            patch("core.llm._capped_workers") as mock_capped,
-            patch("core.llm.ThreadPoolExecutor") as mock_pool_cls,
-            patch("core.llm.execute_tool") as mock_exec,
-            patch("core.llm._append_tool_result"),
-        ):
-            mock_capped.return_value = MAX_PARALLEL_TOOLS
-            mock_exec.return_value = ToolResult(True, "ok")
+    def test_capped_workers_never_exceeds_max(self):
+        """_capped_workers should return at most MAX_PARALLEL_TOOLS."""
+        for n in (0, 1, 3, MAX_PARALLEL_TOOLS, MAX_PARALLEL_TOOLS + 1, MAX_PARALLEL_TOOLS * 10):
+            result = _capped_workers(list(range(n)))
+            assert result == min(n, MAX_PARALLEL_TOOLS)
+
+    def test_capped_workers_used_by_parallel_no_pipes(self):
+        """_execute_parallel_no_pipes calls ThreadPoolExecutor with capped workers."""
+        remaining = [_make_tc("read_file", {"path": f"{i}.py"}, i) for i in range(20)]
+        # Cancel immediately to avoid ThreadPoolExecutor + as_completed hang
+        cancel = threading.Event()
+        cancel.set()
+
+        with patch("core.llm.ThreadPoolExecutor") as mock_pool_cls:
             mock_pool = MagicMock()
             mock_pool.__enter__.return_value = mock_pool
             mock_pool_cls.return_value = mock_pool
-
-            # Provide a proper future so as_completed doesn't hang
-            import concurrent.futures
-            mock_future = MagicMock(spec=concurrent.futures.Future)
-            mock_future.result.return_value = (remaining[0], ToolResult(True, "ok"))
-            mock_pool.submit.return_value = mock_future
 
             _execute_parallel_no_pipes(
                 remaining, [], MagicMock(), MagicMock(),
                 on_tool_start=None, on_tool_end=None, on_tool_output=None,
-                approve_callback=None, cancel_event=None,
+                approve_callback=None, cancel_event=cancel,
                 recent_tool_keys=None, tool_keys_lock=None,
             )
 
-        mock_capped.assert_called_once_with(remaining)
-        mock_pool_cls.assert_called_once_with(max_workers=MAX_PARALLEL_TOOLS)
+        mock_pool_cls.assert_called_once()
+        assert mock_pool_cls.call_args.kwargs["max_workers"] == MAX_PARALLEL_TOOLS
 
-    def test_capped_workers_applied_in_groups(self):
-        """_execute_groups should call _capped_workers with the group list."""
+    def test_capped_workers_used_by_groups(self):
+        """_execute_groups calls ThreadPoolExecutor with capped workers."""
         remaining = [_make_tc("read_file", {"path": f"{i}.py"}, i) for i in range(10)]
-        groups = [list(range(10))]  # single group of 10
+        groups = [list(range(10))]
         pipe_deps = {}
         pipe_results = {}
+        # Cancel immediately
+        cancel = threading.Event()
+        cancel.set()
 
-        with (
-            patch("core.llm._capped_workers") as mock_capped,
-            patch("core.llm.ThreadPoolExecutor") as mock_pool_cls,
-            patch("core.llm.execute_tool") as mock_exec,
-            patch("core.llm._append_tool_result"),
-        ):
-            mock_capped.return_value = MAX_PARALLEL_TOOLS
-            mock_exec.return_value = ToolResult(True, "ok")
+        with patch("core.llm.ThreadPoolExecutor") as mock_pool_cls:
             mock_pool = MagicMock()
             mock_pool.__enter__.return_value = mock_pool
             mock_pool_cls.return_value = mock_pool
-
-            # Provide proper futures
-            import concurrent.futures
-            mock_future = MagicMock(spec=concurrent.futures.Future)
-            mock_future.result.return_value = (0, remaining[0], ToolResult(True, "ok"))
-            mock_pool.submit.return_value = mock_future
 
             _execute_groups(
                 groups, remaining, [], MagicMock(), MagicMock(),
                 pipe_deps, pipe_results,
                 on_tool_start=None, on_tool_end=None, on_tool_output=None,
-                approve_callback=None, cancel_event=None,
+                approve_callback=None, cancel_event=cancel,
                 recent_tool_keys=None, tool_keys_lock=None,
             )
 
-        mock_capped.assert_called_once_with(groups[0])
-        mock_pool_cls.assert_called_once_with(max_workers=MAX_PARALLEL_TOOLS)
+        mock_pool_cls.assert_called_once()
+        assert mock_pool_cls.call_args.kwargs["max_workers"] == MAX_PARALLEL_TOOLS
 
 
 # ── Cache thread safety ────────────────────────────────────────────────────
