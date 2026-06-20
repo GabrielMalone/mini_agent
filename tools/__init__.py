@@ -827,7 +827,7 @@ def execute_tool(
         else:
             t.join(timeout=_TOOL_TIMEOUT)
     finally:
-        _CURRENT_CANCEL_EVENT = _prev_cancel
+        _CURRENT_CANCEL_EVENT.reset(_cancel_token)
     if t.is_alive():
         # Thread still running after timeout -- it's stuck.
         # We cannot safely kill a Python thread, so return a timeout result.
