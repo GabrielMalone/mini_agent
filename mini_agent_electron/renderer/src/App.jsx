@@ -683,8 +683,6 @@ function AppShell() {
         setBotStatus={setBotStatus}
         workspace={workspace}
         sessionName={sessionName}
-        planSteps={planSteps}
-        planDone={planDone}
         themeEntry={themeEntry}
         PALETTE_SVG={PALETTE_SVG}
         THEMES={THEMES}
