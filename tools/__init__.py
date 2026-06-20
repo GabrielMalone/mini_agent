@@ -127,6 +127,7 @@ _TOOL_CACHE_TTL: float = 3600.0  # seconds (1 hour) -- safety net; primary inval
 _TOOL_CACHE_PATH_MAP: dict[str, set[str]] = {}  # file path -> set of cache keys
 _TOOL_CACHE_HITS: int = 0
 _TOOL_CACHE_MISSES: int = 0
+_TOOL_CACHE_LOCK = threading.Lock()
 
 def get_tool_cache_stats() -> dict:
     """Return cache hit/miss/size stats for observability."""
