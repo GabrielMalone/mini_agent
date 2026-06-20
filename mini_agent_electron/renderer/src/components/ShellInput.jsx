@@ -61,9 +61,6 @@ function shellTheme() {
       border: 'none !important',
       boxShadow: 'none !important',
     },
-    '.cm-cursor, .cm-cursor-primary': {
-      borderLeft: '3px solid #00cc44',
-    },
     '.cm-selectionBackground': {
       backgroundColor: `${v.accent}33 !important`,
     },
