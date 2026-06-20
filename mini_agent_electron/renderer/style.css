@@ -801,7 +801,8 @@ html, body {
 }
 
 .shell-input-cm .cm-editor .cm-cursor {
-  border-left-color: var(--accent);
+  border-left-width: 2px;
+  border-left-color: var(--text);
 }
 
 .shell-input-cm .cm-editor .cm-placeholder {
