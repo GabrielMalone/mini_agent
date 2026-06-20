@@ -673,6 +673,14 @@ function handlePythonMessage(msg) {
       win.webContents.send('stream:shell_output', data);
       break;
 
+    case 'autocomplete_result':
+      // Resolve the pending autocomplete promise
+      if (_autocompleteResolve) {
+        _autocompleteResolve(data.completions || []);
+        _autocompleteResolve = null;
+      }
+      break;
+
     case 'session_list_result':
       win.webContents.send('session:list_result', data);
       break;
