@@ -31,66 +31,63 @@ function shellTheme() {
     '&': {
       flex: '1',
       fontSize: v.fontSize,
-      fontFamily: v.fontFamily,
-      lineHeight: '1.5',
+      fontFamily: `"${v.fontFamily}", monospace`,
+      backgroundColor: v.bg,
       color: v.text,
-      background: 'transparent',
       caretColor: v.accent,
     },
     '.cm-content': {
-      fontFamily: `${v.fontFamily} !important`,
+      fontFamily: `"${v.fontFamily}", monospace`,
       padding: '0 !important',
-      caretColor: v.accent,
     },
     '.cm-line': {
       padding: '0 !important',
     },
-    '.cm-cursor, .cm-dropCursor': {
-      borderLeftColor: v.accent,
-    },
-    '&.cm-focused .cm-cursor': {
-      borderLeftColor: v.accent,
-    },
-    '.cm-selectionBackground, .cm-selectionMatch, &.cm-focused .cm-selectionBackground, ::selection': {
-      backgroundColor: `${v.accent}33 !important`,
-    },
-    '.cm-activeLine': {
-      backgroundColor: 'transparent !important',
-    },
-    '.cm-gutters': {
-      display: 'none',
-    },
     '.cm-placeholder': {
       color: v.dim,
+      fontStyle: 'italic',
     },
-    // Syntax tokens -- shell mode
-    '.cmt-keyword':    { color: v.accent, fontWeight: '600' },
-    '.cmt-builtin':    { color: v.accent },
-    '.cmt-number':     { color: v.green },
-    '.cmt-string':     { color: v.green },
-    '.cmt-meta':       { color: v.yellow },
-    '.cmt-comment':    { color: v.dim, fontStyle: 'italic' },
-    '.cmt-variableName': { color: v.text },
-    '.cmt-typeName':   { color: v.yellow },
-    '.cmt-operator':   { color: v.accent },
-    '.cmt-punctuation': { color: v.dim },
-    '.cmt-bracket':    { color: v.dim },
-    '.cmt-link':       { color: v.accent, textDecoration: 'underline' },
-    // Error underline (invalid commands)
-    '.cmt-invalid':    { color: v.red },
-  }, { dark: true });
+    '.cm-cursor': {
+      borderLeftColor: v.accent,
+    },
+    '.cm-selectionBackground': {
+      backgroundColor: `${v.accent}33 !important`,
+    },
+    '.cm-completionIcon': {
+      display: 'none',
+    },
+    '.cm-tooltip': {
+      backgroundColor: v.bg,
+      border: `1px solid ${v.dim}`,
+      color: v.text,
+      fontFamily: `"${v.fontFamily}", monospace`,
+      fontSize: v.fontSize,
+    },
+    '.cm-tooltip-autocomplete': {
+      '& > ul > li[aria-selected]': {
+        backgroundColor: `${v.accent}33`,
+        color: v.accent,
+      },
+    },
+    '.cm-tooltip.cm-tooltip-autocomplete > ul > li': {
+      padding: '2px 8px',
+    },
+  });
 }
 
 // ---------------------------------------------------------------------------
-// Autocomplete -- basic /command completer (extensible)
+// Static command autocomplete
 // ---------------------------------------------------------------------------
 const commands = [
-  { label: '/workspace', detail: 'Switch workspace directory' },
-  { label: '/theme', detail: 'Switch color theme' },
-  { label: '/session', detail: 'List or switch sessions' },
-  { label: '/clear', detail: 'Clear chat history' },
-  { label: '/cancel', detail: 'Cancel current turn' },
-  { label: '/help', detail: 'Show available commands' },
+  { label: '/sh',        detail: 'Run a shell command' },
+  { label: '/clear',     detail: 'Clear chat history' },
+  { label: '/cancel',    detail: 'Cancel current turn' },
+  { label: '/help',      detail: 'Show available commands' },
+  { label: '/stats',     detail: 'Show session stats' },
+  { label: '/export',    detail: 'Export conversation' },
+  { label: '/workspace', detail: 'Switch workspace' },
+  { label: '/session',   detail: 'List or switch sessions' },
+  { label: '/init',      detail: 'Initialize project rules' },
 ];
 
 function shellCompletions(context) {
@@ -100,6 +97,52 @@ function shellCompletions(context) {
     from: word.from,
     options: commands.filter((c) => c.label.startsWith(word.text)),
   };
+}
+
+// ---------------------------------------------------------------------------
+// LLM-powered shell command autocomplete
+// ---------------------------------------------------------------------------
+let _llmAutocompleteDebounce = null;
+let _llmAutocompletePending = null;
+
+function llmShellCompletions(context) {
+  // Only activate when user is typing a shell command after /sh
+  const match = context.matchBefore(/\/sh\s+\S.*$/i);
+  if (!match) return null;
+
+  const text = match.text;
+
+  // Cancel any pending debounce
+  if (_llmAutocompleteDebounce) {
+    clearTimeout(_llmAutocompleteDebounce);
+    _llmAutocompleteDebounce = null;
+  }
+
+  // If there's an active promise, return it to extend the completion cycle
+  if (_llmAutocompletePending) {
+    return _llmAutocompletePending;
+  }
+
+  _llmAutocompletePending = new Promise((resolve) => {
+    _llmAutocompleteDebounce = setTimeout(async () => {
+      _llmAutocompleteDebounce = null;
+      _llmAutocompletePending = null;
+      try {
+        const completions = await window.miniAgent?.autocomplete?.(text) || [];
+        const options = completions.map((c) => ({
+          label: c.label,
+          detail: c.detail || 'AI suggestion',
+          // Insert the completion after the user's typed text
+          apply: c.label,
+        }));
+        resolve({ from: match.to, options, filter: false });
+      } catch {
+        resolve(null);
+      }
+    }, 350);
+  });
+
+  return _llmAutocompletePending;
 }
 
 // ---------------------------------------------------------------------------
@@ -292,7 +335,7 @@ const ShellInput = forwardRef(function ShellInput({
         placeholderExt(placeholder),
         StreamLanguage.define(shell),
         shellKeymap,
-        autocompletion({ override: [shellCompletions] }),
+        autocompletion({ override: [shellCompletions, llmShellCompletions] }),
         keymap.of([...defaultKeymap, ...historyKeymap]),
         shellTheme(),
         EditorState.transactionFilter.of((tr) => {
@@ -307,40 +350,53 @@ const ShellInput = forwardRef(function ShellInput({
               e.preventDefault();
             }
           },
+          drop: (e) => {
+            if (disabledRef.current) {
+              e.preventDefault();
+            }
+          },
         }),
       ],
     });
+
+    // Destroy previous view if re-mounting
+    if (viewRef.current) {
+      viewRef.current.destroy();
+    }
 
     const view = new EditorView({
       state,
       parent: containerRef.current,
     });
-
     viewRef.current = view;
 
+    // Auto-focus after mount
     if (autoFocus && !disabled) {
-      view.focus();
+      // Small delay to let the editor settle
+      setTimeout(() => view.focus(), 50);
     }
 
     return () => {
       view.destroy();
       viewRef.current = null;
     };
-  }, []); // mount only -- we reconcile value externally
+  // We only want to re-create the editor when `disabled` changes
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [disabled]);
 
-  // --- sync external value changes into the editor -------------------------
+  // --- sync external value changes -----------------------------------------
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
     const currentDoc = view.state.doc.toString();
-    if (value !== currentDoc) {
+    if (currentDoc !== value) {
       view.dispatch({
         changes: { from: 0, to: view.state.doc.length, insert: value },
       });
     }
   }, [value]);
 
-  // --- sync disabled state -------------------------------------------------
+  // --- sync editable compartment -------------------------------------------
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
@@ -351,17 +407,34 @@ const ShellInput = forwardRef(function ShellInput({
     });
   }, [disabled]);
 
+  // -- ghost text (dimmed text shown when input is empty) -------------------
+  const showGhost = focused && value === '' && ghostText && !disabled;
+
   return (
-    <div className="shell-input-wrapper">
-      <div
-        ref={containerRef}
-        className="shell-input-cm"
-      />
-      {/* Ghost text overlay -- shown when input is empty AND not focused */}
-      {!value && ghostText && !disabled && !focused && (
-        <div className="shell-input-ghost" aria-hidden="true">
-          <span className="shell-input-ghost__text">{ghostText}</span>
-          <span className="shell-input-ghost__hint">(tab)</span>
+    <div style={{ position: 'relative', flex: 1 }}>
+      <div ref={containerRef} style={{ height: '100%' }} />
+      {showGhost && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            pointerEvents: 'none',
+            display: 'flex',
+            alignItems: 'center',
+            padding: '0 12px',
+            color: readThemeVars().dim,
+            fontFamily: `"${readThemeVars().fontFamily}", monospace`,
+            fontSize: readThemeVars().fontSize,
+            opacity: 0.5,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          {ghostText}
         </div>
       )}
     </div>
