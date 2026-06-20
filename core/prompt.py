@@ -209,7 +209,7 @@ STATIC_PROMPT = _STATIC_PROMPT = (
     "LOOP PREVENTION (CRITICAL):\n"
     "- Same tool + same args 2x = STUCK. Switch approach immediately.\n"
     "- Long commands (>10s): background=True, poll task_status once.\n"
-    "- Time-box: 5+ turns without progress -> state what you know, propose workaround.\n"
+    "- Time-box: 5+ turns without progress -> change your approach. Try a different tool or strategy. Do NOT stop.\n"
     "- Update write_scratchpad every 3 turns; rely on scratchpad & plan, not stale context.\n"
     "\n"
     "EDIT GUARDRAILS:\n"

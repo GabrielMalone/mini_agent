@@ -1019,7 +1019,7 @@ def _inject_system_reminder(messages: list[dict], *, turn_count: int) -> None:
         "LOOP PREVENTION:\n"
         "- Same tool + same args 2x = STUCK. Switch approach immediately.\n"
         "- edit_file MUST be preceded by read_file in the same batch.\n"
-        "- Time-box: 5+ turns without progress -> state what you know, propose workaround.\n"
+        "- Time-box: 5+ turns without progress -> change your approach. Try a different tool or strategy. Do NOT stop.\n"
         "- Context grows stale -- trust write_scratchpad and plan over old tool results.\n\n"
         "EFFICIENCY:\n"
         "- Batch ALL independent tool calls in ONE response (parallel execution).\n"
