@@ -43,6 +43,9 @@ TURN_SUMMARY_ASSISTANT_PREVIEW = 200  # max chars for assistant content in summa
 TURN_SUMMARY_RESULT_PREVIEW = 150     # max chars for tool result content in summary
 TURN_HISTORY_MAX_ENTRIES = 200        # cap on _turn_history entries
 
+# Parallel execution
+MAX_PARALLEL_TOOLS = 6  # max concurrent tool threads in ThreadPoolExecutor
+
 # Orchestration / context injection -- constants now in context_inject.py
 # (imported below after the circuit breaker section)
 
