@@ -800,9 +800,9 @@ html, body {
   outline: none;
 }
 
-.shell-input-cm .cm-editor .cm-cursor {
-  border-left-width: 2px;
-  border-left-color: var(--text);
+.shell-input-cm .cm-editor .cm-cursor,
+.shell-input-cm .cm-editor .cm-cursor-primary {
+  border-left: 3px solid #00cc44;
 }
 
 .shell-input-cm .cm-editor .cm-placeholder {
