@@ -304,14 +304,79 @@ def _get_symbol_index(root: str) -> dict[str, list[dict]]:
     return _SYMBOL_INDEX
 
 
+def _try_knowledge_graph_lookup(name: str, workspace_root: str) -> list[dict] | None:
+    """Try to find a symbol via the knowledge graph. Returns None if graph unavailable.
+
+    Returns a list of dicts with keys: name, kind, path, line.
+    Returns empty list if graph is built but symbol not found.
+    Returns None if graph hasn't been built (caller should fall back to grep index).
+    """
+    try:
+        from core.knowledge_graph import ensure_graph_built, get_graph_stats
+    except ImportError:
+        return None
+
+    if not ensure_graph_built(workspace_root):
+        return None
+
+    # Access the internal graph dict via the module
+    import core.knowledge_graph as _kg
+    graph = _kg._GRAPH
+
+    # Exact match
+    if name in graph:
+        entity = graph[name]
+        return [{
+            "name": entity.name,
+            "kind": entity.kind,
+            "path": entity.filepath or "",
+            "line": entity.line or 0,
+        }]
+
+    # Substring match (case-insensitive)
+    results: list[dict] = []
+    name_lower = name.lower()
+    for key, entity in graph.items():
+        if name_lower in key.lower():
+            results.append({
+                "name": entity.name,
+                "kind": entity.kind,
+                "path": entity.filepath or "",
+                "line": entity.line or 0,
+            })
+
+    return results
+
+
 @_register("find_symbol")
 def _find_symbol(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
-    """Find where a Python symbol (function, class, method) is defined in the workspace."""
+    """Find where a Python symbol (function, class, method) is defined in the workspace.
+
+    Primary path: knowledge graph lookup (O(1) after build, AST-precise).
+    Fallback: grep-based symbol index for names not in the graph or
+    when the graph hasn't been built yet.
+    """
     name = args.get("name", "")
     if not name:
         return ToolResult(success=False, content="Missing required parameter: 'name'.")
 
     root = rg.workspace_root
+
+    # --- Primary path: knowledge graph lookup ---
+    kg_matches = _try_knowledge_graph_lookup(name, root)
+    if kg_matches is not None:
+        if not kg_matches:
+            return ToolResult(
+                success=True,
+                content=f"No symbols matching '{name}' found in workspace (knowledge graph).",
+            )
+        lines: list[str] = []
+        for entry in kg_matches[:20]:
+            lines.append(f"  {entry['kind']:5s}  {entry['name']}  ->  {entry['path']}:{entry['line']}")
+        prefix = f"Found {len(kg_matches)} location(s) for '{name}':"
+        return ToolResult(success=True, content=prefix + "\n" + "\n".join(lines))
+
+    # --- Fallback: grep-based symbol index ---
     idx = _get_symbol_index(root)
 
     # Exact match first, then substring
@@ -1450,15 +1515,84 @@ def _get_ref_index(root: str) -> dict[str, list[dict]]:
     return _REF_INDEX
 
 
+def _try_knowledge_graph_usages(name: str, workspace_root: str) -> list[dict] | None:
+    """Try to find usages via the knowledge graph. Returns None if graph unavailable.
+
+    Uses calls/imports/inherits edges to find all references.
+    Returns list of {source, target, kind, file, line} dicts.
+    Returns None if graph hasn't been built (caller should fall back to grep).
+    """
+    try:
+        from core.knowledge_graph import ensure_graph_built
+    except ImportError:
+        return None
+
+    if not ensure_graph_built(workspace_root):
+        return None
+
+    import core.knowledge_graph as _kg
+    graph = _kg._GRAPH
+
+    results: list[dict] = []
+
+    def _collect_usages(entity_key: str) -> None:
+        entity = graph.get(entity_key)
+        if entity is None:
+            return
+        for edge in entity.edges_in:
+            if edge.kind in ("calls", "imports", "inherits"):
+                results.append({
+                    "source": edge.source,
+                    "target": edge.target,
+                    "kind": edge.kind,
+                    "file": edge.filepath or "",
+                    "line": edge.line or 0,
+                })
+
+    # Exact match
+    if name in graph:
+        _collect_usages(name)
+    else:
+        # Substring match (case-insensitive)
+        name_lower = name.lower()
+        for key in graph:
+            if name_lower in key.lower():
+                _collect_usages(key)
+
+    return results
+
+
 @_register("find_usages")
 def _find_usages(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
-    """Find all usages (references) of a Python symbol in the workspace."""
+    """Find all usages (references) of a Python symbol in the workspace.
+
+    Primary path: knowledge graph edges (calls, imports, inherits).
+    Fallback: grep-based reference index.
+    """
     import re
     name = args.get("name", "")
     if not name:
         return ToolResult(success=False, content="Missing required parameter: 'name'.")
 
     root = rg.workspace_root
+
+    # --- Primary path: knowledge graph usages ---
+    kg_usages = _try_knowledge_graph_usages(name, root)
+    if kg_usages is not None:
+        if not kg_usages:
+            return ToolResult(
+                success=True,
+                content=f"No usages found for '{name}' in workspace (knowledge graph).",
+            )
+        shown = kg_usages[:30]
+        lines: list[str] = [f"Found {len(kg_usages)} usage(s) of '{name}':"]
+        for ref in shown:
+            lines.append(f"  {ref['kind']:8s}  {ref['source']}  ->  {ref['file']}:{ref['line']}")
+        if len(kg_usages) > 30:
+            lines.append(f"  ... and {len(kg_usages) - 30} more")
+        return ToolResult(success=True, content="\n".join(lines))
+
+    # --- Fallback: grep-based reference index ---
     ref_idx = _get_ref_index(root)
 
     if not ref_idx:

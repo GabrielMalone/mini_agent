@@ -539,6 +539,12 @@ def _apply_single_edit(
         if path.endswith(".py"):
             from tools.search_ops import _reindex_file
             _reindex_file(resolved, wg.workspace_root)
+        # Keep knowledge graph fresh
+        try:
+            from core.knowledge_graph import invalidate_file
+            invalidate_file(resolved, wg.workspace_root)
+        except Exception:
+            pass  # Non-critical: graph invalidation is best-effort
 
         # Auto plan advancement (file path only -- old string is too noisy)
         _auto_advance_plan(resolved)
@@ -773,6 +779,13 @@ def _edit_file_anchored(
         _FILE_CACHE.pop(fs["resolved"], None)
         _READ_FILES.add(fs["resolved"])
         get_tracker().mark_file_edited(fs["resolved"])
+
+        # Keep knowledge graph fresh
+        try:
+            from core.knowledge_graph import invalidate_file
+            invalidate_file(fs["resolved"])
+        except Exception:
+            pass  # Non-critical: graph invalidation is best-effort
 
         additions = sum(e["lines_added"] for e in applied)
         deletions = sum(e["lines_deleted"] for e in applied)

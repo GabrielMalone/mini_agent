@@ -77,6 +77,78 @@ def _add_edge(
     _GRAPH[target].edges_in.append(edge)
 
 
+def invalidate_file(filepath: str, root: str | None = None) -> bool:
+    """Re-parse a single file into the knowledge graph after an edit.
+
+    Removes all entities belonging to the file and their edges from other
+    entities, then re-extracts definitions/edges from the file's new source.
+
+    Returns True if the graph was updated, False if the graph wasn't built
+    or the file couldn't be parsed.
+    """
+    global _GRAPH_BUILT
+
+    if not _GRAPH_BUILT:
+        return False
+
+    # Resolve absolute path
+    if root:
+        abs_path = os.path.join(root, filepath) if not os.path.isabs(filepath) else filepath
+    else:
+        abs_path = os.path.abspath(filepath)
+
+    rel_path = os.path.relpath(abs_path, _GRAPH_WORKSPACE) if _GRAPH_WORKSPACE else filepath
+
+    ext = os.path.splitext(filepath)[1].lower()
+    if ext not in (".py", ".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs"):
+        return False
+
+    # Build module name
+    mod_name = rel_path.replace("/", ".").replace("\\\\", ".")
+    if mod_name.endswith(ext):
+        mod_name = mod_name[:-len(ext)]
+
+    with _GRAPH_LOCK:
+        # --- Remove entities belonging to this file ---
+        removed_names: set[str] = set()
+        for name, entity in list(_GRAPH.items()):
+            if entity.filepath and (
+                entity.filepath == filepath
+                or entity.filepath.endswith("/" + filepath)
+                or entity.filepath.endswith("\\\\" + filepath)
+                or entity.filepath == abs_path
+                or entity.filepath == rel_path
+            ):
+                removed_names.add(name)
+                del _GRAPH[name]
+
+        # --- Clean up dangling edges in remaining entities ---
+        for entity in _GRAPH.values():
+            entity.edges_out = [
+                e for e in entity.edges_out
+                if e.target not in removed_names
+            ]
+            entity.edges_in = [
+                e for e in entity.edges_in
+                if e.source not in removed_names
+            ]
+
+        # --- Re-parse the file ---
+        try:
+            with open(abs_path, "r", encoding="utf-8", errors="replace") as f:
+                source = f.read()
+        except (OSError, UnicodeDecodeError):
+            return False
+
+        _add_module(mod_name, rel_path)
+        if ext == ".py":
+            _extract_python_graph(source, rel_path, mod_name)
+        else:
+            _extract_ts_graph(source, rel_path, mod_name)
+
+    return True
+
+
 def build_knowledge_graph(root: str) -> None:
     """Build entity-relationship graph from workspace source files.
 

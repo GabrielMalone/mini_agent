@@ -734,7 +734,9 @@ class TestFindUsages(unittest.TestCase):
         tc = _make_tool_call("find_usages", name="gree")
         result = execute_tool(tc, self.write_gate, self.read_gate)
         self.assertTrue(result.success)
-        self.assertIn("greet", result.content)
+        # Substring "gree" matches "greet" — should find usages via
+        # knowledge graph (calls edges) or fallback. Check for the caller.
+        self.assertIn("main", result.content)
 
     def test_usage_across_multiple_files(self):
         self._write("caller.py", (

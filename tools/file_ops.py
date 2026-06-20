@@ -269,6 +269,12 @@ def _write_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolRes
         if path.endswith(".py"):
             from tools.search_ops import _reindex_file
             _reindex_file(safety_result.resolved_path, wg.workspace_root)
+        # Keep knowledge graph fresh
+        try:
+            from core.knowledge_graph import invalidate_file
+            invalidate_file(safety_result.resolved_path, wg.workspace_root)
+        except Exception:
+            pass  # Non-critical: graph invalidation is best-effort
         # Auto plan advancement (file path only -- full content is too noisy)
         _auto_advance_plan(safety_result.resolved_path)
         return ToolResult(
