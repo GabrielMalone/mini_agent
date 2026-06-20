@@ -1153,7 +1153,7 @@ class AgentRunner:
         )
 
         payload = {
-            "model": self.config.model,
+            "model": fast_model,
             "messages": [
                 {"role": "user", "content": prompt},
             ],
