@@ -775,18 +775,21 @@ html, body {
 .shell-input-cm .cm-editor {
   background: transparent;
   outline: none;
+  border: none;
 }
 
 .shell-input-cm .cm-editor .cm-scroller {
   font-family: var(--font-family);
   font-size: var(--font-size);
   line-height: var(--line-height);
+  outline: none;
 }
 
 .shell-input-cm .cm-editor .cm-content {
   caret-color: var(--accent);
   font-family: var(--font-family);
   padding: 0;
+  outline: none;
 }
 
 .shell-input-cm .cm-editor .cm-line {
@@ -803,6 +806,9 @@ html, body {
 
 .shell-input-cm .cm-editor .cm-placeholder {
   color: var(--dim);
+  outline: none;
+  border: none;
+  box-shadow: none;
 }
 
 /* ---------------------------------------------------------------------------
