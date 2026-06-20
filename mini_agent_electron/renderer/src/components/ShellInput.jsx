@@ -366,6 +366,34 @@ const ShellInput = forwardRef(function ShellInput({
     }
   }, [value]);
 
+  // --- sync theme compartment on data-theme attribute change ---------------
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    let raf = null;
+    const reconfigure = () => {
+      if (raf != null) return;
+      raf = requestAnimationFrame(() => {
+        raf = null;
+        if (viewRef.current) {
+          viewRef.current.dispatch({
+            effects: themeCompartment.current.reconfigure(shellTheme()),
+          });
+        }
+      });
+    };
+    const observer = new MutationObserver((mutations) => {
+      for (const m of mutations) {
+        if (m.attributeName === 'data-theme') {
+          reconfigure();
+          break;
+        }
+      }
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    return () => observer.disconnect();
+  }, []);
+
   // --- sync editable compartment -------------------------------------------
   useEffect(() => {
     const view = viewRef.current;
