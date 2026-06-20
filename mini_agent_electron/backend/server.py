@@ -30,6 +30,7 @@ import json
 import fcntl
 import os
 import pty
+import re
 import select
 import struct
 import subprocess
@@ -350,6 +351,9 @@ class AgentRunner:
         self.messages: list[dict] = data["messages"]
         self.session = data["session"]
         self.workspace = workspace
+
+        # Track shell CWD so /sh cd <dir> changes persist across commands
+        self._shell_cwd: str = workspace
 
         self._cancel_event = threading.Event()
         self._turn_thread: threading.Thread | None = None
@@ -947,6 +951,7 @@ class AgentRunner:
             self.messages = self.memory.save(self.messages)
             self.memory.close()
             self.workspace = new_workspace
+            self._shell_cwd = new_workspace
 
             # Notify the UI that we're loading the new workspace
             send_msg({"type": "status", "workspace": new_workspace, "session_name": "loading...",
@@ -998,12 +1003,67 @@ class AgentRunner:
                 send_msg({"type": "response", "lines": ["Usage: /sh <command>"]})
                 return
             try:
-                stdout_text, exit_code = _run_shell_pty(
-                    shell_cmd, cwd=self.workspace, timeout=30.0
+                # Wrap the command so we can capture the final CWD and exit
+                # code.  The sentinel markers are printed on their own lines
+                # after the user command completes.
+                wrapped_cmd = (
+                    f"{shell_cmd}; "
+                    f"_e=$?; "
+                    f"printf '\\n__SHELL_CWD__%s\\n__SHELL_EXIT__%d\\n' "
+                    f'"$(pwd)" "$_e"'
                 )
-                # Strip trailing whitespace but keep internal formatting.
-                # Strip carriage returns that PTYs often inject.
+                stdout_text, _pty_rc = _run_shell_pty(
+                    wrapped_cmd, cwd=self._shell_cwd, timeout=30.0
+                )
+
+                # Parse the sentinel from the end of the output.
                 clean_text = stdout_text.rstrip().replace("\r\n", "\n").replace("\r", "\n")
+                cwd_updated = False
+                try:
+                    parts = clean_text.rsplit("\n__SHELL_CWD__", 1)
+                    if len(parts) == 2:
+                        command_output = parts[0].rstrip("\n")
+                        tail_parts = parts[1].split("\n", 2)
+                        if len(tail_parts) >= 2:
+                            new_cwd = tail_parts[0]
+                            m = re.match(r"__SHELL_EXIT__(\d+)", tail_parts[1])
+                            if m:
+                                clean_text = command_output
+                                exit_code = int(m.group(1))
+                                if new_cwd and os.path.isdir(new_cwd):
+                                    cwd_updated = True
+                                    if new_cwd != self._shell_cwd:
+                                        self._shell_cwd = new_cwd
+                                    if new_cwd != self.workspace:
+                                        self.workspace = new_cwd
+                                        # Update the safety gates so file ops work
+                                        # from the new directory.
+                                        self.read_gate = ReadSafetyGate(new_cwd)
+                                        self.write_gate = WriteSafetyGate(new_cwd)
+                                        # Notify the frontend that the workspace
+                                        # has changed.
+                                        session_name = "default"
+                                        db_path = getattr(self.memory, '_db_path', '')
+                                        if db_path:
+                                            m = re.search(r'_session_(.+)\\.db$', db_path)
+                                            if m:
+                                                session_name = m.group(1)
+                                        send_msg({
+                                            "type": "status",
+                                            "workspace": new_cwd,
+                                            "session_name": session_name,
+                                            "git_branch": "",
+                                            "git_dirty": False,
+                                            "restored_count": 0,
+                                            "model": self.config.model,
+                                        })
+                except (ValueError, re.error):
+                    pass  # malformed sentinel; fall through with raw output
+
+                if not cwd_updated:
+                    exit_code = _pty_rc
+                    clean_text = stdout_text.rstrip().replace("\r\n", "\n").replace("\r", "\n")
+
                 lines = clean_text.split("\n") if clean_text else []
                 if exit_code != 0 and not any(
                     l.strip().startswith("(exit ") for l in lines
