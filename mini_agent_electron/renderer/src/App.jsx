@@ -322,10 +322,22 @@ function AppShell() {
       }
     }));
 
-    // Shell command output (from /sh) — routed to terminal panel, not chat blocks
+    // Shell command output (from /sh) — update the active chat block
     unsubs.push(api.on('stream:shell_output', (data) => {
+      const outputText = (data.lines || []).join('\n');
+      const isOk = data.exit_code === 0;
+      const activeId = activeBlockIdRef.current;
+      startTransition(() => {
+        setBlocks((prev) => prev.map((b) => {
+          if (b.id === activeId && b.status === 'running') {
+            return { ...b, output: outputText, status: isOk ? 'ok' : 'err' };
+          }
+          return b;
+        }));
+      });
+      // Also keep terminal panel history for the expandable panel
       setShellOutput((prev) => [
-        ...prev.slice(-49),  // keep last 50
+        ...prev.slice(-49),
         {
           id: `sh-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           command: data.command || '',
@@ -463,17 +475,14 @@ function AppShell() {
     // Slash commands always go through the command handler
     if (trimmed.startsWith('/')) {
       setInputValue('');
-      const isShellCmd = trimmed.startsWith('/sh ');
-      if (!isShellCmd) {
-        // Non-shell slash commands create a block in the chat area
-        const cmdId = nextLineId();
-        startTransition(() => {
-          setBlocks((prev) => [...prev, {
-            id: cmdId, command: trimmed, output: '', status: 'running', timestamp: Date.now(),
-          }]);
-        });
-        activeBlockIdRef.current = cmdId;
-      }
+      // All slash commands create a block in the chat area (including /sh)
+      const cmdId = nextLineId();
+      startTransition(() => {
+        setBlocks((prev) => [...prev, {
+          id: cmdId, command: trimmed, output: '', status: 'running', timestamp: Date.now(),
+        }]);
+      });
+      activeBlockIdRef.current = cmdId;
       window.miniAgent.command(trimmed);
       return;
     }
