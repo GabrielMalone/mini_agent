@@ -430,11 +430,11 @@ def _inject_progress_check(messages: list[dict], *, turn_count: int) -> None:
         messages.append({
             "role": "user",
             "content": (
-                f"You've spent {_TOOL_CONTEXT._consecutive_read_only_turns} turns reading "
-                "code without making changes. If you have enough context to "
-                "answer the user, do so NOW. If you need more, state what "
-                "SPECIFIC information you're still missing -- don't just keep "
-                "reading files broadly."
+                f"You've spent {_TOOL_CONTEXT._consecutive_read_only_turns} turns only reading. "
+                "Stop reading and START DOING: make edits, write code, run tests, "
+                "or take whatever action the task requires. If you're genuinely stuck, "
+                "explain what specific info you still need, grab it in ONE turn, "
+                "then act. Do not loop -- take concrete action NOW."
             ),
             "_transient": True,
         })
@@ -442,11 +442,11 @@ def _inject_progress_check(messages: list[dict], *, turn_count: int) -> None:
     if turn_count % PROGRESS_INTERVAL != 0:
         return
     reminder = (
-        f"You have been working for {turn_count} turns. "
-        "Briefly assess your progress: are you making headway, "
-        "stuck in a loop, or done? If you can wrap up now, "
-        "give the final answer. If you truly need more turns, "
-        "continue -- but be specific about what remains."
+        f"Turn {turn_count}. Keep going -- do NOT stop just because you got a "
+        "progress nudge. This is just a checkpoint, not a stop signal. "
+        "Continue taking action: edit files, run tests, verify results. "
+        "Only stop when the user's task is fully complete. "
+        "If stuck, change your approach instead of looping."
     )
     messages.append({"role": "user", "content": reminder, "_transient": True})
 
