@@ -13,9 +13,7 @@ export default function StatusBar({
   const [botMenuOpen, setBotMenuOpen] = useState(false);
   const botMenuToggleRef = useRef(null);
   const [botMenuPos, setBotMenuPos] = useState(null);
-  const [planMenuOpen, setPlanMenuOpen] = useState(false);
-  const planMenuToggleRef = useRef(null);
-  const [planMenuPos, setPlanMenuPos] = useState(null);
+  // plan UI removed — plan feature doesn't work
 
   const handleBotToggle = useCallback(async (botName) => {
     const api = window.miniAgent;
