@@ -408,6 +408,19 @@ const ShellInput = forwardRef(function ShellInput({
     });
   }, [disabled]);
 
+  // --- toggle placeholder when ghost text is visible (avoid overlap) -----
+  const showGhost = focused && value === '' && ghostText && !disabled;
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({
+      effects: placeholderCompartment.current.reconfigure(
+        placeholderExt(showGhost ? '' : placeholder)
+      ),
+    });
+  }, [showGhost, placeholder]);
+
   // -- ghost text (dimmed text shown when input is empty) -------------------
   const showGhost = focused && value === '' && ghostText && !disabled;
 
