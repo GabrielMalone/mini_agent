@@ -1169,7 +1169,7 @@ class AgentRunner:
 
         try:
             r = requests.post(
-                f"{self.config.api_url}/v1/chat/completions",
+                self.config.api_url,
                 headers=headers,
                 json=payload,
                 timeout=5,
