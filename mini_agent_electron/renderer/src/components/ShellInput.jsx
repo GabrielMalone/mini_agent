@@ -338,7 +338,7 @@ const ShellInput = forwardRef(function ShellInput({
         placeholderCompartment.current.of(placeholderExt(placeholder)),
         StreamLanguage.define(shell),
         shellKeymap,
-        autocompletion({ override: [shellCompletions, llmShellCompletions] }),
+        autocompletion({ override: [shellCompletions, llmShellCompletions], activateOnTyping: true }),
         keymap.of([...defaultKeymap, ...historyKeymap]),
         shellTheme(),
         EditorState.transactionFilter.of((tr) => {
