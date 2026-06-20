@@ -335,17 +335,7 @@ function AppShell() {
           return b;
         }));
       });
-      // Also keep terminal panel history for the expandable panel
-      setShellOutput((prev) => [
-        ...prev.slice(-49),
-        {
-          id: `sh-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          command: data.command || '',
-          lines: data.lines || [],
-          exitCode: data.exit_code != null ? data.exit_code : -1,
-          timestamp: Date.now(),
-        },
-      ]);
+      // /sh output goes to chat area only; no terminal-panel duplication
     }));
 
     unsubs.push(api.on('backend:turn_start', () => {
