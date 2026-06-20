@@ -551,6 +551,16 @@ def _api_call_phase(
             return
         if cancel_event is not None and cancel_event.is_set():
             return
+
+        # Defer tools with _pipe dependencies to _tool_execution_phase.
+        # Streaming execution doesn't have access to pipe_results, so
+        # pipe-dependent tools would run with unsubstituted arguments.
+        # The tool will still be in msg["tool_calls"] and picked up by
+        # _tool_execution_phase which properly resolves _pipe deps.
+        raw_args = tc.get("function", {}).get("arguments", "")
+        if isinstance(raw_args, str) and "_pipe" in raw_args:
+            return
+
         if on_tool_start is not None:
             on_tool_start(tool_summary(tc))
         import sys as _sys_otr
