@@ -1,47 +1,17 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import ShellInput from './ShellInput';
-import AnsiBlock from './AnsiBlock';
 
 // ---------------------------------------------------------------------------
 // TerminalPanel — resizable terminal input area with command history
 //
 // Shows recently typed commands above the ShellInput, with a drag handle at
 // the top edge that lets the user expand the panel up to ~25% of the viewport.
-// Shell output (/sh commands) is rendered with ANSI color support and optional
-// Shiki syntax highlighting for code-like output.
+// /sh command output is rendered in the chat area (TerminalBlock), not here.
 // ---------------------------------------------------------------------------
 
 const MIN_HEIGHT = 48;   // collapsed: just the input line
 const MAX_PCT = 0.25;    // max 25% of viewport
 const DEFAULT_PCT = 0.12; // default expanded ~12%
-
-// -- Shell output block component --------------------------------------------
-
-/** Renders a single shell output block with ANSI colours preserved.
- *  The full output is rendered as one block so columnar layouts and
- *  ANSI escape sequences from the PTY are shown exactly as emitted. */
-function ShellOutputBlock({ command, lines, exitCode }) {
-  const fullText = lines.join('\n');
-
-  return (
-    <div className={`shell-output-block ${exitCode === 0 ? 'ok' : 'err'}`}>
-      <div className="shell-output-cmd">
-        <span className="prompt">{'>'}</span>
-        <span className="terminal-history-text shell-cmd">/sh {command}</span>
-        <span className="shell-exit-badge" data-ok={exitCode === 0}>
-          {exitCode === 0 ? 'OK' : `exit ${exitCode}`}
-        </span>
-      </div>
-      <div className="shell-output-lines">
-        {fullText ? (
-          <AnsiBlock text={fullText} />
-        ) : (
-          <span className="shell-output-dim">{'\u00A0'}</span>
-        )}
-      </div>
-    </div>
-  );
-}
 
 // -- Main component -----------------------------------------------------------
 
@@ -123,16 +93,16 @@ export default function TerminalPanel({
     document.body.style.userSelect = 'none';
   }, [height]);
 
-  // Auto-expand and auto-scroll when new content arrives
+  // Auto-expand and auto-scroll when new commands arrive
   useEffect(() => {
-    if (userCommands.length > 0 || shellOutput.length > 0) {
+    if (userCommands.length > 0) {
       expand();
     }
     const el = historyRef.current;
     if (el) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [userCommands, shellOutput]);
+  }, [userCommands]);
 
   const isExpanded = height !== null && height > MIN_HEIGHT + 4;
 
@@ -157,24 +127,13 @@ export default function TerminalPanel({
         <div className="frame-content">
           <div className="terminal-inner">
             {/* Command history (only visible when expanded) */}
-            {isExpanded && (userCommands.length > 0 || shellOutput.length > 0) && (
+            {isExpanded && userCommands.length > 0 && (
               <div ref={historyRef} className="terminal-history">
-                {userCommands
-                  .filter((cmd) => !cmd.text.startsWith('/sh '))  // /sh commands shown via shellOutput blocks
-                  .map((cmd) => (
-                    <div key={cmd.id} className="terminal-history-line">
-                      <span className="prompt">{'>'}</span>
-                      <span className="terminal-history-text">{cmd.text}</span>
-                    </div>
-                  ))}
-                {/* Shell command output blocks */}
-                {shellOutput.map((sh) => (
-                  <ShellOutputBlock
-                    key={sh.id}
-                    command={sh.command}
-                    lines={sh.lines}
-                    exitCode={sh.exitCode}
-                  />
+                {userCommands.map((cmd) => (
+                  <div key={cmd.id} className="terminal-history-line">
+                    <span className="prompt">{'>'}</span>
+                    <span className="terminal-history-text">{cmd.text}</span>
+                  </div>
                 ))}
               </div>
             )}
