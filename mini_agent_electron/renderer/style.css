@@ -781,6 +781,46 @@ html, body {
 #user-input::placeholder { color: var(--dim); }
 #user-input:disabled { opacity: 0.5; }
 
+/* CodeMirror ShellInput */
+.shell-input-cm {
+  flex: 1;
+  min-width: 0;
+  min-height: calc(var(--line-height) * 1.2em);
+}
+
+.shell-input-cm .cm-editor {
+  background: transparent;
+  outline: none;
+}
+
+.shell-input-cm .cm-editor .cm-scroller {
+  font-family: var(--font-family);
+  font-size: var(--font-size);
+  line-height: var(--line-height);
+}
+
+.shell-input-cm .cm-editor .cm-content {
+  caret-color: var(--accent);
+  font-family: var(--font-family);
+  padding: 0;
+}
+
+.shell-input-cm .cm-editor .cm-line {
+  padding: 0;
+}
+
+.shell-input-cm .cm-editor.cm-focused {
+  outline: none;
+}
+
+.shell-input-cm .cm-editor .cm-cursor {
+  border-left-color: var(--accent);
+}
+
+.shell-input-cm .cm-editor .cm-placeholder {
+  color: var(--dim);
+}
+
 /* ---------------------------------------------------------------------------
    Status bar
    --------------------------------------------------------------------------- */

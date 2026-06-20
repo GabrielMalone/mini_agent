@@ -12,6 +12,7 @@ import SettingsPanel from './components/SettingsPanel';
 import ToolCard from './components/ToolCard';
 import Header from './components/Header';
 import StatusBar from './components/StatusBar';
+import ShellInput from './components/ShellInput';
 
 
 // ---------------------------------------------------------------------------
@@ -456,17 +457,6 @@ function AppShell() {
     }
   }, [isLive, inputDisabled, chatStream]);
 
-  const handleKeyDown = useCallback((e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSubmit(e.target.value);
-    }
-  }, [handleSubmit]);
-
-  const handleChange = useCallback((e) => {
-    setInputValue(e.target.value);
-  }, []);
-
   // Drag-and-drop
   useEffect(() => {
     const api = window.miniAgent;
@@ -631,17 +621,14 @@ function AppShell() {
           <div className="frame-content">
             <div id="input-container">
               <span className="prompt">{'>'}</span>
-              <input
+              <ShellInput
                 ref={inputRef}
-                type="text"
-                id="user-input"
+                value={inputValue}
+                onChange={setInputValue}
+                onSubmit={handleSubmit}
+                disabled={inputDisabled}
                 placeholder="Type a message, /command, or drop files here..."
                 autoFocus
-                autoComplete="off"
-                spellCheck="false"
-                value={inputValue}
-                onChange={handleChange}
-                onKeyDown={handleKeyDown}
               />
             </div>
           </div>
