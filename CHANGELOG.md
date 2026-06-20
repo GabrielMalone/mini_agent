@@ -2,6 +2,31 @@
 
 Self-modification audit trail -- what the agent changed and why.
 
+## 2026-06-20 -- Fix API 400 "insufficient tool messages" contiguity bug
+
+### Fixed
+- **`core/llm.py`** `_tool_execution_phase()`: Moved `_inject_pre_execution_context()`
+  call to BEFORE `messages.append(msg)`. Previously, it ran between the
+  assistant(tool_calls) append and tool result appends, injecting user-role
+  context messages that broke the assistant→tool_result contiguity required by
+  OpenAI-compatible APIs. This caused sporadic 400 errors:
+  "An assistant message with 'tool_calls' must be followed by tool messages
+  responding to each 'tool_call_id'."
+
+### Root Cause
+  Context injection (`_inject_pre_execution_context`) adds user-role messages
+  (failure warnings, sequencing hints) to the message list. When these were
+  inserted between `messages.append(msg)` (assistant with tool_calls) and
+  `_execute_tools()` (tool results), the API rejected the payload because
+  tool messages did not immediately follow the assistant.
+
+### Added
+- **`tests/test_transient_orphan_bug.py`** — 8 tests covering orphaned tool
+  messages, _transient stripping, truncate=True/False behavior, and contiguity
+  checks. Documents that `_strip_orphaned_tool_messages` does NOT catch user
+  messages interleaved between assistant(tool_calls) and tool results — the
+  primary fix is at the source in llm.py.
+
 ## 2026-06-20 -- Git Checkpoint System (Dirac-inspired rollback safety)
 
 ### Added

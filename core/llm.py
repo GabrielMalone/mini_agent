@@ -655,6 +655,14 @@ def _tool_execution_phase(
 
     # Keep all tool_calls so deferred results have a reference
     msg["tool_calls"] = raw_tool_calls
+
+    # --- Inject self-learning context BEFORE appending assistant ---
+    # Must happen before messages.append(msg) so user-role context messages
+    # don't break the assistant(tool_calls) → tool_result contiguity.
+    # OpenAI-compatible APIs require tool messages to immediately follow
+    # the assistant message that made the tool calls.
+    _inject_pre_execution_context(messages, remaining, turn_count)
+
     messages.append(msg)
 
     # Flush deferred tool results from streaming execution
@@ -662,9 +670,6 @@ def _tool_execution_phase(
         _append_tool_result(messages, tc, result, on_tool_end=on_tool_end,
                             recent_keys=recent_tool_keys,
                             lock=tool_keys_lock)
-
-    # --- Inject self-learning context before executing remaining tools ---
-    _inject_pre_execution_context(messages, remaining, turn_count)
 
     # Execute remaining tools with piping support
     tool_results = _execute_tools(
