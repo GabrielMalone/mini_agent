@@ -93,16 +93,14 @@ def _clean_message(msg: dict, index: int, provider: str = "deepseek") -> dict | 
     """Clean a single message dict for sending to the API.
 
     Strips internal tracking fields (keys starting with '_'), removes the
-    ``index`` field from tool_calls.  Returns ``None`` for transient
-    messages that should never be sent to the API (scratchpad nudges,
-    progress reminders, circuit breaker warnings, etc.).
+    ``index`` field from tool_calls.  The ``_transient`` flag is stripped
+    like any other internal field — the message content is still sent to
+    the API.  (Memory persistence handles _transient filtering separately.)
 
     For DeepSeek, marks the first system message with ``cache_control``
     for prompt caching (not supported by Claude's OpenAI-compatible
     endpoint).
     """
-    if msg.get("_transient"):
-        return None
     m2 = {k: v for k, v in msg.items()
           if not k.startswith("_")}
     if "tool_calls" in m2:

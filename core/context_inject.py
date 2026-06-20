@@ -21,8 +21,11 @@ Messages are partitioned into three zones:
     - Pruned content is appended, not prepended.
 
   ZONE 3: VOLATILE SCRATCH (transient context)
-    - Messages marked _transient are stripped before the API call
-      (api.py _clean_message) and never sent upstream.
+    - Messages marked _transient ARE sent to the API — the flag
+      only controls memory persistence (stripped by memory layer
+      before saving to long-term history).
+    - The _transient key is stripped from the outgoing dict (like all
+      _-prefixed internal fields) but content reaches the LLM.
     - Injected items: scratchpad, git diff, progress reminders,
       circuit breaker warnings, strategy hints, cache degradation
       alerts.
