@@ -1,12 +1,10 @@
 import { useState, useRef, useEffect, useCallback, startTransition, useDeferredValue } from 'react';
 import useSmoothStream from './hooks/useSmoothStream';
 import useTheme from './hooks/useTheme';
-import LogLine from './components/LogLine';
 import RoundedFrame from './components/RoundedFrame';
 import AgentTree from './components/AgentTree';
 import CharStream from './components/CharStream';
-import DeferredMarkdown from './components/DeferredMarkdown';
-import StreamingMessage from './components/StreamingMessage';
+import TerminalBlock from './components/TerminalBlock';
 import ErrorBoundary from './components/ErrorBoundary';
 import SettingsPanel from './components/SettingsPanel';
 import ToolCard from './components/ToolCard';
@@ -19,8 +17,14 @@ import ShellInput from './components/ShellInput';
 // App
 // ---------------------------------------------------------------------------
 function AppShell() {
-  // Chat lines -- arrays of { text, cls?, html?, icon? }
-  const [chatLines, setChatLines] = useState([]);
+  // Terminal blocks -- Warp-style command+output blocks
+  // Each block: { id, command, output, status, timestamp }
+  // status: 'running' | 'ok' | 'err'
+  const [blocks, setBlocks] = useState([]);
+
+  // Command history for Up/Down navigation in ShellInput
+  const [commandHistory, setCommandHistory] = useState([]);
+  const activeBlockIdRef = useRef(null);  // ID of the currently streaming block
 
   // Tool Cards state -- Dirac-inspired card-based display
   // Each card: { id, toolName, toolArgs, status, output, startTime, endTime, diffPreview, errorDetail }
@@ -28,7 +32,7 @@ function AppShell() {
   const toolCardIdRef = useRef(0);
 
   // Deferred values keep the UI responsive during heavy streaming
-  const deferredChatLines = useDeferredValue(chatLines);
+  const deferredBlocks = useDeferredValue(blocks);
 
   // Sub-agent data -- { [task_id]: { name, desc, toolCalls: [], thoughts: [], output: "", ok: null } }
   const [subagentData, setSubagentData] = useState({});
@@ -237,17 +241,17 @@ function AppShell() {
     unsubs.push(api.on('stream:turn_complete', (data) => {
       clearTimeout(submitTimeoutRef.current);
       const agentText = chatStream.flush();
+      const activeId = activeBlockIdRef.current;
       startTransition(() => {
-        setChatLines((prev) => {
-          const updated = [...prev];
-          if (updated.length > 0 && updated[updated.length - 1].cls === 'msg-agent-pending') {
-            updated[updated.length - 1] = { id: updated[updated.length - 1].id, text: agentText || '', cls: 'msg-agent', markdown: true };
-          } else if (agentText) {
-            updated.push({ id: nextLineId(), text: agentText, cls: 'msg-agent', markdown: true });
-          }
-          return updated;
-        });
+        setBlocks((prev) =>
+          prev.map((b) =>
+            b.id === activeId
+              ? { ...b, output: agentText || b.output, status: 'ok' }
+              : b
+          )
+        );
       });
+      activeBlockIdRef.current = null;
       chatStream.reset();
       if (data.turn_count) setTurnCountVal(data.turn_count);
       if (data.usage?.turn_cost) setTurnCost(data.usage.turn_cost);
@@ -263,17 +267,18 @@ function AppShell() {
       clearTimeout(submitTimeoutRef.current);
       stopTimer();
       const agentText = chatStream.flush();
+      const activeId = activeBlockIdRef.current;
       chatStream.reset();
       startTransition(() => {
-        setChatLines((prev) => {
-          const updated = [...prev];
-          if (agentText && updated.length > 0 && updated[updated.length - 1].cls === 'msg-agent-pending') {
-            updated[updated.length - 1] = { id: updated[updated.length - 1].id, text: agentText, cls: 'msg-agent', markdown: true };
-          }
-          updated.push({ id: nextLineId(), text: `Error: ${data.message}`, cls: 'msg-error' });
-          return updated;
-        });
+        setBlocks((prev) =>
+          prev.map((b) =>
+            b.id === activeId
+              ? { ...b, output: agentText ? `${agentText}\n\nError: ${data.message}` : `Error: ${data.message}`, status: 'err' }
+              : b
+          )
+        );
       });
+      activeBlockIdRef.current = null;
       setIsLive(false);
       setInputDisabled(false);
       inputRef.current?.focus();
@@ -281,20 +286,18 @@ function AppShell() {
 
     unsubs.push(api.on('stream:status', (data) => {
       startTransition(() => {
-        setChatLines((prev) => [...prev, { id: nextLineId(), text: data.message, cls: 'msg-status' }]);
+        setBlocks((prev) => [...prev, {
+          id: nextLineId(), command: '', output: data.message, status: 'ok', timestamp: Date.now(),
+        }]);
       });
     }));
 
     unsubs.push(api.on('backend:response', (data) => {
       if (data.lines) {
         startTransition(() => {
-          setChatLines((prev) => {
-            const updated = [...prev];
-            for (const line of data.lines) {
-              updated.push({ id: nextLineId(), text: line, cls: 'msg-status' });
-            }
-            return updated;
-          });
+          setBlocks((prev) => [...prev, {
+            id: nextLineId(), command: data.command || '', output: data.lines.join('\n'), status: 'ok', timestamp: Date.now(),
+          }]);
         });
       }
     }));
@@ -309,17 +312,19 @@ function AppShell() {
       clearTimeout(submitTimeoutRef.current);
       stopTimer();
       const leftover = chatStream.flush();
+      const activeId = activeBlockIdRef.current;
       if (leftover || chatStream.displayedText) {
         startTransition(() => {
-          setChatLines((prev) => {
-            const updated = [...prev];
-            if (updated.length > 0 && updated[updated.length - 1].cls === 'msg-agent-pending') {
-              updated[updated.length - 1] = { id: updated[updated.length - 1].id, text: leftover || chatStream.displayedText, cls: 'msg-agent', markdown: true };
-            }
-            return updated;
-          });
+          setBlocks((prev) =>
+            prev.map((b) =>
+              b.id === activeId
+                ? { ...b, output: leftover || chatStream.displayedText || b.output, status: 'ok' }
+                : b
+            )
+          );
         });
       }
+      activeBlockIdRef.current = null;
       chatStream.reset();
       setIsLive(false);
       setInputDisabled(false);
@@ -401,50 +406,52 @@ function AppShell() {
     return () => unsubs.forEach((u) => u());
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Submit handler — allows typing while the agent is working.
-  // Slash commands (e.g. /cancel, /stats) always dispatch immediately.
+  // Submit handler -- creates terminal blocks, supports slash commands.
   // Regular text: if a turn is running, queue as an interjection;
-  // otherwise start a new turn.
+  // otherwise start a new turn with a 'running' block.
   const handleSubmit = useCallback((text) => {
     if (!text?.trim()) return;
 
     const trimmed = text.trim();
 
+    // Add to command history (deduplicate consecutive identical commands)
+    setCommandHistory((prev) => {
+      if (prev.length > 0 && prev[prev.length - 1] === trimmed) return prev;
+      return [...prev.slice(-99), trimmed];  // keep last 100
+    });
+
     // Slash commands always go through the command handler
-    // so /cancel works even while the agent is running.
     if (trimmed.startsWith('/')) {
       setInputValue('');
+      const cmdId = nextLineId();
       startTransition(() => {
-        setChatLines((prev) => [
-          ...prev,
-          { id: nextLineId(), text: trimmed, cls: 'msg-user' },
-        ]);
+        setBlocks((prev) => [...prev, {
+          id: cmdId, command: trimmed, output: '', status: 'running', timestamp: Date.now(),
+        }]);
       });
+      activeBlockIdRef.current = cmdId;
       window.miniAgent.command(trimmed);
       return;
     }
 
-    // Show the user message in chat
+    // Regular message -- create a block
+    const blockId = nextLineId();
+    const blockStatus = isLive ? 'ok' : 'running';  // interjections are info blocks
     startTransition(() => {
-      setChatLines((prev) => [
-        ...prev,
-        { id: nextLineId(), text: trimmed, cls: 'msg-user' },
-      ]);
+      setBlocks((prev) => [...prev, {
+        id: blockId, command: trimmed,
+        output: isLive ? '(queued)' : '',
+        status: blockStatus, timestamp: Date.now(),
+      }]);
     });
     setInputValue('');
 
     if (isLive) {
-      // Agent is running — queue the message for injection at the
-      // next turn boundary instead of starting a new turn.
+      // Agent is running -- queue as interjection, don't set activeBlockId
       window.miniAgent.interject(trimmed);
     } else {
-      // Agent is idle — start a new turn normally.
-      startTransition(() => {
-        setChatLines((prev) => [
-          ...prev,
-          { id: nextLineId(), text: '', cls: 'msg-agent-pending' },
-        ]);
-      });
+      // Agent is idle -- start a new turn
+      activeBlockIdRef.current = blockId;
       chatStream.reset();
       setIsLive(true);
       setInputDisabled(true);
@@ -455,7 +462,7 @@ function AppShell() {
         inputRef.current?.focus();
       }, 120_000);
     }
-  }, [isLive, inputDisabled, chatStream]);
+  }, [isLive, chatStream]);
 
   // Drag-and-drop
   useEffect(() => {
@@ -503,18 +510,20 @@ function AppShell() {
     const thinkText = thinking.flush();
     if (thinkText) startTransition(() => setThinkingBlocks((prev) => [...prev, thinkText]));
     thinking.reset();
+    const activeId = activeBlockIdRef.current;
     if (agentText) {
       startTransition(() => {
-        setChatLines((prev) => {
-          const updated = [...prev];
-          if (updated.length > 0 && updated[updated.length - 1].cls === 'msg-agent-pending') {
-            updated[updated.length - 1] = { id: updated[updated.length - 1].id, text: agentText, cls: 'msg-agent' };
-          }
-          return updated;
-        });
+        setBlocks((prev) =>
+          prev.map((b) =>
+            b.id === activeId
+              ? { ...b, output: agentText, status: 'ok' }
+              : b
+          )
+        );
       });
       chatStream.reset();
     }
+    activeBlockIdRef.current = null;
     setIsLive(false);
     setInputDisabled(false);
     setInputValue('');
@@ -531,7 +540,7 @@ function AppShell() {
   useEffect(() => {
     const el = chatLogRef.current;
     if (el) requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
-  }, [chatLines, deferredChatLines, chatStream.displayedText]);
+  }, [blocks, deferredBlocks, chatStream.displayedText]);
 
   // Auto-scroll tools log
   useEffect(() => {
@@ -586,23 +595,19 @@ function AppShell() {
         <RoundedFrame id="chat-frame" title="Chat">
           <div ref={chatLogRef} className="chat-log">
             <div className="frame-content">
-              {deferredChatLines.flatMap((line, i) => {
-                const els = [];
-                if (line.cls === 'msg-user' && i > 0) {
-                  els.push(<div key={`sep-${line.id}`} className="msg-separator" />);
-                }
-                if (line.markdown) {
-                  els.push(<DeferredMarkdown key={line.id} text={line.text} cls={line.cls} />);
-                } else {
-                  els.push(<LogLine key={line.id} line={line} />);
-                }
-                return els;
+              {deferredBlocks.map((block) => {
+                const isRunning = block.status === 'running' && block.id === activeBlockIdRef.current;
+                return (
+                  <TerminalBlock
+                    key={block.id}
+                    block={block}
+                    streamingOutput={isRunning ? chatStream.displayedText : undefined}
+                    isRunning={isRunning}
+                    onEdit={(cmd) => setInputValue(cmd)}
+                    theme={theme}
+                  />
+                );
               })}
-              {chatStream.displayedText && (
-                <div className="msg-agent">
-                  <StreamingMessage text={chatStream.displayedText} />
-                </div>
-              )}
             </div>
           </div>
         </RoundedFrame>
@@ -628,6 +633,8 @@ function AppShell() {
                 onSubmit={handleSubmit}
                 disabled={inputDisabled}
                 placeholder="Type a message, /command, or drop files here..."
+                ghostText={commandHistory.length > 0 ? commandHistory[commandHistory.length - 1] : ''}
+                commandHistory={commandHistory}
                 autoFocus
               />
             </div>

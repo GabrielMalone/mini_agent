@@ -106,12 +106,14 @@ function shellCompletions(context) {
 // ShellInput -- CodeMirror-backed shell input for mini_agent
 //
 // Props:
-//   value         - controlled text value
-//   onChange(txt) - called when text changes
-//   onSubmit(txt) - called when user presses Enter (not Shift+Enter)
-//   disabled      - when true, editor is read-only
-//   placeholder   - placeholder text
-//   autoFocus     - focus on mount
+//   value          - controlled text value
+//   onChange(txt)  - called when text changes
+//   onSubmit(txt)  - called when user presses Enter (not Shift+Enter)
+//   disabled       - when true, editor is read-only
+//   placeholder    - placeholder text
+//   ghostText      - dimmed ghost text shown when input is empty (last command)
+//   commandHistory - array of past commands for Up/Down navigation
+//   autoFocus      - focus on mount
 // ---------------------------------------------------------------------------
 const ShellInput = forwardRef(function ShellInput({
   value = '',
@@ -119,6 +121,8 @@ const ShellInput = forwardRef(function ShellInput({
   onSubmit,
   disabled = false,
   placeholder = 'Type a message, /command, or drop files here...',
+  ghostText = '',
+  commandHistory = [],
   autoFocus = true,
 }, ref) {
   const containerRef = useRef(null);
@@ -127,9 +131,15 @@ const ShellInput = forwardRef(function ShellInput({
   const onChangeRef = useRef(onChange);
   const onSubmitRef = useRef(onSubmit);
   const disabledRef = useRef(disabled);
+  const ghostTextRef = useRef(ghostText);
+  const historyRef = useRef(commandHistory);
+  const historyIdxRef = useRef(-1);       // -1 = not navigating history
+  const savedInputRef = useRef('');        // saved input before history nav
   onChangeRef.current = onChange;
   onSubmitRef.current = onSubmit;
   disabledRef.current = disabled;
+  ghostTextRef.current = ghostText;
+  historyRef.current = commandHistory;
 
   // Expose focus/blur to parent via ref
   useImperativeHandle(ref, () => ({
@@ -144,6 +154,9 @@ const ShellInput = forwardRef(function ShellInput({
         if (disabledRef.current) return false;
         const doc = view.state.doc.toString().trim();
         if (doc) {
+          // Reset history nav on submit
+          historyIdxRef.current = -1;
+          savedInputRef.current = '';
           onSubmitRef.current?.(doc);
           view.dispatch({
             changes: { from: 0, to: view.state.doc.length, insert: '' },
@@ -160,12 +173,93 @@ const ShellInput = forwardRef(function ShellInput({
         return true;
       },
     },
-    // Escape blurs the editor
+    // Escape blurs the editor (and resets history nav)
     {
       key: 'Escape',
       run: (view) => {
+        historyIdxRef.current = -1;
+        savedInputRef.current = '';
         view.contentDOM.blur();
         return true;
+      },
+    },
+    // Up arrow -- navigate command history backward (older)
+    {
+      key: 'ArrowUp',
+      run: (view) => {
+        if (disabledRef.current) return false;
+        const history = historyRef.current;
+        if (history.length === 0) return false;
+
+        // If cursor is not on the first line, let CodeMirror handle it
+        const cursor = view.state.selection.main.head;
+        const doc = view.state.doc;
+        if (doc.lineAt(cursor).number > 1) return false;
+
+        if (historyIdxRef.current === -1) {
+          // Starting history navigation -- save current input
+          savedInputRef.current = doc.toString();
+          historyIdxRef.current = 0;
+        } else if (historyIdxRef.current < history.length - 1) {
+          historyIdxRef.current++;
+        }
+        // else: at oldest entry, stay there
+
+        const entry = history[historyIdxRef.current] || '';
+        view.dispatch({
+          changes: { from: 0, to: doc.length, insert: entry },
+          selection: { anchor: entry.length },
+        });
+        return true;
+      },
+    },
+    // Down arrow -- navigate command history forward (newer)
+    {
+      key: 'ArrowDown',
+      run: (view) => {
+        if (disabledRef.current) return false;
+        if (historyIdxRef.current === -1) return false;
+
+        // If cursor is not on the last line, let CodeMirror handle it
+        const cursor = view.state.selection.main.head;
+        const doc = view.state.doc;
+        if (doc.lineAt(cursor).number < doc.lines) return false;
+
+        historyIdxRef.current--;
+
+        if (historyIdxRef.current < 0) {
+          // Back to original input
+          historyIdxRef.current = -1;
+          const restored = savedInputRef.current;
+          savedInputRef.current = '';
+          view.dispatch({
+            changes: { from: 0, to: doc.length, insert: restored },
+            selection: { anchor: restored.length },
+          });
+        } else {
+          const entry = history[historyIdxRef.current] || '';
+          view.dispatch({
+            changes: { from: 0, to: doc.length, insert: entry },
+            selection: { anchor: entry.length },
+          });
+        }
+        return true;
+      },
+    },
+    // Tab or Right arrow when empty -- fill ghost text
+    {
+      key: 'Tab',
+      run: (view) => {
+        if (disabledRef.current) return false;
+        const doc = view.state.doc.toString();
+        if (doc === '' && ghostTextRef.current) {
+          view.dispatch({
+            changes: { from: 0, to: 0, insert: ghostTextRef.current },
+            selection: { anchor: ghostTextRef.current.length },
+          });
+          return true;
+        }
+        return false; // let other handlers (autocomplete) work
       },
     },
   ]), []);
@@ -251,10 +345,19 @@ const ShellInput = forwardRef(function ShellInput({
   }, [disabled]);
 
   return (
-    <div
-      ref={containerRef}
-      className="shell-input-cm"
-    />
+    <div className="shell-input-wrapper">
+      <div
+        ref={containerRef}
+        className="shell-input-cm"
+      />
+      {/* Ghost text overlay -- shown when input is empty */}
+      {!value && ghostText && !disabled && (
+        <div className="shell-input-ghost" aria-hidden="true">
+          <span className="shell-input-ghost__text">{ghostText}</span>
+          <span className="shell-input-ghost__hint">(tab)</span>
+        </div>
+      )}
+    </div>
   );
 });
 

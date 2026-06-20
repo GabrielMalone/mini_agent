@@ -2129,3 +2129,186 @@ html, body {
     transform: translateY(4px);
   }
 }
+
+/* ---------------------------------------------------------------------------
+  Terminal Blocks -- Warp-style command+output blocks
+  --------------------------------------------------------------------------- */
+.terminal-block {
+  display: flex;
+  gap: 0;
+  margin-bottom: 0;
+  position: relative;
+}
+
+/* Left notch -- colored bar indicating status */
+.terminal-block__notch {
+  width: 3px;
+  min-width: 3px;
+  border-left: 3px solid var(--border);
+  border-radius: 2px 0 0 2px;
+  margin-right: 10px;
+  flex-shrink: 0;
+}
+
+.terminal-block--running .terminal-block__notch {
+  border-color: var(--pulse);
+  animation: notch-pulse 1.5s ease-in-out infinite;
+}
+
+.terminal-block--ok .terminal-block__notch {
+  border-color: var(--green);
+}
+
+.terminal-block--err .terminal-block__notch {
+  border-color: var(--red);
+}
+
+@keyframes notch-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* Body */
+.terminal-block__body {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 0 12px 0;
+}
+
+/* Command bar -- clickable to re-edit */
+.terminal-block__command {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  margin: 0 -6px;
+  border-radius: 4px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s ease;
+  font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', 'Menlo', monospace;
+  font-size: 0.88em;
+  color: var(--dim);
+}
+
+.terminal-block__command:hover {
+  background: rgb(var(--accent-rgb) / 0.06);
+}
+
+.terminal-block__command:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.terminal-block__prompt {
+  color: var(--green);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.terminal-block__cmd-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.terminal-block__elapsed {
+  font-size: 0.78em;
+  color: var(--pulse);
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.terminal-block__check {
+  color: var(--green);
+  font-size: 0.85em;
+  flex-shrink: 0;
+}
+
+.terminal-block__cross {
+  color: var(--red);
+  font-size: 0.85em;
+  flex-shrink: 0;
+}
+
+/* Output area */
+.terminal-block__output {
+  padding-left: 4px;
+  padding-top: 2px;
+  color: var(--text);
+}
+
+.terminal-block__output .msg-agent {
+  border-left: none;
+  padding-left: 0;
+  margin-bottom: 0;
+}
+
+/* Inline tools and thinking */
+.terminal-block__tools {
+  margin-top: 6px;
+  padding-left: 4px;
+}
+
+.terminal-block__thinking {
+  margin-top: 4px;
+  padding-left: 4px;
+}
+
+.terminal-block__think-chunk {
+  font-size: 0.8em;
+  color: var(--thinking);
+  font-style: italic;
+  padding: 2px 0;
+}
+
+/* ---------------------------------------------------------------------------
+  Shell Input Wrapper & Ghost Text
+  --------------------------------------------------------------------------- */
+.shell-input-wrapper {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.shell-input-ghost {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', 'Menlo', monospace;
+  font-size: 0.9em;
+  opacity: 0.35;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.shell-input-ghost__text {
+  color: var(--dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shell-input-ghost__hint {
+  margin-left: 8px;
+  font-size: 0.75em;
+  color: var(--dim);
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+/* CodeMirror container inside the wrapper */
+.shell-input-cm {
+  width: 100%;
+}
+
+.shell-input-cm .cm-editor {
+  background: transparent;
+}
