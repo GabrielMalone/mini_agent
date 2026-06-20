@@ -803,20 +803,20 @@ html, body {
 /* Aggressive cursor styling — covers every CM6 cursor element */
 .shell-input-cm .cm-editor .cm-cursor,
 .shell-input-cm .cm-editor .cm-cursor-primary {
-  border-left: 3px solid #00cc44 !important;
+  border-left: 3px solid #ffff00 !important;
   border-left-width: 3px !important;
   border-left-style: solid !important;
-  border-left-color: #00cc44 !important;
+  border-left-color: #ffff00 !important;
   background: transparent !important;
-  animation: cm-cursor-blink 1.06s steps(1) infinite !important;
+  animation: cm-cursor-blink 0.53s steps(1) infinite !important;
 }
 
 .shell-input-cm .cm-editor .cm-cursorLayer .cm-cursor,
 .shell-input-cm .cm-editor .cm-cursorLayer .cm-cursor-primary {
-  border-left: 3px solid #00cc44 !important;
+  border-left: 3px solid #ffff00 !important;
   border-left-width: 3px !important;
   border-left-style: solid !important;
-  border-left-color: #00cc44 !important;
+  border-left-color: #ffff00 !important;
 }
 
 .shell-input-cm .cm-editor .cm-cursorLayer {
@@ -831,7 +831,7 @@ html, body {
 
 /* Also force the contentEditable caret color as last resort */
 .shell-input-cm .cm-editor .cm-content {
-  caret-color: #00cc44 !important;
+  caret-color: #ffff00 !important;
 }
 
 .shell-input-cm .cm-editor .cm-placeholder {
