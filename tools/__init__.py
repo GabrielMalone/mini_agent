@@ -681,6 +681,7 @@ def execute_tool(
     cache_key = ""
     if on_output is None and name in _CACHEABLE:
         cache_key = json.dumps([name, args], sort_keys=True)
+        global _TOOL_CACHE_HITS, _TOOL_CACHE_MISSES
         with _TOOL_CACHE_LOCK:
             cached = _TOOL_CACHE.get(cache_key)
             if cached is not None:
