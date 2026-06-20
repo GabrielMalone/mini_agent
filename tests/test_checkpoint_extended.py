@@ -444,6 +444,18 @@ class TestEditFileCheckpointIntegration(unittest.TestCase):
         # Pre-dirty the tree so the checkpoint has something to commit
         _write(self.workspace, "hello.py", "print('hello')\n")
 
+        # Must read before edit (read-before-edit guard)
+        execute_tool(
+            {
+                "function": {
+                    "name": "read_file",
+                    "arguments": '{"path": "hello.py"}',
+                }
+            },
+            self.write_gate,
+            self.read_gate,
+        )
+
         # edit_file should trigger checkpoint before dispatch
         result = execute_tool(
             {
