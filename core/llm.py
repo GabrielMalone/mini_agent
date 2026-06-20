@@ -819,7 +819,7 @@ def run_agent_turn(
                         "(read a file, search for something, write one function) "
                         "and call exactly ONE tool. Do not try to do everything at once."
                     )
-                    messages.append({"role": "user", "content": recovery})
+                    messages.append({"role": "user", "content": recovery, "_transient": True})
                     continue  # retry the turn loop
 
                 # Return the result directly.
