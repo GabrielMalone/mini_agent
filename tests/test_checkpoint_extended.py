@@ -472,8 +472,8 @@ class TestEditFileCheckpointIntegration(unittest.TestCase):
         )
         self.assertTrue(result.success)
 
-        # Auto-checkpoint removed; no checkpoint from edit_file
-        self.assertEqual(cm.checkpoint_count(), 0)
+        # Checkpoint fires before dispatch via checkpoint_before_risky
+        self.assertEqual(cm.checkpoint_count(), 1)
 
     def test_two_writes_same_turn_no_auto_checkpoint(self):
         """Two write_file calls in same turn → no auto-checkpoints created."""
@@ -506,9 +506,9 @@ class TestEditFileCheckpointIntegration(unittest.TestCase):
             self.read_gate,
         )
         self.assertTrue(r1.success)
-        self.assertEqual(cm.checkpoint_count(), 0, "Auto-checkpoint removed; no checkpoint expected")
+        self.assertEqual(cm.checkpoint_count(), 1, "checkpoint fires before dispatch")
 
-        # Second write in same turn — NO new checkpoint
+        # Second write in same turn — NO new checkpoint (per-turn gating)
         execute_tool(
             {
                 "function": {
@@ -530,7 +530,7 @@ class TestEditFileCheckpointIntegration(unittest.TestCase):
             self.read_gate,
         )
         self.assertTrue(r2.success)
-        self.assertEqual(cm.checkpoint_count(), 0, "No auto-checkpoints; still zero after second write")
+        self.assertEqual(cm.checkpoint_count(), 1, "Per-turn gating: still 1 checkpoint after second write")
 
 
 # ---------------------------------------------------------------------------

@@ -787,6 +787,14 @@ def _edit_file_anchored(
         except Exception:
             pass  # Non-critical: graph invalidation is best-effort
 
+        # Keep symbol index fresh for edited .py files
+        if fs["resolved"].endswith(".py"):
+            try:
+                from tools.search_ops import _reindex_file
+                _reindex_file(fs["resolved"], wg.workspace_root)
+            except Exception:
+                pass
+
         additions = sum(e["lines_added"] for e in applied)
         deletions = sum(e["lines_deleted"] for e in applied)
         stats = f" (+{additions}, -{deletions})" if additions or deletions else ""
@@ -1002,6 +1010,13 @@ def _edit_lines(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolRes
     if path.endswith(".py"):
         from tools.search_ops import _reindex_file
         _reindex_file(resolved, wg.workspace_root)
+
+    # Keep knowledge graph fresh
+    try:
+        from core.knowledge_graph import invalidate_file
+        invalidate_file(resolved, wg.workspace_root)
+    except Exception:
+        pass  # Non-critical: graph invalidation is best-effort
 
     # Build edit_text from new_text fields for auto-advance matching
     _edit_text = " ".join(e.get("new_text", "") for e in edits)

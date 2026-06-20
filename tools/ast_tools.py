@@ -468,6 +468,23 @@ def _replace_symbol(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> Too
 
         add_modified_file(resolved)
         clear_tool_cache()
+        _FILE_CACHE.pop(resolved, None)
+        get_tracker().mark_file_edited(resolved)
+
+        # Keep symbol index fresh for edited .py files
+        if resolved.endswith(".py"):
+            try:
+                from tools.search_ops import _reindex_file
+                _reindex_file(resolved, wg.workspace_root)
+            except Exception:
+                pass
+
+        # Keep knowledge graph fresh
+        try:
+            from core.knowledge_graph import invalidate_file
+            invalidate_file(resolved, wg.workspace_root)
+        except Exception:
+            pass
 
         # Reconcile anchors
         from core.anchor_manager import AnchorStateManager

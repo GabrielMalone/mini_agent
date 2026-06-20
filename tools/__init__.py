@@ -783,6 +783,14 @@ def execute_tool(
     # Set the per-thread cancel event so tool functions like _run_shell
     # can detect cancellation and stop blocking on subprocess I/O.
     # ContextVar propagates to child threads and is isolated per parallel tool.
+    # --- Git checkpoint before write/edit tools ---
+    if name in ("write_file", "edit_file", "edit_lines", "replace_symbol"):
+        try:
+            from core.checkpoint import checkpoint_before_risky
+            checkpoint_before_risky(write_gate.workspace_root, f"pre-{name}")
+        except Exception:
+            pass  # Non-critical: checkpoint is best-effort
+
     _cancel_token = _CURRENT_CANCEL_EVENT.set(cancel_event)
     try:
         t = threading.Thread(target=_run_and_capture, daemon=True)

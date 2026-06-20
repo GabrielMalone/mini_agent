@@ -349,8 +349,8 @@ class TestExecuteToolCheckpointIntegration(unittest.TestCase):
             self.read_gate,
         )
         self.assertTrue(result.success)
-        # Auto-checkpoint has been removed; write_file no longer creates checkpoints
-        self.assertEqual(cm.checkpoint_count(), 0)
+        # write_file triggers a git checkpoint via checkpoint_before_risky
+        self.assertEqual(cm.checkpoint_count(), 1)
 
     def test_edit_file_triggers_checkpoint(self):
         """edit_file should trigger a git checkpoint."""
@@ -551,13 +551,13 @@ class TestRestoreFileWithCheckpoint(unittest.TestCase):
             self.read_gate,
         )
         self.assertTrue(result.success)
-        # No auto-checkpoint; restore falls back to session backup (original 0.9, not 1.0)
-        self.assertIn("backup", result.content)
+        # Restore uses git checkpoint (checkpoint_before_risky is wired)
+        self.assertIn("Restored", result.content)
 
         with open(config_path) as f:
             content = f.read()
-        # Backup system captures the *first* write's original state (0.9)
-        self.assertIn("VERSION = '0.9'", content)
+        # Checkpoint captures the accumulated state before the second write
+        self.assertIn('VERSION = "1.0"', content)
 
 
 if __name__ == "__main__":
