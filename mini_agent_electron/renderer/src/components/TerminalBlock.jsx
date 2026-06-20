@@ -2,7 +2,7 @@ import { memo } from 'react';
 import DeferredMarkdown from './DeferredMarkdown';
 import StreamingMessage from './StreamingMessage';
 import ToolCard from './ToolCard';
-import AnsiBlock from './AnsiBlock';
+import HighlightedTerminalOutput from './HighlightedTerminalOutput';
 
 // ---------------------------------------------------------------------------
 // TerminalBlock -- Warp-style command block with left notch
@@ -90,7 +90,7 @@ const TerminalBlock = memo(function TerminalBlock({
               <StreamingMessage text={streamingOutput} />
             ) : output ? (
               command.startsWith('/sh ') ? (
-                <AnsiBlock text={output} />
+                <HighlightedTerminalOutput text={output} command={command} />
               ) : (
                 <DeferredMarkdown text={output} cls="msg-agent" />
               )

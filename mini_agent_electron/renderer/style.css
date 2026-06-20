@@ -2461,6 +2461,14 @@ html, body {
   margin-bottom: 0;
 }
 
+/* Shiki-highlighted terminal output -- match terminal font aesthetic */
+.terminal-block__output .terminal-shiki pre {
+  font-size: 0.82em;
+  padding: 6px 10px !important;
+  margin: 0 !important;
+  background: transparent !important;
+}
+
 /* Inline tools and thinking */
 .terminal-block__tools {
   margin-top: 6px;

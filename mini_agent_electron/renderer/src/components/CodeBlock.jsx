@@ -127,7 +127,7 @@ export function guessLanguage(toolName, code) {
 
 let highlighterPromise = null;
 
-function getHighlighter() {
+export function getHighlighter() {
   if (!highlighterPromise) {
     highlighterPromise = createHighlighter({
       langs: LANGS,
