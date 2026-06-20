@@ -344,6 +344,28 @@ def call_llm(
                  "Too many concurrent LLM calls. Reduce sub-agent count or increase "
                  "SUB_AGENT_MAX_CONCURRENT_CALLS env var."
         )
+    # --- log prompt to ~/.mini_agent/logs/prompts.log ---
+    try:
+        import os as _os, json as _json, datetime as _dt
+        _log_dir = _os.path.join(_os.path.expanduser("~"), ".mini_agent", "logs")
+        _os.makedirs(_log_dir, exist_ok=True)
+        _prompt_log = _os.path.join(_log_dir, "prompts.log")
+        _entry = {
+            "ts": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+            "provider": config.api_provider,
+            "model": payload.get("model", "?"),
+            "turn": getattr(config, "turn_count", 0),
+            "message_count": len(safe_messages),
+            "estimated_tokens": sum(len(str(m.get("content", ""))) // 3 for m in safe_messages),
+            "session": config.workspace if hasattr(config, "workspace") else "",
+            "messages": safe_messages,
+        }
+        with open(_prompt_log, "a", encoding="utf-8") as _f:
+            _f.write(_json.dumps(_entry) + "\n")
+    except Exception:
+        pass  # never crash on logging failure
+    # ---------------------------------------------------------
+
     try:
         r = _request_with_retry(
             session,
