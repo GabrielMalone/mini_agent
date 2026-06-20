@@ -114,52 +114,6 @@ function shellCompletions(context) {
 }
 
 // ---------------------------------------------------------------------------
-// LLM-powered shell command autocomplete
-// ---------------------------------------------------------------------------
-let _llmAutocompleteDebounce = null;
-let _llmAutocompletePending = null;
-
-function llmShellCompletions(context) {
-  // Only activate when user is typing a shell command after /sh
-  const match = context.matchBefore(/\/sh\s+\S.*$/i);
-  if (!match) return null;
-
-  const text = match.text;
-
-  // Cancel any pending debounce
-  if (_llmAutocompleteDebounce) {
-    clearTimeout(_llmAutocompleteDebounce);
-    _llmAutocompleteDebounce = null;
-  }
-
-  // If there's an active promise, return it to extend the completion cycle
-  if (_llmAutocompletePending) {
-    return _llmAutocompletePending;
-  }
-
-  _llmAutocompletePending = new Promise((resolve) => {
-    _llmAutocompleteDebounce = setTimeout(async () => {
-      _llmAutocompleteDebounce = null;
-      _llmAutocompletePending = null;
-      try {
-        const completions = await window.miniAgent?.autocomplete?.(text) || [];
-        const options = completions.map((c) => ({
-          label: c.label,
-          detail: c.detail || 'AI suggestion',
-          // Insert the completion after the user's typed text
-          apply: c.label,
-        }));
-        resolve({ from: match.to, options, filter: false });
-      } catch {
-        resolve(null);
-      }
-    }, 350);
-  });
-
-  return _llmAutocompletePending;
-}
-
-// ---------------------------------------------------------------------------
 // ShellInput -- CodeMirror-backed shell input for mini_agent
 //
 // Props:
