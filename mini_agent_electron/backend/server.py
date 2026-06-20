@@ -1117,6 +1117,61 @@ class AgentRunner:
 
         send_msg({"type": "response", "lines": [f"Unknown command: {command}"]})
 
+    def _llm_autocomplete(self, partial: str) -> list[dict]:
+        """Return a short list of shell command completions via the LLM."""
+        import requests
+
+        prompt = (
+            "You are a command-line autocomplete system. "
+            "Given a partially typed shell command, suggest 3-5 reasonable completions.\n"
+            "Return ONLY the completions, one per line. No explanation, no formatting, no numbering.\n"
+            "Rules:\n"
+            "- If the partial is a path, suggest real-looking subdirectories/files.\n"
+            "- If the partial is a flag prefix (e.g. '--'), suggest matching flags.\n"
+            "- For 'git', suggest git subcommands.\n"
+            "- Be concise; each completion is a single line containing only the completion.\n"
+            "- Append a continuation to the partial, not a replacement.\n"
+            "\n"
+            f"Command so far: {partial}\n"
+            f"Completions:"
+        )
+
+        payload = {
+            "model": self.config.model,
+            "messages": [
+                {"role": "user", "content": prompt},
+            ],
+            "max_tokens": 100,
+            "temperature": 0.2,
+            "stream": False,
+        }
+
+        headers = {
+            "Authorization": f"Bearer {self.config.api_key}",
+            "Content-Type": "application/json",
+        }
+
+        try:
+            r = requests.post(
+                f"{self.config.api_url}/v1/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=5,
+            )
+            if r.status_code != 200:
+                return []
+            text = r.json()["choices"][0]["message"]["content"].strip()
+            lines = [l.strip() for l in text.split("\n") if l.strip()]
+            # Limit to 5 and remove numbering/bullets if present
+            completions = []
+            for line in lines[:5]:
+                line = line.lstrip("0123456789.-*#) ")
+                if line:
+                    completions.append({"label": line, "detail": "AI suggestion"})
+            return completions
+        except Exception:
+            return []
+
     def cancel(self) -> None:
         """Cancel the current turn."""
         self._cancel_event.set()
