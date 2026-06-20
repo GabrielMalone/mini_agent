@@ -305,7 +305,7 @@ const ShellInput = forwardRef(function ShellInput({
         autocompletion({ override: [shellCompletions] }),
         highlightSpecialChars(),
         dropCursor(),
-        drawSelection({ cursorColor: '#00cc44' }),
+        drawSelection({ cursorColor: '#ffff00', cursorBlinkRate: 530 }),
         keymap.of([...defaultKeymap, ...historyKeymap]),
         themeCompartment.current.of(shellTheme()),
         EditorState.transactionFilter.of((tr) => {
