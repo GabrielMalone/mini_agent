@@ -163,6 +163,7 @@ let pendingRequests = [];
 let lastStatus = null; // cached status for renderer to fetch on mount
 let workspacePath = null;  // module-scoped so watchdog/restart closures can use it
 let _shuttingDown = false;  // set during window-close to prevent restart loops
+let _autocompleteResolve = null;  // pending autocomplete promise resolver
 // Discord bot status tracking
 let _botStatusTimer = null;
 let _botProcesses = {}; // name -> ChildProcess
