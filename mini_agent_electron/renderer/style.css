@@ -714,22 +714,6 @@ html, body {
   transition: border-color 0.15s ease;
 }
 
-/* Pulsating border when agent is running */
-#input-frame.live {
-  animation: inputPulse 2s ease-in-out infinite;
-}
-
-@keyframes inputPulse {
-  0%, 100% {
-    border-color: var(--border);
-    box-shadow: 0 0 0 0 rgb(var(--accent-rgb) / 0);
-  }
-  50% {
-    border-color: var(--accent);
-    box-shadow: 0 0 10px rgb(var(--accent-rgb) / 0.18);
-  }
-}
-
 #input-frame:focus-within {
   border-color: var(--accent);
 }
@@ -834,10 +818,6 @@ html, body {
   flex-direction: column;
   min-height: 48px;
   overflow: hidden;
-}
-
-#terminal-panel.live {
-  animation: inputPulse 2s ease-in-out infinite;
 }
 
 #terminal-panel:focus-within {
