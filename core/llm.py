@@ -269,7 +269,7 @@ def _execute_parallel_no_pipes(
                                 cancel_event=cancel_event)
 
     parallel_results: list[tuple] = []
-    with ThreadPoolExecutor(max_workers=len(remaining)) as pool:
+    with ThreadPoolExecutor(max_workers=_capped_workers(remaining)) as pool:
         futures = {pool.submit(_run_tool, tc): tc for tc in remaining}
         for future in as_completed(futures):
             if cancel_event is not None and cancel_event.is_set():
