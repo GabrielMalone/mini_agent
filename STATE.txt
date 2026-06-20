@@ -1,5 +1,5 @@
 # mini_agent Architecture Map
-# Last updated: 2026-06-19 (fork cherry-pick: structured UI components, core utilities, CodeBlock enhancements)
+# Last updated: 2026-06-20 (git checkpoint system: pre-edit rollback safety)
 #
 # This file is the agent's map of the codebase. Update it after completed changes.
 # Behavioral rules live in AGENTS.md. Long-term facts live in core memory.
@@ -27,6 +27,7 @@
 - `core/constants.py` -- shared constants (MEMORY_FILENAME, HTTP_CONNECT_TIMEOUT, SKIP_DIRS, etc.).
   Zero internal project imports — safe to import from anywhere.
 - `core/bootstrap.py` -- entry point, session init, workspace setup, startup warmup
+- `core/checkpoint.py` -- git checkpoint system: pre-edit rollback safety (Dirac-inspired)
 - `core/llm.py` -- main agent loop: turn management, tool dispatch, API calls (825 lines)
 - `core/codebase_map.py` -- AST-based symbol extraction, module grouping, import graph.
   Injected into startup context (~2K tokens). Incremental cache via update_file_in_map().
@@ -179,6 +180,22 @@ The sub-agent/multi-agent system was removed. Files deleted:
   Pattern from Howard Chen's cwcode: "don't crash, talk."
 - Injected in `run_agent_turn()` after `_tool_execution_phase()`
 - Tests: `tests/test_file_ops_extended.py::TestStormBreaker` (6 tests)
+
+### Git Checkpoint System (2026-06-20)
+- `core/checkpoint.py` -- CheckpointManager: git-based rollback safety before risky operations.
+  Inspired by Dirac's checkpoint system.  Creates git commits before write_file, edit_file,
+  and run_shell tool calls (one per turn via `_checked_this_turn` gating).  Falls back
+  gracefully when git is unavailable (no-op).
+- Integrated into `tools/__init__.py` `execute_tool()` -- checkpoint fires inside
+  `_run_and_capture()` thread before tool dispatch.
+- Turn-level reset in `core/llm.py` `run_agent_turn()` -- `reset_turn_checkpoint()` at
+  each turn boundary.
+- `tools/agent_ops.py` `_restore_file()` -- tries `git checkout <path>` first, falls
+  back to session `_BACKUPS` per-file undo.  Updated error messages to reflect
+  dual restore path.
+- Path normalization: `os.path.realpath()` resolves macOS `/var` → `/private/var`
+  symlink so all callers hit the same CheckpointManager singleton.
+- Tests: `tests/test_checkpoint.py` (22 tests, 5 test classes)
 
 ## Known Issues
 

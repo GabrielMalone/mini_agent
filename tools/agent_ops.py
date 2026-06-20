@@ -26,7 +26,11 @@ import os as _os_restore
 
 
 def _restore_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
-    """Restore a file from its session backup (undo the last write/edit)."""
+    """Restore a file from a git checkpoint or session backup.
+
+    Tries git checkout first (if available and a checkpoint exists),
+    then falls back to the session file backup system.
+    """
     path = args["path"]
     safety_result = wg.check(path)
     if not safety_result.allowed:
@@ -35,10 +39,30 @@ def _restore_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolR
             content=f"Restore blocked by safety layer: {safety_result.reason}",
         )
     resolved = safety_result.resolved_path
+
+    # --- Try git checkpoint restore first (Dirac-inspired) ---
+    try:
+        from core.checkpoint import get_checkpoint_manager
+        cm = get_checkpoint_manager(wg.workspace_root)
+        if cm.is_available() and cm.checkpoint_count() > 0:
+            if cm.restore_file(resolved):
+                from tools import _MODIFIED_FILES, _MODIFIED_FILES_LOCK
+                with _MODIFIED_FILES_LOCK:
+                    _MODIFIED_FILES.discard(safety_result.resolved_path)
+                # Also clean up backup if it exists
+                _BACKUPS.pop(resolved, None)
+                return ToolResult(
+                    success=True,
+                    content=f"Restored '{resolved}' from git checkpoint ({cm.last_checkpoint_sha()}).",
+                )
+    except Exception:
+        pass  # fall through to backup system
+
+    # --- Fall back to session file backup ---
     if resolved not in _BACKUPS:
         return ToolResult(
             success=False,
-            content=f"No backup available for '{resolved}'. Only files modified this session can be restored.",
+            content=f"No backup or checkpoint available for '{resolved}'. Only files modified this session can be restored.",
             hint="No backup exists. Either the file hasn't been modified this session, or it was already restored.",
         )
     backup_path = _BACKUPS[resolved]

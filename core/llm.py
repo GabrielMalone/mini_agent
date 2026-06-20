@@ -756,6 +756,14 @@ def run_agent_turn(
         for _ in range(max_turns):
             turn_count += 1
             _TOOL_CONTEXT._turn_count = turn_count
+
+            # --- Reset git checkpoint flag for this turn ---
+            try:
+                from core.checkpoint import reset_turn_checkpoint
+                reset_turn_checkpoint(write_gate.workspace_root)
+            except Exception:
+                pass  # best-effort; don't crash the turn loop
+
             if cancel_event is not None and cancel_event.is_set():
                 return None
 

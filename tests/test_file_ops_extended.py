@@ -149,7 +149,7 @@ class TestRestoreFile(unittest.TestCase):
         tc = _make_tool_call("restore_file", path=path)
         result = execute_tool(tc, self.write_gate, self.read_gate)
         self.assertFalse(result.success)
-        self.assertIn("No backup available", result.content)
+        self.assertIn("No backup or checkpoint available", result.content)
 
     def test_restore_then_restore_again_fails(self):
         """After restoring once, the backup is consumed -- second restore fails."""
@@ -168,7 +168,7 @@ class TestRestoreFile(unittest.TestCase):
             self.write_gate, self.read_gate,
         )
         self.assertFalse(r2.success)
-        self.assertIn("No backup available", r2.content)
+        self.assertIn("No backup or checkpoint available", r2.content)
 
     def test_blocked_outside_workspace(self):
         outside = tempfile.mkdtemp()

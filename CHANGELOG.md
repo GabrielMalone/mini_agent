@@ -2,6 +2,41 @@
 
 Self-modification audit trail -- what the agent changed and why.
 
+## 2026-06-20 -- Git Checkpoint System (Dirac-inspired rollback safety)
+
+### Added
+- **`core/checkpoint.py`** -- CheckpointManager class: creates git commits before risky
+  operations (write_file, edit_file, run_shell) enabling instant rollback via
+  `git checkout`.  Per-turn gating: only one checkpoint per turn regardless of
+  how many tools run.  Graceful degradation when git is unavailable (no-op).
+- Singleton pattern via `CheckpointManager.get(workspace_root)` with
+  `os.path.realpath()` path normalization (fixes macOS `/var` vs `/private/var`).
+- Tools: `checkpoint()`, `restore_file()`, `restore_all()`, `list_checkpoints()`,
+  `reset_turn()`, `is_available()`, `checkpoint_count()`.
+
+### Changed
+- **`tools/__init__.py`** `execute_tool()`: checkpoint fires inside `_run_and_capture()`
+  thread before write_file/edit_file/run_shell dispatch.  Best-effort; never
+  blocks the tool on failure.
+- **`core/llm.py`** `run_agent_turn()`: calls `reset_turn_checkpoint()` at each turn
+  boundary (right after `turn_count += 1`).
+- **`tools/agent_ops.py`** `_restore_file()`: tries `git checkout <path>` first,
+  falls back to session `_BACKUPS` per-file undo.  Error messages updated from
+  "No backup available" to "No backup or checkpoint available".
+- **`tests/test_file_ops_extended.py`**: updated 2 assertion messages to match
+  new restore_file wording.
+
+### Tested
+- **`tests/test_checkpoint.py`**: 22 new tests, 5 test classes covering:
+  - Init/detection (git repo vs non-git dir)
+  - Checkpoint creation (dirty tree, clean tree no-op, per-turn gating)
+  - Restore (single file, all files, no checkpoints, non-git dir)
+  - Convenience functions (checkpoint_before_risky, reset_turn_checkpoint)
+  - Integration (write_file/edit_file/run_shell trigger checkpoints,
+    read_file does not, graceful degradation without git)
+  - restore_file falls back to git checkpoint
+- All 102 relevant tests pass (80 file_ops_extended + 22 checkpoint).
+
 ## 2026-06-19 -- UI: Typing while agent is running + /cancel during live turns
 
 ### Feature: Interjection support in Electron UI
