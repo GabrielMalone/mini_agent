@@ -543,7 +543,7 @@ class TestConcurrencyCap:
         pipe_deps = {}
         pipe_results = {}
 
-        with patch("concurrent.futures.ThreadPoolExecutor") as mock_pool_cls:
+        with patch("core.llm.ThreadPoolExecutor") as mock_pool_cls:
             mock_pool = MagicMock()
             mock_pool.__enter__.return_value = mock_pool
             mock_pool_cls.return_value = mock_pool
