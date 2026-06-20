@@ -681,21 +681,20 @@ def execute_tool(
     cache_key = ""
     if on_output is None and name in _CACHEABLE:
         cache_key = json.dumps([name, args], sort_keys=True)
-        cached = _TOOL_CACHE.get(cache_key)
-        if cached is not None:
-            ts, result = cached
-            if time.monotonic() - ts < _TOOL_CACHE_TTL:
-                global _TOOL_CACHE_HITS
-                _TOOL_CACHE_HITS += 1
-                return result
-            # Expired -- evict from cache and path map
-            _TOOL_CACHE.pop(cache_key, None)
-            for p, keys in list(_TOOL_CACHE_PATH_MAP.items()):
-                keys.discard(cache_key)
-                if not keys:
-                    del _TOOL_CACHE_PATH_MAP[p]
-        global _TOOL_CACHE_MISSES
-        _TOOL_CACHE_MISSES += 1
+        with _TOOL_CACHE_LOCK:
+            cached = _TOOL_CACHE.get(cache_key)
+            if cached is not None:
+                ts, result = cached
+                if time.monotonic() - ts < _TOOL_CACHE_TTL:
+                    _TOOL_CACHE_HITS += 1
+                    return result
+                # Expired -- evict from cache and path map
+                _TOOL_CACHE.pop(cache_key, None)
+                for p, keys in list(_TOOL_CACHE_PATH_MAP.items()):
+                    keys.discard(cache_key)
+                    if not keys:
+                        del _TOOL_CACHE_PATH_MAP[p]
+            _TOOL_CACHE_MISSES += 1
 
     # --- schema validation: check parameter names against tool definition ---
     if isinstance(args, dict):
