@@ -131,14 +131,15 @@ _TOOL_CACHE_LOCK = threading.Lock()
 
 def get_tool_cache_stats() -> dict:
     """Return cache hit/miss/size stats for observability."""
-    return {
-        "size": len(_TOOL_CACHE),
-        "max_size": _TOOL_CACHE_MAX_SIZE,
-        "ttl_s": _TOOL_CACHE_TTL,
-        "hits": _TOOL_CACHE_HITS,
-        "misses": _TOOL_CACHE_MISSES,
-        "hit_rate": (_TOOL_CACHE_HITS / max(_TOOL_CACHE_HITS + _TOOL_CACHE_MISSES, 1)),
-    }
+    with _TOOL_CACHE_LOCK:
+        return {
+            "size": len(_TOOL_CACHE),
+            "max_size": _TOOL_CACHE_MAX_SIZE,
+            "ttl_s": _TOOL_CACHE_TTL,
+            "hits": _TOOL_CACHE_HITS,
+            "misses": _TOOL_CACHE_MISSES,
+            "hit_rate": (_TOOL_CACHE_HITS / max(_TOOL_CACHE_HITS + _TOOL_CACHE_MISSES, 1)),
+        }
 
 # Files modified by write/edit -- used by verify
 _MODIFIED_FILES: set[str] = set()
