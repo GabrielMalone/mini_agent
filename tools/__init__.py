@@ -624,11 +624,14 @@ from tools.error_hints import (  # noqa: E402, F401
 )
 
 
-# Module-level cancel event so tool functions (e.g. _run_shell) can
+# Per-thread cancel event so tool functions (e.g. _run_shell) can
 # detect cancellation and stop blocking on subprocess I/O.  Set by
 # execute_tool() before dispatching; cleared after the thread completes.
-# This is NOT a ContextVar -- it's shared across all threads on purpose.
-_CURRENT_CANCEL_EVENT: threading.Event | None = None
+# Uses ContextVar so parallel tool execution in ThreadPoolExecutor
+# doesn't race on the global -- each thread gets its own event.
+_CURRENT_CANCEL_EVENT: contextvars.ContextVar[threading.Event | None] = (
+    contextvars.ContextVar('_CURRENT_CANCEL_EVENT', default=None)
+)
 
 def execute_tool(
     tool_call: dict,
