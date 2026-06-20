@@ -148,7 +148,7 @@ export default function TerminalPanel({
                 onSubmit={onSubmit}
                 disabled={false}
                 placeholder="Type a message, /command, or drop files here..."
-                ghostText={commandHistory.length > 0 ? commandHistory[commandHistory.length - 1] : ''}
+
                 commandHistory={commandHistory}
                 autoFocus={true}
               />
