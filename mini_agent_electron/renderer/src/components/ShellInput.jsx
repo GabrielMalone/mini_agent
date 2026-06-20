@@ -333,7 +333,7 @@ const ShellInput = forwardRef(function ShellInput({
             setFocused(hasFocus);
           }
         }),
-        placeholderExt(placeholder),
+        placeholderCompartment.current.of(placeholderExt(placeholder)),
         StreamLanguage.define(shell),
         shellKeymap,
         autocompletion({ override: [shellCompletions, llmShellCompletions] }),
