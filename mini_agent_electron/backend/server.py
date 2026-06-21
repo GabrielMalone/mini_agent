@@ -411,7 +411,7 @@ class AgentRunner:
             )
 
         cli = parse_args()
-        data = init_session(workspace, cli_args=cli)
+        data = init_session(workspace, cli_args=cli, progress_callback=None)
         self.config = data["config"]
         self.config.stream = True
         self.write_gate: WriteSafetyGate = data["write_gate"]
@@ -1207,7 +1207,7 @@ class AgentRunner:
             # Use a generous 15s timeout for remote paths; 8s for local.
             init_timeout = 15.0 if _is_remote_workspace(new_workspace) else 8.0
             ok_init, new_data = _try_with_timeout(
-                lambda: init_session(new_workspace),
+                lambda: init_session(new_workspace, progress_callback=None),
                 timeout=init_timeout,
                 description="init_session",
             )

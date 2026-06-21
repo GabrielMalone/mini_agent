@@ -71,14 +71,40 @@ _MCP_SCHEMAS = [
 ]
 
 
-def init_session(workspace: str, cli_args: object | None = None) -> dict:
+def _bootstrap_warn(phase: str, exc: Exception) -> None:
+    """Log a non-fatal bootstrap failure when MINI_AGENT_DEBUG_BOOTSTRAP=1.
+
+    All except blocks in init_session() swallow errors by design (best-effort
+    initialization).  Set the env var to surface silent failures for debugging
+    without breaking normal startup.
+    """
+    if os.environ.get("MINI_AGENT_DEBUG_BOOTSTRAP"):
+        import traceback as _tb
+
+        print(
+            f"[bootstrap] {phase} failed: {exc}",
+            file=sys.stderr,
+            flush=True,
+        )
+        _tb.print_exc(file=sys.stderr)
+
+
+def init_session(
+    workspace: str,
+    cli_args: object | None = None,
+    progress_callback=None,
+) -> dict:
     """Shared agent initialization used by both terminal and TUI.
 
     *cli_args* is an optional argparse namespace. Pass it to forward
     CLI flags to AgentConfig.load().
 
+    *progress_callback* is optional. When provided (e.g. by the Electron
+    backend), it is called with a phase description string at key
+    initialization milestones so the UI can show startup progress.
+
     Returns dict with keys: config, write_gate, read_gate, memory,
-    messages, session.
+    messages, session, session_id, prefix_fingerprint.
     """
     # Suppress HF Hub warnings EARLY -- before any huggingface_hub import.
     # The sentence-transformers model is cached locally; the "unauthenticated
@@ -93,7 +119,35 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
     from tools import set_context, build_symbol_index
     from tools.skills import reset_skills
 
+    # --- progress helper (no-op if no callback provided) ---
+    def _progress(msg: str) -> None:
+        if progress_callback is not None:
+            try:
+                progress_callback(msg)
+            except Exception:
+                pass  # never let a progress callback break startup
+
+    _progress("Loading config...")
     config = AgentConfig.load(workspace, cli_args=cli_args)
+
+    # --- Early dependency check (fail fast with clear message) ---
+    _missing = []
+    for _pkg, _import_name in [
+        ("sentence-transformers", "sentence_transformers"),
+        ("pylsp (python-lsp-server)", "pylsp"),
+    ]:
+        try:
+            __import__(_import_name)
+        except ImportError:
+            _missing.append(_pkg)
+    if _missing:
+        print(
+            f"  WARNING: Optional packages not installed: {', '.join(_missing)}. "
+            "Some features (semantic search, LSP) will be unavailable.",
+            file=sys.stderr,
+            flush=True,
+        )
+
     write_gate = WriteSafetyGate(
         workspace,
         allow_overwrites=config.allow_overwrites,
@@ -125,7 +179,8 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
             _TOOL_CONTEXT._plan_steps = saved_steps
             _TOOL_CONTEXT._plan_done = set(saved_done)
             _TOOL_CONTEXT._plan_last_advanced_turn = 0  # fresh session
-    except Exception:
+    except Exception as _e:
+        _bootstrap_warn("plan restore", _e)
         pass  # best-effort; plan is in-memory anyway
 
     # Initialize self-learning systems (FailurePatternStore + SelfCritique)
@@ -145,9 +200,11 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
             seed_patterns = fps.get_all_patterns_for_seeding()
             if seed_patterns:
                 _TOOL_CONTEXT._failure_patterns = seed_patterns
-        except Exception:
+        except Exception as _e:
+            _bootstrap_warn("failure pattern seed", _e)
             pass  # Non-critical, in-memory counts will build fresh if needed
-    except Exception:
+    except Exception as _e:
+        _bootstrap_warn("failure pattern store init", _e)
         pass  # Self-learning is best-effort, never blocks startup
 
     # Initialize ToolGraph and MistakeNotebook
@@ -160,7 +217,8 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
         mn = MistakeNotebook(memory._db_path)
         mn.init_schema()
         set_context(_tool_graph=tg, _mistake_notebook=mn)
-    except Exception:
+    except Exception as _e:
+        _bootstrap_warn("toolgraph/mistake notebook init", _e)
         pass  # Best-effort, never blocks startup
 
     # Capture git HEAD at session start for auto-handoff diff
@@ -186,7 +244,8 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
     if os.name == "nt":
         try:
             _sp.run(["cmd.exe", "/c", "rem"], capture_output=True, timeout=10)
-        except Exception:
+        except Exception as _e:
+            _bootstrap_warn("cmd.exe warmup (main)", _e)
             pass
 
     # Warmup: do a trivial open() to absorb any first-file-I/O antivirus
@@ -204,7 +263,8 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
         if os.path.isfile(_warmup_path):
             with open(_warmup_path, "r", encoding="utf-8", errors="replace") as _wf:
                 _wf.read(4096)  # read a small chunk to warm the FS cache
-    except Exception:
+    except Exception as _e:
+        _bootstrap_warn("file I/O warmup", _e)
         pass  # best-effort; never block startup on warmup failure
 
     # Warmup: thread I/O -- execute_tool() dispatches every tool call in a
@@ -258,7 +318,8 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
                     _sys_warmup.stderr.write("[warmup] spawning cmd.exe\n")
                     _sys_warmup.stderr.flush()
                     _sp.run(["cmd.exe", "/c", "rem"], capture_output=True, timeout=10)
-                except Exception:
+                except Exception as _e:
+                    _bootstrap_warn("warmup thread cmd.exe", _e)
                     pass
                 # Also warm sys.executable (python.exe) -- tool calls like
                 # read_file spawn "python -m tools._worker" subprocesses.
@@ -270,7 +331,8 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
                     _sp.run(
                         [sys.executable, "-c", "print"], capture_output=True, timeout=10
                     )
-                except Exception:
+                except Exception as _e:
+                    _bootstrap_warn("warmup thread python.exe", _e)
                     pass
                 # SentenceTransformer warmup is handled on the main thread
                 # below, after _sem_preload().  Doing it here would set
@@ -279,7 +341,8 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
                 # warnings in a controlled way.
                 _sys_warmup.stderr.write("[warmup] thread done\n")
                 _sys_warmup.stderr.flush()
-            except Exception:
+            except Exception as _e:
+                _bootstrap_warn("warmup thread I/O", _e)
                 pass
             finally:
                 _thr_warmup_done.set()
@@ -319,13 +382,15 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
 
         _sem_preload()
         _sem_preload_event = _SEM_PRELOAD_EVENT  # snapshot: set atomically
-    except Exception:
+    except Exception as _e:
+        _bootstrap_warn("semantic model preload", _e)
         pass  # model preload is best-effort; semantic_search degrades gracefully
 
     # --- workspace scanning (skip on remote filesystems to avoid hangs) ---
     remote = _is_remote_workspace(workspace)
 
     if not remote:
+        _progress("Building symbol index...")
         build_symbol_index(workspace)
     else:
         print(
@@ -338,6 +403,7 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
     from tools.lsp import set_lsp_root, shutdown_lsp as _shutdown_lsp
 
     if not remote:
+        _progress("Starting language server...")
         set_lsp_root(workspace)
 
     # Initialize MCP client with servers from config (graceful fallback if none)
@@ -353,7 +419,8 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
 
             if not any(td["function"]["name"] == "mcp_discover" for td in TOOLS):
                 TOOLS.extend(_MCP_SCHEMAS)
-        except Exception:
+        except Exception as _e:
+            _bootstrap_warn("MCP server init", _e)
             pass  # MCP servers are optional -- tolerate startup failures
 
     # Wait for the embedding model preload to finish (started above).
@@ -367,6 +434,7 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
     # _sem_get_model() + encode() on the MAIN thread to guarantee that any
     # HF Hub warnings / tokenizer downloads appear as [python:stderr] during
     # bootstrap rather than during the user's first tool call.
+    _progress("Loading embedding model...")
     if _sem_preload_event is not None:
         _sem_preload_event.wait(timeout=120)
     try:
@@ -375,7 +443,8 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
         model = _sem_get_model()
         if model is not None:
             model.encode("warmup", show_progress_bar=False)
-    except Exception:
+    except Exception as _e:
+        _bootstrap_warn("semantic model warmup encode", _e)
         pass  # best-effort; model is optional
 
     # Auto-init .mini_agent.rules and .mini_agent.toml if they don't exist yet.
@@ -392,6 +461,7 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
             except OSError as exc:
                 print(f"  WARNING: Auto-init skipped: {exc}", file=sys.stderr)
 
+    _progress("Loading conversation history...")
     saved = memory.load()
     # Prune loaded conversation to avoid massive first-turn payload
     if saved:
