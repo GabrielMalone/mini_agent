@@ -2,6 +2,28 @@
 
 Self-modification audit trail -- what the agent changed and why.
 
+
+## 2026-06-20 -- Search system audit + test coverage
+
+### Added
+- **`tests/test_search_audit.py`** — 18 new correctness tests across search system
+- Covers: find_symbol, find_usages, find_callers, find_callees, find_related, get_file_skeleton, get_function, LSP tools
+- **`tests/test_kg_codebase.py`** — 24 new tests for knowledge graph and codebase map
+- Covers: Edge/Entity dataclasses, graph build/query, module entities, idempotency, invalidation, SKIP_CALL_NAMES filtering, class method extraction, FileSymbols/ModuleGroup dataclasses, Python symbol extraction, import classification, map cache
+
+### Audit Findings
+- Schema-implementation consistent: find_callers/find_callees/find_related all use `"name"` param
+- find_symbol: exact match + case-insensitive substring fallback working correctly
+- get_file_skeleton/get_function: correctly extracts structures, graceful "not found"
+- LSP tools: handle missing pylsp gracefully (structured errors, never crash)
+- Knowledge graph: builds correctly, finds defs/classes/modules, idempotent, SKIP_CALL_NAMES respected
+- Codebase map: extracts functions/classes/imports, `_is_internal_import` classifies correctly, cache populated
+- No regressions: 1249 passed, 38 skipped
+
+### Test Coverage
+- Before: 6 search-related tests (all fingerprinting, no correctness); 0 KG/codebase_map tests
+- After: 48 search/KG/codebase tests (42 new correctness + 6 existing)
+
 ## 2026-06-20 -- Fix API 400 "insufficient tool messages" contiguity bug
 
 ### Fixed

@@ -1,5 +1,5 @@
 # mini_agent Architecture Map
-# Last updated: 2026-06-20 (fix: _inject_pre_execution_context ordering — API 400 contiguity bug)
+# Last updated: 2026-06-20 (KG + codebase_map test coverage: 24 new tests)
 #
 # This file is the agent's map of the codebase. Update it after completed changes.
 # Behavioral rules live in AGENTS.md. Long-term facts live in core memory.
