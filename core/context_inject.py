@@ -1625,7 +1625,7 @@ def _inject_tool_graph_context(messages: list[dict]) -> None:
         if tg is None:
             return
 
-        _TOOL_HINTS_COOLDOWN = 3  # only inject every N turns unless hints changed
+        _TOOL_HINTS_COOLDOWN = 20  # only inject every N turns unless hints changed
 
         turn_count = getattr(_TOOL_CONTEXT, "_turn_count", 0)
         last_injected = getattr(_TOOL_CONTEXT, "_tool_hints_last_injected", 0)
