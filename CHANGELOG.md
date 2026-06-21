@@ -4,6 +4,9 @@ Self-modification audit trail -- what the agent changed and why.
 
 ## 2026-06-21
 
+### Added
+- **Lint-on-edit gate**: `_run_ruff_check()` in `_finalize_edit` runs ruff `--select=E,F` on .py files after syntax validation, before write. Opt-in via `MINI_AGENT_LINT_ON_EDIT=1`. Catches F821 (undefined names), F841 (unused vars), and other pyflakes/pycodestyle errors that `compile()` misses. Skips silently if ruff not installed. All 167 edit tests pass.
+
 ### Changed
 - **Edit system consolidation**: Extracted shared `_finalize_edit()` in `tools/_file_utils.py` that handles the duplicated post-edit pipeline (syntax validation, backup, write, tracking, re-index, knowledge graph invalidation, auto-advance plan). Refactored all three edit paths (`_apply_single_edit`, `_edit_file_anchored`, `_edit_lines`) to call it. Net -45 lines, replaced ~135 duplicated lines with a single 65-line function + 3-line callsites. All 167 edit-related tests pass.
 

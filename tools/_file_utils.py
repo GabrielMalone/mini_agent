@@ -251,6 +251,42 @@ def _validate_python_syntax(content: str, filepath: str) -> str | None:
     return None
 
 
+import subprocess as _ruff_subprocess
+
+
+def _run_ruff_check(content: str, filepath: str) -> str | None:
+    """Run ruff on *content* via stdin; return error string or None if clean.
+
+    Selects E (pycodestyle errors) + F (pyflakes) — high-signal, near-zero
+    false-positive rules. Skips silently if ruff is not installed or times out.
+    """
+    try:
+        proc = _ruff_subprocess.run(
+            ["ruff", "check", "--select=E,F", "--stdin-filename", filepath, "-"],
+            input=content,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except FileNotFoundError:
+        return None  # ruff not installed — skip
+    except _ruff_subprocess.TimeoutExpired:
+        return None  # don't block on lint
+
+    if proc.returncode == 0:
+        return None
+
+    # ruff outputs diagnostics to stdout
+    output = (proc.stdout + proc.stderr).strip()
+    if not output:
+        return None
+
+    return (
+        f"ruff lint errors in {filepath}:\n{output}\n"
+        f"Fix the lint errors before applying. Set MINI_AGENT_LINT_ON_EDIT=0 to disable."
+    )
+
+
 def _finalize_edit(
     resolved: str,
     original: str,
@@ -277,10 +313,16 @@ def _finalize_edit(
             if syntax_error:
                 return (False, syntax_error)
 
-    # 2. Backup before write
+    # 2. Lint gate: run ruff on .py files (opt-in via MINI_AGENT_LINT_ON_EDIT=1)
+    if resolved.endswith(".py") and os.environ.get("MINI_AGENT_LINT_ON_EDIT") == "1":
+        lint_error = _run_ruff_check(updated, resolved)
+        if lint_error:
+            return (False, lint_error)
+
+    # 3. Backup before write
     _backup_before_write(resolved)
 
-    # 3. Write to disk
+    # 4. Write to disk
     try:
         with open(resolved, "w", encoding="utf-8") as f:
             f.write(updated)

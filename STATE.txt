@@ -1,5 +1,5 @@
 # mini_agent Architecture Map
-# Last updated: 2026-06-21 -- Edit system consolidation: _finalize_edit shared helper extracted from 3 duplicated paths
+# Last updated: 2026-06-21 -- Lint-on-edit gate: ruff E,F check in _finalize_edit (opt-in via MINI_AGENT_LINT_ON_EDIT=1)
 #
 # This file is the agent's map of the codebase. Update it after completed changes.
 # Behavioral rules live in AGENTS.md. Long-term facts live in core memory.
