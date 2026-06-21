@@ -1,5 +1,5 @@
 # mini_agent Architecture Map
-# Last updated: 2026-06-21 -- replace_symbol byte-offset corruption fixed (non-ASCII source files)
+# Last updated: 2026-06-21 -- prompts.log silent-failure bug fixed (_TOOL_CONTEXT NameError)
 #
 # This file is the agent's map of the codebase. Update it after completed changes.
 # Behavioral rules live in AGENTS.md. Long-term facts live in core memory.

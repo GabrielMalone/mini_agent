@@ -4,6 +4,9 @@ Self-modification audit trail -- what the agent changed and why.
 
 ## 2026-06-21
 
+### Fixed
+- **Prompts.log silent-failure bug**: `_TOOL_CONTEXT` was only imported inside the semantic cache hit block (line 325), but referenced outside it (line 363) in the prompt logging section. When the cache missed (common case), `_TOOL_CONTEXT` was undefined → `NameError`, silently swallowed by `except Exception: pass`. Root cause: `from tools import _TOOL_CONTEXT` was scoped inside the `if` block. Fix: moved the import into the prompt logging `try` block. Also replaced the bare `except: pass` with proper error logging to `agent.log` so future prompt-log failures aren't silent.
+
 ### Added
 - **Lint-on-edit gate**: `_run_ruff_check()` in `_finalize_edit` runs ruff `--select=E,F` on .py files after syntax validation, before write. Opt-in via `MINI_AGENT_LINT_ON_EDIT=1`. Catches F821 (undefined names), F841 (unused vars), and other pyflakes/pycodestyle errors that `compile()` misses. Skips silently if ruff not installed. All 167 edit tests pass.
 

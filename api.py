@@ -352,15 +352,19 @@ def call_llm(
         import os as _os
         import json as _json
         import datetime as _dt
+        from tools import _TOOL_CONTEXT
 
         _log_dir = _os.path.join(_os.path.expanduser("~"), ".mini_agent", "logs")
         _os.makedirs(_log_dir, exist_ok=True)
         _prompt_log = _os.path.join(_log_dir, "prompts.log")
+        _turn = 0
+        if _TOOL_CONTEXT is not None and hasattr(_TOOL_CONTEXT, "_turn_count"):
+            _turn = _TOOL_CONTEXT._turn_count
         _entry = {
             "ts": _dt.datetime.now(_dt.timezone.utc).isoformat(),
             "provider": config.api_provider,
             "model": payload.get("model", "?"),
-            "turn": _TOOL_CONTEXT._turn_count if _TOOL_CONTEXT is not None and hasattr(_TOOL_CONTEXT, "_turn_count") else 0,
+            "turn": _turn,
             "message_count": len(safe_messages),
             "transient_count": sum(1 for m in messages if m.get("_transient")),
             "estimated_tokens": sum(
@@ -371,8 +375,14 @@ def call_llm(
         }
         with open(_prompt_log, "a", encoding="utf-8") as _f:
             _f.write(_json.dumps(_entry) + "\n")
-    except Exception:
-        pass  # never crash on logging failure
+    except Exception as _e:
+        try:
+            from logging_setup import get_logger
+            get_logger("api").warning(
+                "prompt_log_write_failed error=%s", str(_e)[:200]
+            )
+        except Exception:
+            pass
     # ---------------------------------------------------------
 
     try:
