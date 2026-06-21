@@ -108,6 +108,7 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
 
     session_id = _uuid.uuid4().hex[:12]
     set_context(
+        workspace=workspace,
         exa_api_key=config.exa_api_key,
         openai_api_key=config.openai_api_key,
         scratchpad_path=memory._db_path,
