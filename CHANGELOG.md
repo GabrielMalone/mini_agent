@@ -2,6 +2,17 @@
 
 Self-modification audit trail -- what the agent changed and why.
 
+## 2026-06-21
+
+### Changed
+- **Edit system consolidation**: Extracted shared `_finalize_edit()` in `tools/_file_utils.py` that handles the duplicated post-edit pipeline (syntax validation, backup, write, tracking, re-index, knowledge graph invalidation, auto-advance plan). Refactored all three edit paths (`_apply_single_edit`, `_edit_file_anchored`, `_edit_lines`) to call it. Net -45 lines, replaced ~135 duplicated lines with a single 65-line function + 3-line callsites. All 167 edit-related tests pass.
+
+### Audit findings (edit system)
+- Three parallel edit paths had ~40 lines of identical post-write logic each
+- `_finalize_edit` consolidates 7 post-write steps into one call
+- Future guard additions (e.g. lint step) now only need one change
+
+
 ## 2026-06-20
 
 ### Fixed

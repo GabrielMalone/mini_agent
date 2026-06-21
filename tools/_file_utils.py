@@ -251,6 +251,72 @@ def _validate_python_syntax(content: str, filepath: str) -> str | None:
     return None
 
 
+def _finalize_edit(
+    resolved: str,
+    original: str,
+    updated: str,
+    workspace_root: str,
+    *,
+    edit_text: str = "",
+) -> tuple[bool, str | None]:
+    """Shared post-edit pipeline: validate syntax, backup, write, track, re-index.
+
+    Consolidates the duplicated write logic from _apply_single_edit,
+    _edit_file_anchored, and _edit_lines into a single function.
+
+    Returns (success, error_message_or_None).
+    """
+    # 1. Syntax validation for .py files (guard: skip if original already broken)
+    if resolved.endswith(".py"):
+        try:
+            compile(original, resolved, "exec")
+        except SyntaxError:
+            pass  # Original isn't valid Python -- skip gate
+        else:
+            syntax_error = _validate_python_syntax(updated, resolved)
+            if syntax_error:
+                return (False, syntax_error)
+
+    # 2. Backup before write
+    _backup_before_write(resolved)
+
+    # 3. Write to disk
+    try:
+        with open(resolved, "w", encoding="utf-8") as f:
+            f.write(updated)
+    except Exception as e:
+        return (False, str(e))
+
+    # 4. Tracking
+    from tools import add_modified_file, clear_tool_cache
+    from core.file_context_tracker import get_tracker
+    add_modified_file(resolved)
+    get_tracker().mark_file_edited(resolved)
+    clear_tool_cache()
+    _FILE_CACHE.pop(resolved, None)
+    _READ_FILES.add(resolved)
+
+    # 5. Re-index .py files
+    if resolved.endswith(".py"):
+        try:
+            from tools.search_ops import _reindex_file
+            _reindex_file(resolved, workspace_root)
+        except Exception:
+            pass
+
+    # 6. Knowledge graph invalidation
+    try:
+        from core.knowledge_graph import invalidate_file
+        invalidate_file(resolved, workspace_root)
+    except Exception:
+        pass
+
+    # 7. Auto-advance plan
+    _auto_advance_plan(resolved, edit_text)
+
+    return (True, None)
+
+
 # Build fast translation tables at import time
 for _cp, _replacement in _QUOTE_NORMALIZE_MAP.items():
     _QUOTE_TRANS_TABLE[_cp] = _replacement

@@ -11,7 +11,7 @@ from tools.result import ToolResult, ErrorClass
 from tools import _register, _summarize, _TOOL_CONTEXT
 from tools._file_utils import (
     _canonicalize_for_match, _normalize_quotes, _normalize_unicode_whitespace,
-    _validate_python_syntax, _auto_advance_plan, _backup_before_write,
+    _validate_python_syntax, _finalize_edit, _auto_advance_plan, _backup_before_write,
     _READ_FILES, _BACKUPS, _FILE_CACHE,
     _compute_line_hashes,
 )
@@ -506,48 +506,9 @@ def _apply_single_edit(
                 content=f"Preview: proposed edit to {resolved}\n{raw_diff}",
             ))
 
-        # --- ACI upgrade: syntax validation before applying edit ---
-        # Only gate if the file was already valid Python. If it doesn't even
-        # compile now (e.g. prose in a .py test fixture), skip the gate.
-        syntax_error = None
-        if resolved.endswith(".py"):
-            try:
-                compile(original, resolved, "exec")
-            except SyntaxError:
-                pass  # Existing content isn't valid Python -- skip gate
-            else:
-                syntax_error = _validate_python_syntax(updated, resolved)
-        if syntax_error:
-            return (path, ToolResult(
-                success=False,
-                content=(
-                    f"Syntax validation failed -- edit NOT applied to prevent broken code.\n"
-                    f"{syntax_error}\n"
-                    f"Revert your edit and fix the syntax issue. The file is unchanged."
-                ),
-            ))
-
-        with open(resolved, "w", encoding="utf-8") as f:
-            f.write(updated)
-
-        from tools import add_modified_file, clear_tool_cache
-        add_modified_file(resolved)
-        get_tracker().mark_file_edited(resolved)
-        clear_tool_cache()
-        _FILE_CACHE.pop(resolved, None)
-        # Keep symbol index fresh for edited .py files
-        if path.endswith(".py"):
-            from tools.search_ops import _reindex_file
-            _reindex_file(resolved, wg.workspace_root)
-        # Keep knowledge graph fresh
-        try:
-            from core.knowledge_graph import invalidate_file
-            invalidate_file(resolved, wg.workspace_root)
-        except Exception:
-            pass  # Non-critical: graph invalidation is best-effort
-
-        # Auto plan advancement (file path only -- old string is too noisy)
-        _auto_advance_plan(resolved)
+        ok, err = _finalize_edit(resolved, original, updated, wg.workspace_root)
+        if not ok:
+            return (path, ToolResult(success=False, content=err or "Edit failed"))
 
         added = updated.count("\n") - original.count("\n")
         label = f"{replaced} occurrence(s)" if replaced > 1 else "1 occurrence"
@@ -727,37 +688,14 @@ def _edit_file_anchored(
         if not resolved:
             continue
 
-        # Backup
-        _backup_before_write(fs["resolved"])
-
         new_lines, applied = apply_resolved_edits(fs["lines"], resolved)
         new_content = "\n".join(new_lines)
+        orig_content = "\n".join(fs["lines"])
 
-        # --- Syntax validation for Python files ---
-        syntax_error = None
-        if fs["resolved"].endswith(".py"):
-            orig_content = "\n".join(fs["lines"])
-            try:
-                compile(orig_content, fs["resolved"], "exec")
-            except SyntaxError:
-                pass  # Original isn't valid Python -- skip gate
-            else:
-                syntax_error = _validate_python_syntax(new_content, fs["resolved"])
-        if syntax_error:
-            results.append(
-                f"[FAIL] {fs['display']}: Syntax validation failed -- "
-                f"edit NOT applied to prevent broken code.\n{syntax_error}"
-            )
-            all_failures.append(syntax_error)
-            continue
-        # --- End syntax validation ---
-
-        # Write
-        try:
-            with open(fs["resolved"], "w", encoding="utf-8") as f:
-                f.write(new_content)
-        except Exception as e:
-            results.append(f"[FAIL] {fs['display']}: write error: {e}")
+        ok, err = _finalize_edit(fs["resolved"], orig_content, new_content, wg.workspace_root)
+        if not ok:
+            results.append(f"[FAIL] {fs['display']}: {err}")
+            all_failures.append(err or "Edit failed")
             continue
 
         # Reconcile anchors with new content
@@ -772,29 +710,6 @@ def _edit_file_anchored(
         ))
         diff_text = "\n".join(diff_lines) if diff_lines else "(no visible change)"
 
-        # Track
-        from tools import add_modified_file, clear_tool_cache
-        add_modified_file(fs["resolved"])
-        clear_tool_cache()
-        _FILE_CACHE.pop(fs["resolved"], None)
-        _READ_FILES.add(fs["resolved"])
-        get_tracker().mark_file_edited(fs["resolved"])
-
-        # Keep knowledge graph fresh
-        try:
-            from core.knowledge_graph import invalidate_file
-            invalidate_file(fs["resolved"])
-        except Exception:
-            pass  # Non-critical: graph invalidation is best-effort
-
-        # Keep symbol index fresh for edited .py files
-        if fs["resolved"].endswith(".py"):
-            try:
-                from tools.search_ops import _reindex_file
-                _reindex_file(fs["resolved"], wg.workspace_root)
-            except Exception:
-                pass
-
         additions = sum(e["lines_added"] for e in applied)
         deletions = sum(e["lines_deleted"] for e in applied)
         stats = f" (+{additions}, -{deletions})" if additions or deletions else ""
@@ -802,12 +717,6 @@ def _edit_file_anchored(
             f"[OK] {fs['display']}{stats}: {len(resolved)} edit(s) applied"
         )
         all_diffs.append(f"--- {fs['display']} ---\n{diff_text}")
-
-    # Re-index modified Python files
-    for fs in file_states:
-        if fs["resolved"].endswith(".py"):
-            from tools.search_ops import _reindex_file
-            _reindex_file(fs["resolved"], wg.workspace_root)
 
     final = "\n".join(results)
     if all_diffs:
@@ -973,54 +882,14 @@ def _edit_lines(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolRes
 
     updated = "\n".join(updated_lines)
 
-    # --- Syntax validation for .py files ---
-    syntax_error = None
-    if resolved.endswith(".py"):
-        try:
-            compile(original, resolved, "exec")
-        except SyntaxError:
-            pass  # Existing content isn't valid Python -- skip gate
-        else:
-            syntax_error = _validate_python_syntax(updated, resolved)
-    if syntax_error:
-        return ToolResult(
-            success=False,
-            content=(
-                f"Syntax validation failed -- edit NOT applied to prevent broken code.\n"
-                f"{syntax_error}\n"
-                f"The file is unchanged."
-            ),
-        )
-
-    # --- Write ---
-    try:
-        diff = wg.generate_diff("edit_lines", args)
-        _backup_before_write(resolved)
-        with open(resolved, "w", encoding="utf-8") as f:
-            f.write(updated)
-    except Exception as e:
-        return ToolResult(success=False, content=f"Error writing '{resolved}': {e}")
-
-    from tools import add_modified_file, clear_tool_cache
-    add_modified_file(resolved)
-    get_tracker().mark_file_edited(resolved)
-    clear_tool_cache()
-    _FILE_CACHE.pop(resolved, None)
-
-    if path.endswith(".py"):
-        from tools.search_ops import _reindex_file
-        _reindex_file(resolved, wg.workspace_root)
-
-    # Keep knowledge graph fresh
-    try:
-        from core.knowledge_graph import invalidate_file
-        invalidate_file(resolved, wg.workspace_root)
-    except Exception:
-        pass  # Non-critical: graph invalidation is best-effort
-
     # Build edit_text from new_text fields for auto-advance matching
     _edit_text = " ".join(e.get("new_text", "") for e in edits)
-    _auto_advance_plan(resolved, _edit_text)
+
+    ok, err = _finalize_edit(resolved, original, updated, wg.workspace_root, edit_text=_edit_text)
+    if not ok:
+        return ToolResult(success=False, content=err or "Edit failed")
+
+    diff = wg.generate_diff("edit_lines", args)
 
     added = len(updated_lines) - len(lines)
     label = "s" if len(edits) != 1 else ""

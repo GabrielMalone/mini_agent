@@ -1,5 +1,5 @@
 # mini_agent Architecture Map
-# Last updated: 2026-06-20 (+138 tests: core utils 96, kg/codebase 24, search 18)
+# Last updated: 2026-06-21 -- Edit system consolidation: _finalize_edit shared helper extracted from 3 duplicated paths
 #
 # This file is the agent's map of the codebase. Update it after completed changes.
 # Behavioral rules live in AGENTS.md. Long-term facts live in core memory.
