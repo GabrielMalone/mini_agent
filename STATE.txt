@@ -1,5 +1,5 @@
 # mini_agent Architecture Map
-# Last updated: 2026-06-21 -- Lint-on-edit gate: ruff E,F check in _finalize_edit (opt-in via MINI_AGENT_LINT_ON_EDIT=1)
+# Last updated: 2026-06-21 -- replace_symbol working end-to-end (tree-sitter v0.23+ fixes, missing imports)
 #
 # This file is the agent's map of the codebase. Update it after completed changes.
 # Behavioral rules live in AGENTS.md. Long-term facts live in core memory.
