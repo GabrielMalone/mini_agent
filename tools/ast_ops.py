@@ -358,7 +358,7 @@ def get_function(
 # ---------------------------------------------------------------------------
 
 
-def _collect_definitions(root: Any, ext: str, source: str) -> list[dict[str, Any]]:
+def _collect_definitions(root: Any, ext: str, source: str | bytes) -> list[dict[str, Any]]:
     """Walk the AST and collect all top-level and nested definitions."""
     definitions: list[dict[str, Any]] = []
 
@@ -371,20 +371,33 @@ def _collect_definitions(root: Any, ext: str, source: str) -> list[dict[str, Any
 
 
 def _collect_python_definitions(
-    node: Any, source: str, results: list[dict], parent_name: str = ""
+    node: Any, source: str | bytes, results: list[dict], parent_name: str = ""
 ) -> None:
-    """Recursively collect Python function/class definitions."""
+    """Recursively collect Python function/class definitions.
+
+    Accepts both str (legacy callers: get_file_skeleton, get_function) and
+    bytes (replace_symbol, where tree-sitter byte offsets must map correctly
+    to the indexed data).  When source is bytes we slice with byte indices
+    and decode the result; when it is str we slice with char indices directly.
+    """
+    _is_bytes = isinstance(source, bytes)
+
+    def _extract(start: int, end: int) -> str:
+        """Slice source[start:end] and return a str regardless of source type."""
+        chunk = source[start:end]
+        return chunk.decode("utf-8") if _is_bytes else chunk  # type: ignore[union-attr]
+
     if node.type == "function_definition":
         name_node = node.child_by_field_name("name")
         if name_node:
-            name = source[name_node.start_byte : name_node.end_byte]
+            name = _extract(name_node.start_byte, name_node.end_byte)
             body_node = node.child_by_field_name("body")
             node.child_by_field_name("parameters")
 
             # Extract signature
             sig_start = node.start_byte
             sig_end = body_node.start_byte if body_node else node.end_byte
-            signature = source[sig_start:sig_end].split("\n")[0].strip()
+            signature = _extract(sig_start, sig_end).split("\n")[0].strip()
 
             # Collect decorators
             decorators = []
@@ -437,7 +450,7 @@ def _collect_python_definitions(
     elif node.type == "class_definition":
         name_node = node.child_by_field_name("name")
         if name_node:
-            name = source[name_node.start_byte : name_node.end_byte]
+            name = _extract(name_node.start_byte, name_node.end_byte)
             body_node = node.child_by_field_name("body")
             full_name = f"{parent_name}.{name}" if parent_name else name
 
@@ -453,7 +466,7 @@ def _collect_python_definitions(
                     "kind": "class",
                     "name": full_name,
                     "parent_name": parent_name,
-                    "signature": source[node.start_byte : node.end_byte]
+                    "signature": _extract(node.start_byte, node.end_byte)
                     .split("\n")[0]
                     .strip(),
                     "decorators": decorators,
@@ -663,12 +676,16 @@ def replace_symbol(
     except (OSError, UnicodeDecodeError) as e:
         return f"Could not read file: {e}"
 
+    source_bytes = source.encode("utf-8")
+
     try:
-        tree = parser.parse(source.encode("utf-8"))
+        tree = parser.parse(source_bytes)
     except Exception as e:
         return f"Could not parse file: {e}"
 
-    definitions = _collect_definitions(tree.root_node, ext, source)
+    # Pass *bytes* to _collect_definitions so tree-sitter byte offsets
+    # are applied to the same byte array they were computed from.
+    definitions = _collect_definitions(tree.root_node, ext, source_bytes)
 
     # Find the symbol
     target = None
@@ -689,8 +706,9 @@ def replace_symbol(
     start_byte = target["start_byte"]
     end_byte = target["end_byte"]
 
-    # Replace
-    new_source = source[:start_byte] + new_text + source[end_byte:]
+    # Splice on *bytes* and decode back to str
+    new_source_bytes = source_bytes[:start_byte] + new_text.encode("utf-8") + source_bytes[end_byte:]
+    new_source = new_source_bytes.decode("utf-8")
 
     try:
         with open(file_path, "w", encoding="utf-8") as f:
