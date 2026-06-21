@@ -183,7 +183,7 @@ def _extract_with_tree_sitter(
     except Exception:
         return _extract_with_fallback(source, "", ext)
 
-    captures = query.captures(tree.root_node)
+    captures_raw = query.captures(tree.root_node)
 
     definitions: list[dict] = []
     calls: list[dict] = []
@@ -194,6 +194,14 @@ def _extract_with_tree_sitter(
     # Determine current function context for call attribution
     # Walk the tree to build a line->function mapping
     line_to_func: dict[int, str] = {}
+
+    # tree-sitter >= 0.23 returns dict[str, list[Node]]; older returns list[(Node, str)]
+    if isinstance(captures_raw, dict):
+        captures: list[tuple[Any, str]] = [
+            (node, tag) for tag, nodes in captures_raw.items() for node in nodes
+        ]
+    else:
+        captures = captures_raw
 
     for node, tag in captures:
         start_line = node.start_point[0] + 1
