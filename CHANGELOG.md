@@ -3,13 +3,12 @@
 Self-modification audit trail -- what the agent changed and why.
 
 
-## 2026-06-20 -- Search system audit + test coverage
+## 2026-06-20 -- Full test coverage push: +116 tests across previously-untested modules
 
 ### Added
-- **`tests/test_search_audit.py`** — 18 new correctness tests across search system
-- Covers: find_symbol, find_usages, find_callers, find_callees, find_related, get_file_skeleton, get_function, LSP tools
-- **`tests/test_kg_codebase.py`** — 24 new tests for knowledge graph and codebase map
-- Covers: Edge/Entity dataclasses, graph build/query, module entities, idempotency, invalidation, SKIP_CALL_NAMES filtering, class method extraction, FileSymbols/ModuleGroup dataclasses, Python symbol extraction, import classification, map cache
+- **`tests/test_core_utils.py`** — 74 new tests across 7 modules: tools/result, tools/json_repair, core/repair, core/compaction, core/cost_tracking, tools/error_hints
+- **`tests/test_kg_codebase.py`** — 24 tests for knowledge graph + codebase map
+- **`tests/test_search_audit.py`** — 18 tests for search system correctness
 
 ### Audit Findings
 - Schema-implementation consistent: find_callers/find_callees/find_related all use `"name"` param

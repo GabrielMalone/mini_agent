@@ -1,5 +1,5 @@
 # mini_agent Architecture Map
-# Last updated: 2026-06-20 (KG + codebase_map test coverage: 24 new tests)
+# Last updated: 2026-06-20 (+116 tests: core utils 74, kg/codebase 24, search 18)
 #
 # This file is the agent's map of the codebase. Update it after completed changes.
 # Behavioral rules live in AGENTS.md. Long-term facts live in core memory.
