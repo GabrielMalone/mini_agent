@@ -93,6 +93,8 @@ class FileSymbols:
     has_main: bool = False
     is_test: bool = False
     line_count: int = 0
+    react_hooks: list[str] = field(default_factory=list)
+    renders_components: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -319,9 +321,11 @@ def _extract_ts_with_treesitter(
         return None
     try:
         with open(filepath, encoding="utf-8", errors="replace") as f:
-            line_count = sum(1 for _ in f)
+            source = f.read()
+            line_count = source.count("\n") + (1 if source and not source.endswith("\n") else 0)
     except OSError:
         line_count = 0
+        source = ""
     sym = FileSymbols(path=rel_path, line_count=line_count)
     sym.is_test = any(
         kw in os.path.basename(filepath).lower() for kw in ("test", "spec")
@@ -344,9 +348,39 @@ def _extract_ts_with_treesitter(
             sym.imports_external.append(mod.split("/")[0] if "/" in mod else mod)
     sym.imports_internal = sorted(set(sym.imports_internal))
     sym.imports_external = sorted(set(sym.imports_external))
+
+    # --- React-specific extraction (hooks + JSX children) ---
+    if os.path.splitext(filepath)[1] in (".jsx", ".tsx", ".js", ".ts") and source:
+        import re as _re
+        # Find React hooks: useXxx(
+        hook_pattern = r"\buse[A-Z]\w+\s*\("
+        hooks = sorted(set(
+            m.group(0).rstrip(" (").rstrip("(")
+            for m in _re.finditer(hook_pattern, source)
+        ))
+        sym.react_hooks = hooks[:10]  # cap at 10 most-used
+
+        # Find JSX component tags (CapitalLetter tags, exclude HTML)
+        HTML_TAGS = {
+            "div", "span", "p", "a", "img", "button", "input", "form", "label",
+            "ul", "li", "ol", "table", "tr", "td", "th", "thead", "tbody",
+            "h1", "h2", "h3", "h4", "h5", "h6", "section", "header", "footer",
+            "nav", "main", "aside", "article", "br", "hr", "pre", "code",
+            "svg", "path", "circle", "rect", "line", "g", "text",
+            "style", "link", "meta", "title", "head", "body", "html",
+            "strong", "em", "small", "iframe", "script", "noscript",
+            "select", "option", "textarea", "fieldset", "legend",
+            "dialog", "details", "summary",
+        }
+        jsx_tag_pattern = r"<([A-Z]\w+)"
+        tags = sorted(set(
+            m.group(1)
+            for m in _re.finditer(jsx_tag_pattern, source)
+            if m.group(1) not in HTML_TAGS
+        ))
+        sym.renders_components = tags[:10]  # cap at 10
+
     return sym
-
-
 # ---------------------------------------------------------------------------
 # Incremental update helpers
 # ---------------------------------------------------------------------------
@@ -560,7 +594,10 @@ def build_codebase_map(
         # Source-like dirs first
         is_source = any(
             prefix.startswith(d)
-            for d in ("src", "lib", "core", "tools", "memory", "agents", "eval")
+            for d in (
+                "src", "lib", "core", "tools", "memory", "agents", "eval",
+                "mini_agent_electron",  # React frontend
+            )
         )
         return (0 if is_source else 1, prefix)
 
@@ -591,6 +628,11 @@ def build_codebase_map(
                 parts.append(f"-> {', '.join(shown)}")
                 if len(internal) > MAX_IMPORTS_PER_FILE:
                     parts[-1] += f" (+{len(internal) - MAX_IMPORTS_PER_FILE})"
+
+            if sym.react_hooks:
+                parts.append(f"hooks: {', '.join(sym.react_hooks[:5])}")
+            if sym.renders_components:
+                parts.append(f"renders: {', '.join(sym.renders_components[:5])}")
 
             if parts:
                 line = f"  {sym.path}  ({'; '.join(parts)})"
