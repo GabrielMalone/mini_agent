@@ -392,7 +392,7 @@ def _try_knowledge_graph_lookup(name: str, workspace_root: str) -> list[dict] | 
     Returns None if graph hasn't been built (caller should fall back to grep index).
     """
     try:
-        from core.knowledge_graph import ensure_graph_built, get_graph_stats
+        from core.knowledge_graph import ensure_graph_built
     except ImportError:
         return None
 
@@ -669,7 +669,6 @@ def _reset_semantic_state() -> None:
     with _SEM_PRELOAD_LOCK:
         # Wait for any in-progress preload thread to finish
         thread = _SEM_PRELOAD_THREAD
-        event = _SEM_PRELOAD_EVENT
         if thread is not None and thread.is_alive():
             # Release lock while waiting so the thread can set the event
             pass
@@ -1778,7 +1777,7 @@ def _find_usages(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolRe
                 return ToolResult(
                     success=True,
                     content=f"Found usages of '{name}' (grep fallback):\n"
-                    + "\n".join(f"  {l}" for l in lines_out),
+                    + "\n".join(f"  {ln}" for ln in lines_out),
                 )
             if result.stderr.strip():
                 import sys

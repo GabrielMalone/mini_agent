@@ -686,7 +686,7 @@ class TestGetLogger(unittest.TestCase):
         self.assertIsInstance(child, logging.Logger)
 
     def test_logger_propagate_false(self):
-        log = get_logger("test")
+        get_logger("test")
         # Root logger for mini_agent should not propagate
         root = logging.getLogger("mini_agent")
         self.assertFalse(root.propagate)

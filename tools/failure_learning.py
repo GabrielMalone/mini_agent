@@ -97,52 +97,10 @@ FAILURE_PATTERNS_INDEXES = [
 
 
 def _fingerprint_error(name: str, content: str) -> str:
-    """Extract a stable error fingerprint from tool result content.
+    """Re-exported from tools.error_hints for consistency."""
+    from tools.error_hints import _fingerprint_error as _fe
 
-    Returns the same space-separated format as tools/__init__._fingerprint_error
-    so that fingerprints stored by FailurePatternStore match those from
-    _learn_from_failure and _FAILURE_PATTERNS.
-    """
-    cl = content.lower()
-    if name == "edit_file":
-        if "not found" in cl or "does not exist" in cl:
-            return "not found"
-        if "whitespace" in cl or "indentation" in cl or "tab" in cl or "trailing" in cl:
-            return "whitespace"
-        if "ambiguous" in cl or "multiple" in cl or "appears" in cl:
-            return "ambiguous"
-        if "count" in cl or "invalid count" in cl:
-            return "count"
-    elif name == "write_file":
-        if "blocked" in cl or "safety" in cl:
-            return "blocked"
-        if "exists" in cl or "overwrite" in cl:
-            return "exists"
-    elif name == "read_file":
-        if "not found" in cl or "no such file" in cl:
-            return "not found"
-        if "offset" in cl or "exceeds" in cl:
-            return "offset"
-    elif name == "search_files":
-        if "no matches" in cl or "not found" in cl:
-            return "not found"
-        if "invalid" in cl and "regex" in cl:
-            return "invalid regex"
-    elif name == "run_shell":
-        if "not found" in cl or "command not found" in cl:
-            return "not found"
-        if "blocked" in cl or "destructive" in cl:
-            return "blocked"
-        if "timed out" in cl or "timeout" in cl:
-            return "timed out"
-    elif name in ("find_symbol", "find_usages"):
-        if "no match" in cl or "not found" in cl:
-            return "not found"
-    elif name in ("run_tests", "verify"):
-        if "fail" in cl or "FAILED" in cl:
-            return "failures"
-    # Fallback: return truncated content (matches tools/__init__ behavior)
-    return content[:60].strip().lower()
+    return _fe(name, content)
 
 
 # Prefer the canonical version from tools/__init__ when available so
@@ -1266,7 +1224,6 @@ def build_experience_context(
             topic = (entry.get("summary") or entry.get("topic", "")).lower()
             detail = (entry.get("detail", "")).lower()
             category = (entry.get("category", "")).lower()
-            combined = f"{topic} {detail} {category}"
 
             score = 0
             for term in search_terms:
@@ -1364,7 +1321,6 @@ def build_experience_context_from_text(
             topic = (entry.get("summary") or entry.get("topic", "")).lower()
             detail = (entry.get("detail", "")).lower()
             category = (entry.get("category", "")).lower()
-            combined = f"{topic} {detail} {category}"
 
             score = 0
             for term in search_terms:

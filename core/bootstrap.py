@@ -497,8 +497,8 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
                 if m:
                     pending = m.group(1).strip()[:500]
             # Capture plan state for handoff
-            plan_steps = getattr(_TOOL_CONTEXT, "_plan_steps", [])
-            plan_done = list(getattr(_TOOL_CONTEXT, "_plan_done", set()))
+            getattr(_TOOL_CONTEXT, "_plan_steps", [])
+            list(getattr(_TOOL_CONTEXT, "_plan_done", set()))
             # Build handoff content from session state
             changes_parts = []
             modified_files = getattr(_TOOL_CONTEXT, "_modified_files", None)

@@ -86,7 +86,7 @@ class TestMistakeNotebook:
         fps, mn = populated_stores
         mn.distill(10)
 
-        entries = mn.get_injectable_entries(
+        mn.get_injectable_entries(
             [
                 {"function": {"name": "edit_file", "arguments": "{}"}},
             ]

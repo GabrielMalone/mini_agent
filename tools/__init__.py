@@ -26,12 +26,9 @@ from __future__ import annotations
 import contextvars
 import json
 import re
-import sqlite3
 import subprocess
-import sys
 import threading
 import time
-from dataclasses import dataclass
 
 from core.safety import ReadSafetyGate, WriteSafetyGate
 from tools.schema import TOOLS
@@ -39,7 +36,6 @@ from logging_setup import (
     get_logger,
     log_tool_failure,
     log_tool_success,
-    log_error_trace,
 )
 
 _log = get_logger("tools")
@@ -306,16 +302,19 @@ def _auto_capture_observation(
 
         session_id = os.path.basename(session_id).replace(".db", "")
 
-    memory_store.record_observation(
-        type=obs_type,
-        title=title,
-        narrative=narrative,
-        files_read=files_read,
-        files_modified=files_modified,
-        concepts=concepts,
-        tool_name=tool_name,
-        session_id=session_id,
-    )
+    try:
+        memory_store.record_observation(
+            type=obs_type,
+            title=title,
+            narrative=narrative,
+            files_read=files_read,
+            files_modified=files_modified,
+            concepts=concepts,
+            tool_name=tool_name,
+            session_id=session_id,
+        )
+    except Exception:
+        pass  # observations table may not exist yet; never surface to agent
 
 
 def _build_observation_title(
@@ -769,9 +768,8 @@ def execute_tool(
     # --- strip _pipe meta-field before validation AND cache check (tool piping) ---
     # Must happen BEFORE cache key is computed, otherwise piped calls
     # get a different key and never hit the cache.
-    pipe_config = None
     if isinstance(args, dict):
-        pipe_config = args.pop("_pipe", None)
+        args.pop("_pipe", None)
 
     # Check cache for read-only tools (skip if on_output is streaming)
     cache_key = ""

@@ -118,7 +118,7 @@ class TestRestoreFile(unittest.TestCase):
 
     def tearDown(self):
         import shutil
-        from tools.file_ops import _BACKUPS
+        from tools._file_utils import _BACKUPS
 
         _BACKUPS.clear()
         shutil.rmtree(self.workspace, ignore_errors=True)
@@ -1057,7 +1057,7 @@ class TestHashlines(unittest.TestCase):
 
     def test_line_hash_deterministic(self):
         """Same content produces same hash."""
-        from tools.file_ops import _line_hash
+        from tools._file_utils import _line_hash
 
         h1 = _line_hash("import os")
         h2 = _line_hash("import os")
@@ -1066,7 +1066,7 @@ class TestHashlines(unittest.TestCase):
 
     def test_line_hash_different_content(self):
         """Different content produces different hashes."""
-        from tools.file_ops import _line_hash
+        from tools._file_utils import _line_hash
 
         h1 = _line_hash("import os")
         h2 = _line_hash("import sys")
@@ -1074,7 +1074,7 @@ class TestHashlines(unittest.TestCase):
 
     def test_line_hash_trailing_whitespace_insensitive(self):
         """Trailing whitespace is stripped before hashing."""
-        from tools.file_ops import _line_hash
+        from tools._file_utils import _line_hash
 
         h1 = _line_hash("import os")
         h2 = _line_hash("import os   ")
@@ -1205,7 +1205,7 @@ class TestHashlines(unittest.TestCase):
             self.read_gate,
         )
 
-        from tools.file_ops import _line_hash
+        from tools._file_utils import _line_hash
 
         lines = ["line1", "line2", "line3", "line4", "line5"]
 
@@ -1265,7 +1265,7 @@ class TestHashlines(unittest.TestCase):
             self.read_gate,
         )
 
-        from tools.file_ops import _line_hash
+        from tools._file_utils import _line_hash
 
         lines = ["line1", "line2"]
 

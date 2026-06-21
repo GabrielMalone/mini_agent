@@ -558,7 +558,7 @@ class TestWorkspaceTreeCache(unittest.TestCase):
 
         so._SYMBOL_INDEX = None
         so._INDEX_MAX_MTIME = 0.0
-        idx1 = so.build_symbol_index(self.workspace)
+        so.build_symbol_index(self.workspace)
 
         new_file = os.path.join(self.workspace, "new_module.py")
         with open(new_file, "w") as f:

@@ -595,7 +595,7 @@ def _win_list_windows() -> ToolResult:
             return ToolResult(
                 success=True,
                 content=f"Visible windows ({len(lines)}):\n"
-                + "\n".join(f"  {l}" for l in lines[:100]),
+                + "\n".join(f"  {ln}" for ln in lines[:100]),
             )
         return ToolResult(
             success=False,
@@ -745,7 +745,7 @@ def _win_system_info() -> ToolResult:
 
     return ToolResult(
         success=True,
-        content="System Info:\n" + "\n".join(f"  {l}" for l in lines)
+        content="System Info:\n" + "\n".join(f"  {ln}" for ln in lines)
         if lines
         else "Could not gather system info.",
     )

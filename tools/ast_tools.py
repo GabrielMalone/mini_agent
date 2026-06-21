@@ -164,7 +164,7 @@ def _extract_with_regex(source: str, ext: str) -> list[dict]:
     import re
 
     definitions: list[dict] = []
-    lines = source.split("\n")
+    source.split("\n")
 
     if ext == ".py":
         pattern = re.compile(

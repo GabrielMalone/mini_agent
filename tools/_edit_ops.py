@@ -8,6 +8,7 @@ import sys
 
 from tools.result import ToolResult
 from tools import _register, _summarize, _TOOL_CONTEXT
+from core.safety import ReadSafetyGate, WriteSafetyGate
 from tools._file_utils import (
     _normalize_quotes,
     _normalize_unicode_whitespace,
@@ -62,7 +63,7 @@ def _find_closest_lines(
     # Build a diff hint showing what's different
     diff_parts = []
     norm_content_window = [
-        _normalize_line(l) for l in content_lines[best_idx : best_idx + n_search]
+        _normalize_line(ln) for ln in content_lines[best_idx : best_idx + n_search]
     ]
     for j in range(n_search):
         if norm_search[j] != norm_content_window[j]:
@@ -215,9 +216,9 @@ def _preserve_indentation(
         m = re.match(r"^([ \t]*)", s)
         return m.group(1) if m else ""
 
-    old_indents = [_leading_ws(l) for l in old_lines]
-    new_indents = [_leading_ws(l) for l in new_lines]
-    file_indents = [_leading_ws(l) for l in file_lines]
+    old_indents = [_leading_ws(ln) for ln in old_lines]
+    new_indents = [_leading_ws(ln) for ln in new_lines]
+    file_indents = [_leading_ws(ln) for ln in file_lines]
 
     # If all old indents are empty or single-line, no preservation needed
     if not any(old_indents) or len(old_lines) <= 1:
@@ -806,7 +807,7 @@ def _edit_file_summary(args: dict) -> str:
         # Show per-edit anchor details for the first few edits
         edit_previews = []
         for f in files[:2]:  # max 2 files in preview
-            fpath = f["path"]
+            f["path"]
             for ed in f.get("edits", [])[:3]:  # max 3 edits per file in preview
                 anchor = ed.get("anchor", "")
                 # Extract just the anchor word (before §) for readability
@@ -1001,7 +1002,7 @@ def _edit_lines_summary(args: dict) -> str:
             if len(ed.get("from_hash", "")) > 6
             else ed.get("from_hash", "")
         )
-        to_hash = (
+        (
             ed.get("to_hash", "")[:6] + "..."
             if len(ed.get("to_hash", "")) > 6
             else ed.get("to_hash", "")

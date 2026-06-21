@@ -406,7 +406,7 @@ class TestResetClassMethod(unittest.TestCase):
             _init_git_repo(d2)
 
             cm1 = CheckpointManager.get(d1)
-            cm2 = CheckpointManager.get(d2)
+            CheckpointManager.get(d2)
 
             self.assertEqual(len(CheckpointManager._instances), 2)
 

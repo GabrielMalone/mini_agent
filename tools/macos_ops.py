@@ -205,7 +205,7 @@ def _fallback_apps_via_ps() -> ToolResult:
     return ToolResult(
         success=True,
         content=f"Running processes ({len(lines) - 1} total):\n"
-        + "\n".join(f"  {l}" for l in lines[:60]),
+        + "\n".join(f"  {ln}" for ln in lines[:60]),
     )
 
 
@@ -578,7 +578,7 @@ def _macos_system_info() -> ToolResult:
                 break
 
     return ToolResult(
-        success=True, content="System Info:\n" + "\n".join(f"  {l}" for l in lines)
+        success=True, content="System Info:\n" + "\n".join(f"  {ln}" for ln in lines)
     )
 
 

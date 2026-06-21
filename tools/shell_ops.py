@@ -199,7 +199,7 @@ def _parse_pytest_output(raw_output: str, exit_code: int = 0) -> tuple[str, bool
     Returns (summary_string, success_bool).
     """
     lines = raw_output.split("\n")
-    failure_lines = [l.strip() for l in lines if l.strip().startswith("FAILED")]
+    failure_lines = [ln.strip() for ln in lines if ln.strip().startswith("FAILED")]
     summary = ""
     for line in reversed(lines):
         if "passed" in line or "failed" in line or "error" in line:
@@ -797,12 +797,15 @@ def _search_single_file(
             compiled = _re.compile(pattern, flags)
         except _re.error as e:
             return ToolResult(success=False, content=f"Invalid regex: {e}")
-        match_fn = lambda line: compiled.search(line) is not None
+        def match_fn(line):
+            return compiled.search(line) is not None
     elif ignore_case:
         lower_pattern = pattern.lower()
-        match_fn = lambda line: lower_pattern in line.lower()
+        def match_fn(line):
+            return lower_pattern in line.lower()
     else:
-        match_fn = lambda line: pattern in line
+        def match_fn(line):
+            return pattern in line
 
     results: list[str] = []
     skipped = 0
@@ -927,12 +930,15 @@ def _search_files(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolR
             compiled = re.compile(pattern, flags)
         except re.error as e:
             return ToolResult(success=False, content=f"Invalid regex: {e}")
-        match_fn = lambda line: compiled.search(line) is not None
+        def match_fn(line):
+            return compiled.search(line) is not None
     elif ignore_case:
         lower_pattern = pattern.lower()
-        match_fn = lambda line: lower_pattern in line.lower()
+        def match_fn(line):
+            return lower_pattern in line.lower()
     else:
-        match_fn = lambda line: pattern in line
+        def match_fn(line):
+            return pattern in line
 
     results: list[str] = []
     skipped = 0
@@ -1462,15 +1468,13 @@ def _diagnose_failures(
         # Find function/class + method definition
         func_lines: list[str] = []
         in_func = False
-        in_class = False
-        brace_depth = 0
         start_line = 0
         for i, sl in enumerate(src_lines):
             # Track class entry if we need it
             if class_name and re.search(
                 rf"^\s*(async\s+)?class\s+{re.escape(class_name)}\s*[(:]", sl
             ):
-                in_class = True
+                pass
 
             # Match "def func_name" or "    def func_name" etc.
             if not in_func and re.search(

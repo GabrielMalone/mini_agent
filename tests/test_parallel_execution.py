@@ -458,7 +458,7 @@ class TestCancelPropagation:
             _make_tc("read_file", {"path": "a.py"}, 0),
             _make_tc("read_file", {"path": "b.py"}, 1),
         ]
-        results = _execute_parallel_no_pipes(
+        _execute_parallel_no_pipes(
             remaining,
             messages,
             write_gate,

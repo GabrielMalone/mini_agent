@@ -389,7 +389,7 @@ class TestExecuteToolCheckpointIntegration(unittest.TestCase):
         # just verify the checkpoint mechanism is wired -- the actual edit may
         # fail due to missing anchors, but the checkpoint check still happens.
         try:
-            result = execute_tool(
+            execute_tool(
                 {
                     "function": {
                         "name": "edit_file",

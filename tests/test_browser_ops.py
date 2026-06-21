@@ -125,7 +125,7 @@ class TestOpenUrl:
         m.assert_called_once_with("https://example.com", new=2)
 
     def test_browser_fails_to_open(self):
-        with mock.patch("webbrowser.open", return_value=False) as m:
+        with mock.patch("webbrowser.open", return_value=False):
             result = bo._open_url({"url": "https://example.com"}, None, None)
         assert result.success is False
         assert "no suitable browser" in result.content

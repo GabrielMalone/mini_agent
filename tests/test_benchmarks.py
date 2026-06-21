@@ -751,7 +751,7 @@ class TestBenchmarkSemanticSearch:
         import time as _time
 
         t0 = _time.perf_counter()
-        model = _sem_get_model()
+        _sem_get_model()
         elapsed = _time.perf_counter() - t0
 
         assert elapsed < 30.0, f"Model load too slow: {elapsed:.1f}s (expected <30s)"

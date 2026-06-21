@@ -469,7 +469,7 @@ class TestRunAgentTurn(unittest.TestCase):
         ends = []
 
         messages: list[dict] = [{"role": "user", "content": "info"}]
-        msg = run_agent_turn(
+        run_agent_turn(
             messages,
             self.config,
             self.write_gate,

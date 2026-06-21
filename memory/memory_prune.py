@@ -918,7 +918,7 @@ def _prune_by_tokens(
     # We want to keep the tail (everything after the middle cut point).
     # Goal: remaining = head_block + tail, with total <= max_tokens.
     middle_start = head_end
-    remaining_body = body[middle_start:]
+    body[middle_start:]
     remaining_tokens = total - head_tokens
     tail_tokens_budget = max_tokens - head_tokens
 

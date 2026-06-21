@@ -21,7 +21,7 @@ if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
 try:
-    from discord_bot import MiniAgentDiscordBot, DISCORD_MAX_MSG, INTENTS
+    from discord_bot import MiniAgentDiscordBot
 except ModuleNotFoundError as e:
     print(f"[workspace_bot] FATAL: {e}")
     print("[workspace_bot] The 'discord' package is not installed.")

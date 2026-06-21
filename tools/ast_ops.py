@@ -127,9 +127,9 @@ def get_file_skeleton(
     for defn in definitions:
         start_line = defn["start_line"]
         end_line = defn["end_line"]
-        kind = defn["kind"]
-        name = defn.get("name", "?")
-        signature = defn.get("signature", "")
+        defn["kind"]
+        defn.get("name", "?")
+        defn.get("signature", "")
 
         # Show the signature line
         sig_line = lines[start_line].strip() if start_line < len(lines) else ""
@@ -379,7 +379,7 @@ def _collect_python_definitions(
         if name_node:
             name = source[name_node.start_byte : name_node.end_byte]
             body_node = node.child_by_field_name("body")
-            params_node = node.child_by_field_name("parameters")
+            node.child_by_field_name("parameters")
 
             # Extract signature
             sig_start = node.start_byte

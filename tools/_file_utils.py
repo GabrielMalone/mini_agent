@@ -63,7 +63,7 @@ def _read_file_windows_worker(
                 timeout=_WORKER_READ_TIMEOUT,
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
-            stdout, stderr = proc.stdout, proc.stderr
+            stdout, _stderr = proc.stdout, proc.stderr
             import json
 
             data = json.loads(stdout.strip())

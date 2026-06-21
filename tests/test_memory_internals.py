@@ -473,13 +473,9 @@ class TestIncrementalSave(unittest.TestCase):
             {"role": "assistant", "content": "b"},
         ]
         self.store.save(msgs)
-        first_count = self._raw_messages_count()
+        self._raw_messages_count()
 
         # Append new messages
-        msgs2 = [
-            {"role": "user", "content": "c"},
-            {"role": "assistant", "content": "d"},
-        ]
         # We need to include previous messages so the store knows what changed
         all_msgs = [
             {"role": "user", "content": "a"},

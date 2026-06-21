@@ -1570,10 +1570,9 @@ def _inject_strategy_hint(messages: list[dict]) -> None:
                 return
             _inject_strategy_hint._injected.add(hint)
             # Insert after the last system message, or at index 1 if none found
-            insert_at = 1
             for i in range(len(messages) - 1, -1, -1):
                 if messages[i].get("role") == "system":
-                    insert_at = i + 1
+                    i + 1
                     break
             # Append as transient (Zone 3 volatile scratch), consistent with all
             # other injection messages.  Never insert into the append-only log.

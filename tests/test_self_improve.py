@@ -45,7 +45,6 @@ class TestTwoTierCache(unittest.TestCase):
     def test_tier1_exact_miss_with_different_query(self):
         """Different query text should miss exact but may hit semantic."""
         query1 = "What is 2 + 2?"
-        query2 = "Tell me the result of adding two and two"
         response1 = {"role": "assistant", "content": "4"}
 
         self.cache.store(query1, response1, model="test-model")

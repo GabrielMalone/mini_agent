@@ -84,7 +84,6 @@ def pytest_collection_modifyitems(config, items) -> None:
     """
     run_slow = config.getoption("--run-slow", default=False)
 
-    kept = []
     deselected = []
     benchmark_items = []
     other_items = []

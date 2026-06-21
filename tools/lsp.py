@@ -433,7 +433,7 @@ class LspConnection:
     def _initialize(self, root_uri: str | None = None) -> bool:
         """Send the ``initialize`` request with client capabilities."""
         try:
-            result = self._send_request(
+            self._send_request(
                 "initialize",
                 {
                     "processId": os.getpid(),
@@ -871,25 +871,25 @@ def _lsp_diagnostics(args: dict, _write_gate, _read_gate) -> ToolResult:
 @_summarize("lsp_definition")
 def _lsp_definition_summary(args: dict) -> str:
     fp = args.get("file_path", "?")
-    l = args.get("line", 0)
+    ln = args.get("line", 0)
     c = args.get("character", 0)
-    return f"lsp_definition({fp}, {l}:{c})"
+    return f"lsp_definition({fp}, {ln}:{c})"
 
 
 @_summarize("lsp_references")
 def _lsp_references_summary(args: dict) -> str:
     fp = args.get("file_path", "?")
-    l = args.get("line", 0)
+    ln = args.get("line", 0)
     c = args.get("character", 0)
-    return f"lsp_references({fp}, {l}:{c})"
+    return f"lsp_references({fp}, {ln}:{c})"
 
 
 @_summarize("lsp_hover")
 def _lsp_hover_summary(args: dict) -> str:
     fp = args.get("file_path", "?")
-    l = args.get("line", 0)
+    ln = args.get("line", 0)
     c = args.get("character", 0)
-    return f"lsp_hover({fp}, {l}:{c})"
+    return f"lsp_hover({fp}, {ln}:{c})"
 
 
 @_summarize("lsp_diagnostics")

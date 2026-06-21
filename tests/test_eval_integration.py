@@ -200,7 +200,7 @@ def test_swebench_smoke(request):
 
     start = time.monotonic()
     result = run_swebench_task(task, timeout_seconds=600)
-    elapsed = time.monotonic() - start
+    time.monotonic() - start
 
     print(f"Result: {_summarize_result(result)}")
 
@@ -250,7 +250,7 @@ def test_swebench_lite(request, task):
 
     start = time.monotonic()
     result = run_swebench_task(task, timeout_seconds=600)
-    elapsed = time.monotonic() - start
+    time.monotonic() - start
 
     print(f"Result: {_summarize_result(result)}")
 

@@ -354,7 +354,7 @@ def _format_interactive_elements(elements: list[dict]) -> str:
     for i, el in enumerate(elements):
         role = el.get("role", "unknown")
         name = el.get("name", "")
-        tag = el.get("tag", "")
+        el.get("tag", "")
         typ = el.get("type", "")
         href = el.get("href", "")
         checked = el.get("checked", "")
