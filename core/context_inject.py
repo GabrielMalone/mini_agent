@@ -289,12 +289,21 @@ def _inject_scratchpad_context(
     *,
     memory_store: Any = None,
 ) -> None:
-    """Inject current scratchpad content (one-time per session)."""
+    """Inject current scratchpad content (one-time per session).
+
+    Truncates large scratchpads to avoid bloating the startup context.
+    """
     if _TOOL_CONTEXT._scratchpad_injected or memory_store is None:
         return
     _TOOL_CONTEXT._scratchpad_injected = True
     scratchpad = memory_store.get_scratchpad()
     if scratchpad.strip():
+        # Truncate large scratchpads to avoid context bloat
+        _SCRATCHPAD_MAX_CHARS = 3000
+        if len(scratchpad) > _SCRATCHPAD_MAX_CHARS:
+            scratchpad = scratchpad[:_SCRATCHPAD_MAX_CHARS] + (
+                f"\n\n[... truncated from {len(scratchpad)} chars "
+                f"-- full scratchpad available via write_scratchpad]" )
         messages.append(
             {
                 "role": "user",
@@ -1060,23 +1069,45 @@ def _inject_scratchpad_nudge(messages: list[dict], *, turn_count: int) -> None:
 
 
 def _inject_plan_status(messages: list[dict]) -> None:
-    """Inject active plan status if a plan is in progress."""
+    """Inject active plan status if a plan is in progress.
+
+    Only injects when: plan is first created, a step is completed,
+    staleness warning triggers, or every _PLAN_STATUS_COOLDOWN turns.
+    """
     plan_steps = _TOOL_CONTEXT._plan_steps
     if not plan_steps:
         return
     plan_done = _TOOL_CONTEXT._plan_done
-    lines = [f"Active plan ({len(plan_done)}/{len(plan_steps)} done):"]
+    turn_count = getattr(_TOOL_CONTEXT, "_turn_count", 0)
+    last_advanced = getattr(_TOOL_CONTEXT, "_plan_last_advanced_turn", 0)
+    last_injected = getattr(_TOOL_CONTEXT, "_plan_status_last_injected", 0)
+    _PLAN_STALE_TURNS = 5
+    _PLAN_STATUS_COOLDOWN = 4  # only inject every N turns unless plan changed
+
+    stale_turns = turn_count - last_advanced
+    n_done = len(plan_done)
+
+    # Check if plan changed since last injection
+    plan_changed = n_done != getattr(_TOOL_CONTEXT, "_plan_status_last_done", -1)
+
+    # Suppress repeated identical plan injections
+    if not plan_changed and (turn_count - last_injected) < _PLAN_STATUS_COOLDOWN:
+        # Still inject staleness warnings
+        if n_done >= len(plan_steps):
+            return  # plan fully done, no need
+        if stale_turns < _PLAN_STALE_TURNS:
+            return  # not stale yet, no need to inject
+
+    _TOOL_CONTEXT._plan_status_last_injected = turn_count
+    _TOOL_CONTEXT._plan_status_last_done = n_done
+
+    lines = [f"Active plan ({n_done}/{len(plan_steps)} done):"]
     for i, s in enumerate(plan_steps, 1):
         mark = "V" if (i - 1) in plan_done else "o"
         lines.append(f"  [{mark}] {i}. {s}")
     lines.append("Use plan_status to mark steps complete as you finish them.")
 
-    # --- Plan staleness detection ---
-    turn_count = getattr(_TOOL_CONTEXT, "_turn_count", 0)
-    last_advanced = getattr(_TOOL_CONTEXT, "_plan_last_advanced_turn", 0)
-    _PLAN_STALE_TURNS = 5
-    stale_turns = turn_count - last_advanced
-    if len(plan_done) < len(plan_steps) and stale_turns >= _PLAN_STALE_TURNS:
+    if n_done < len(plan_steps) and stale_turns >= _PLAN_STALE_TURNS:
         lines.append(
             f"\nWARNING: PLAN STALLED: No step advanced in {stale_turns} turns. "
             "Either you're stuck on the current step, or you forgot to call "
@@ -1586,12 +1617,18 @@ def _inject_tool_graph_context(messages: list[dict]) -> None:
 
     Analyzes recent tool usage and suggests optimal sequencing patterns
     learned from past sessions (e.g., "after read_file, most agents follow
-    with edit_file").
+    with edit_file"). Only injects when hints change or every
+    _TOOL_HINTS_COOLDOWN turns.
     """
     try:
         tg = getattr(_TOOL_CONTEXT, "_tool_graph", None)
         if tg is None:
             return
+
+        _TOOL_HINTS_COOLDOWN = 3  # only inject every N turns unless hints changed
+
+        turn_count = getattr(_TOOL_CONTEXT, "_turn_count", 0)
+        last_injected = getattr(_TOOL_CONTEXT, "_tool_hints_last_injected", 0)
 
         # Collect recent tool names from the conversation
         recent_tools: list[str] = []
@@ -1605,17 +1642,29 @@ def _inject_tool_graph_context(messages: list[dict]) -> None:
                 break
 
         context_msg = tg.get_tool_context_hints(recent_tools)
-        if context_msg:
-            messages.append(
-                {
-                    "role": "user",
-                    "content": context_msg,
-                    "_transient": True,
-                }
-            )
+        if not context_msg:
+            return
+
+        # Check if hints changed (use hash of message content)
+        hint_hash = hash(context_msg)
+        last_hint_hash = getattr(_TOOL_CONTEXT, "_tool_hints_last_hash", None)
+        hints_changed = hint_hash != last_hint_hash
+
+        if not hints_changed and (turn_count - last_injected) < _TOOL_HINTS_COOLDOWN:
+            return
+
+        _TOOL_CONTEXT._tool_hints_last_injected = turn_count
+        _TOOL_CONTEXT._tool_hints_last_hash = hint_hash
+
+        messages.append(
+            {
+                "role": "user",
+                "content": context_msg,
+                "_transient": True,
+            }
+        )
     except (AttributeError, KeyError, ValueError, TypeError):
         pass
-
 
 def _inject_experience_context(
     messages: list[dict],

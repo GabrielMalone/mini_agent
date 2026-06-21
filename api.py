@@ -360,8 +360,9 @@ def call_llm(
             "ts": _dt.datetime.now(_dt.timezone.utc).isoformat(),
             "provider": config.api_provider,
             "model": payload.get("model", "?"),
-            "turn": getattr(config, "turn_count", 0),
+            "turn": _TOOL_CONTEXT._turn_count if _TOOL_CONTEXT is not None and hasattr(_TOOL_CONTEXT, "_turn_count") else 0,
             "message_count": len(safe_messages),
+            "transient_count": sum(1 for m in messages if m.get("_transient")),
             "estimated_tokens": sum(
                 len(str(m.get("content", ""))) // 3 for m in safe_messages
             ),
