@@ -1696,8 +1696,6 @@ def _clean_messages(messages: list[dict]) -> list[dict]:
     tool-call sequences are truncated (everything from that point onward
     is dropped), rather than just removing individual orphaned messages.
     """
-    from memory.memory_prune import _strip_orphaned_tool_messages
-
     # ---- strip system messages and transient messages ----
     cleaned: list[dict] = [
         m for m in messages if m.get("role") != "system" and not m.get("_transient")

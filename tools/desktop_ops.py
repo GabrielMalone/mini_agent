@@ -554,23 +554,8 @@ def _macos_atomacos_type(text: str) -> ToolResult:
 
 def _macos_cgevent_type(text: str) -> ToolResult:
     """Type text via Core Graphics events (requires pyobjc-framework-Quartz)."""
-    try:
-        from Quartz import (
-            CGEventCreateKeyboardEvent,
-            CGEventPost,
-            kCGHIDEventTap,
-            kCGEventKeyDown,
-        )
-        import time
-
-        for char in text:
-            # CGEventCreateKeyboardEvent takes a keycode, not a character.
-            # Mapping characters to keycodes is complex; use osascript as fallback.
-            pass
-        # Fall through to osascript
-    except ImportError:
-        pass
-
+    # CGEventCreateKeyboardEvent takes a keycode, not a character.
+    # Mapping characters to keycodes is complex; use osascript instead.
     return _macos_osascript_type(text)
 
 

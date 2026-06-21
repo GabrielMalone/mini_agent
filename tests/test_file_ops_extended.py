@@ -767,10 +767,10 @@ class TestFindUsages(unittest.TestCase):
 
     def tearDown(self):
         import shutil
-        from tools.search_ops import _SYMBOL_INDEX, _REF_INDEX
+        import tools.search_ops
 
-        _SYMBOL_INDEX = None
-        _REF_INDEX = None
+        tools.search_ops._SYMBOL_INDEX = None
+        tools.search_ops._REF_INDEX = None
         shutil.rmtree(self.workspace, ignore_errors=True)
 
     def _write(self, relpath: str, content: str) -> str:
