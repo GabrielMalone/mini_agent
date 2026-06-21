@@ -1,6 +1,8 @@
 """Tests for tools/ast_tools.py."""
 from __future__ import annotations
-import os, tempfile, unittest
+import os
+import tempfile
+import unittest
 from pathlib import Path
 from core.safety import ReadSafetyGate, WriteSafetyGate
 from tools.ast_tools import _get_file_skeleton, _get_function, _replace_symbol, _rename_symbol

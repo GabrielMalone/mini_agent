@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from core.compaction import TURN_END_RESULT_CAP_CHARS
 
@@ -63,7 +63,7 @@ class TestToolResultTruncation(unittest.TestCase):
             tail = json_str[-(TURN_END_RESULT_CAP_CHARS - 400):]
             json_str = (
                 head
-                + f"\n... [truncated ...]\n"
+                + "\n... [truncated ...]\n"
                 + tail
             )
 

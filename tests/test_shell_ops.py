@@ -1,6 +1,8 @@
 """Tests for tools/shell_ops.py."""
 from __future__ import annotations
-import os, tempfile, unittest
+import os
+import tempfile
+import unittest
 from core.safety import ReadSafetyGate, WriteSafetyGate
 from tools.result import ToolResult
 from tools.shell_ops import _check_dangerous_command, _diagnose_failures, _parse_pytest_output, _run_shell, _search_files, _task_status, _verify
