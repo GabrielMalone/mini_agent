@@ -98,7 +98,17 @@ def _extract_definitions(
     definitions: list[dict] = []
     seen: set[str] = set()
 
-    for node, tag in captures:
+    # tree-sitter v0.23+ returns dict[str, list[Node]]; v0.22 returns list[tuple[Node, str]]
+    if isinstance(captures, dict):
+        items: list[tuple[Any, str]] = [
+            (node, tag)
+            for tag, nodes in captures.items()
+            for node in nodes
+        ]
+    else:
+        items = captures
+
+    for node, tag in items:
         if tag in ("function.def", "class.def"):
             name_node = None
             for child in node.children:
