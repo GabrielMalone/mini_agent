@@ -21,6 +21,7 @@ import requests
 
 from api import APIError, format_tool_detail, call_llm, call_deepseek  # noqa: F401 call_deepseek re-exported for tests
 from .config import AgentConfig
+from .compaction import TURN_END_RESULT_CAP_CHARS
 from tools import execute_tool, tool_summary, clear_tool_cache, _TOOL_CONTEXT
 from .safety import ReadSafetyGate, WriteSafetyGate
 from logging_setup import get_logger, log_error_trace
@@ -1050,11 +1051,25 @@ def _append_tool_result(
             diff_preview=result.diff_preview,
             content=result.content,
         )
+    # --- Truncate oversized tool results before appending to messages ---
+    # Large tool results (e.g. run_shell returning 244K chars of log output)
+    # balloon context and waste tokens.  Cap at TURN_END_RESULT_CAP_CHARS.
+    content_json = result.to_json()
+    if len(content_json) > TURN_END_RESULT_CAP_CHARS:
+        head = content_json[:200]
+        tail = content_json[-(TURN_END_RESULT_CAP_CHARS - 400) :]
+        truncated_len = len(content_json) - 200 - len(tail)
+        content_json = (
+            head
+            + f"\n... [truncated {truncated_len:} chars / ~{truncated_len // 4:} tokens] ...\n"
+            + tail
+        )
+
     messages.append(
         {
             "role": "tool",
             "tool_call_id": tc["id"],
-            "content": result.to_json(),
+            "content": content_json,
         }
     )
     # Track for circuit breaker

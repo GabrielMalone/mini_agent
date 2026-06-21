@@ -1,5 +1,5 @@
 # mini_agent Architecture Map
-# Last updated: 2026-06-21 -- self-critique cooldown + thinking UI doubling fixes
+# Last updated: 2026-06-21 -- tool-result truncation in _append_tool_result (prevents 244K char context bombs)
 #
 # This file is the agent's map of the codebase. Update it after completed changes.
 # Behavioral rules live in AGENTS.md. Long-term facts live in core memory.
