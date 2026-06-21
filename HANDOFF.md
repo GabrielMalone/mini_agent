@@ -2,6 +2,11 @@
 
 ## What I Changed
 
+### replace_symbol byte-offset corruption fix
+- **Root cause**: tree-sitter returns byte offsets into UTF-8 bytes, but `_collect_python_definitions` and `replace_symbol` applied them directly to Python strings. For ASCII files byte offset == char index (works by accident), but any non-ASCII character before the target symbol causes offsets to diverge.
+- **Fix**: `_collect_python_definitions` now accepts `str | bytes` with an `_extract()` helper that slices correctly. `replace_symbol` works entirely in bytes (parse bytes → collect from bytes → splice bytes → decode).
+- **New tests**: `tests/test_replace_symbol_nonascii.py` — 4 tests (ASCII regression, single multibyte, multiple multibyte+emoji, method in class)
+
 ### Prompt audit bug fixes (4 bugs squashed)
 - **Turn counter stuck at 0**: `api.py` was reading a stale module-level import (`from llm import _turn_counter`). Fixed to read `_TOOL_CONTEXT._turn_count` directly (with hasattr guard), matching how other injectors access it.
 - **Nudge spam**: `_inject_plan_status` and `_inject_tool_graph_context` fired every single turn, injecting massive transient messages (~70 turns). Added cooldowns: plan_status every 5 turns, tool_graph first + every 20 turns.
