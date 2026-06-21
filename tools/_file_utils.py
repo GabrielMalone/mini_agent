@@ -284,6 +284,8 @@ def _validate_python_syntax(content: str, filepath: str) -> str | None:
     return None
 
 
+import json as _json
+
 import subprocess as _ruff_subprocess
 
 
@@ -320,6 +322,42 @@ def _run_ruff_check(content: str, filepath: str) -> str | None:
     )
 
 
+def _lint_error_set(content: str, filepath: str) -> frozenset[tuple[str, int]]:
+    """Return frozenset of (code, line) tuples for ruff errors in *content*.
+
+    Uses ruff --output-format=json for reliable structured comparison.
+    Returns empty frozenset if ruff not installed, times out, or content is clean.
+    """
+    try:
+        proc = _ruff_subprocess.run(
+            ["ruff", "check", "--select=E,F", "--output-format=json",
+            "--stdin-filename", filepath, "-"],
+            input=content,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (FileNotFoundError, _ruff_subprocess.TimeoutExpired):
+        return frozenset()
+
+    if proc.returncode == 0:
+        return frozenset()
+
+    try:
+        violations = _json.loads(proc.stdout)
+    except _json.JSONDecodeError:
+        return frozenset()
+
+    errors: set[tuple[str, int]] = set()
+    for v in violations:
+        if isinstance(v, dict):
+            code = v.get("code", "")
+            line = v.get("location", {}).get("row", 0)
+            if code and line:
+                errors.add((str(code), int(line)))
+    return frozenset(errors)
+
+
 def _finalize_edit(
     resolved: str,
     original: str,
@@ -336,20 +374,27 @@ def _finalize_edit(
     Returns (success, error_message_or_None).
     """
     # 1. Syntax validation for .py files (guard: skip if original already broken)
+    original_is_valid = False
     if resolved.endswith(".py"):
         try:
             compile(original, resolved, "exec")
         except SyntaxError:
-            pass  # Original isn't valid Python -- skip gate
+            pass  # Original isn't valid Python -- skip both syntax & lint gates
         else:
+            original_is_valid = True
             syntax_error = _validate_python_syntax(updated, resolved)
             if syntax_error:
                 return (False, syntax_error)
 
-    # 2. Lint gate: run ruff on .py files (opt-in via MINI_AGENT_LINT_ON_EDIT=1)
-    if resolved.endswith(".py") and os.environ.get("MINI_AGENT_LINT_ON_EDIT") == "1":
-        lint_error = _run_ruff_check(updated, resolved)
-        if lint_error:
+    # 2. Lint gate: run ruff on .py files (opt-out via MINI_AGENT_LINT_ON_EDIT=0).
+    #    Skip if the original wasn't valid Python (e.g. test fixtures).
+    #    Only block if the edit *introduced* new (code, line) errors.
+    if original_is_valid and os.environ.get("MINI_AGENT_LINT_ON_EDIT") != "0":
+        original_errors = _lint_error_set(original, resolved)
+        updated_errors = _lint_error_set(updated, resolved)
+        new_errors = updated_errors - original_errors
+        if new_errors:
+            lint_error = _run_ruff_check(updated, resolved)
             return (False, lint_error)
 
     # 3. Backup before write

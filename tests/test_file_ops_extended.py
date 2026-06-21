@@ -1258,7 +1258,7 @@ class TestHashlines(unittest.TestCase):
 
     def test_edit_lines_insert_lines(self):
         """edit_lines can insert lines (to < from is rejected, but to=from works)."""
-        self._write("test.py", "line1\nline2")
+        self._write("test.py", "x = 1\ny = 2")
         execute_tool(
             _make_tool_call("read_file", path="test.py", hash_lines=True),
             self.write_gate,
@@ -1267,7 +1267,7 @@ class TestHashlines(unittest.TestCase):
 
         from tools._file_utils import _line_hash
 
-        lines = ["line1", "line2"]
+        lines = ["x = 1", "y = 2"]
 
         # Replace line 2 with 3 lines (effectively insert)
         tc = _make_tool_call(
@@ -1279,7 +1279,7 @@ class TestHashlines(unittest.TestCase):
                     "from_hash": _line_hash(lines[1]),
                     "to": 2,
                     "to_hash": _line_hash(lines[1]),
-                    "new_text": "line2a\nline2b\nline2c",
+                    "new_text": "z = 3\nw = 4\nv = 5",
                 }
             ],
         )
@@ -1288,7 +1288,7 @@ class TestHashlines(unittest.TestCase):
 
         with open(os.path.join(self.workspace, "test.py")) as f:
             content = f.read()
-        self.assertEqual(content, "line1\nline2a\nline2b\nline2c")
+        self.assertEqual(content, "x = 1\nz = 3\nw = 4\nv = 5")
 
 
 # ---------------------------------------------------------------------------
