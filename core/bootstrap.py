@@ -586,4 +586,6 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
         "memory": memory,
         "messages": messages,
         "session": session,
+        "session_id": session_id,
+        "prefix_fingerprint": prefix_cache.prefix.fingerprint if prefix_cache and prefix_cache.prefix else None,
     }
