@@ -754,38 +754,34 @@ class TestSessionPrefixCache(unittest.TestCase):
         self.assertEqual(len(fp), 64)
 
     def test_build_system_message_no_extension(self):
-        """build_system_message in prefix.py has a stale import of SYSTEM_PROMPT
-        which was renamed to build_system_prompt.  Test the working function
-        from core/prompt.py instead."""
-        from core.prompt import build_system_prompt
+        from core.prefix import SessionPrefixCache
         from unittest.mock import MagicMock
+        cache = SessionPrefixCache()
         config = MagicMock()
         config.api_provider = "deepseek"
         config.system_extension = None
-        msg = build_system_prompt(config)
+        msg = cache.build_system_message(config)
         self.assertIsInstance(msg, str)
         self.assertTrue(len(msg) > 0)
+        self.assertIn("mini_agent", msg)
 
     def test_build_system_message_with_extension(self):
-        """build_system_prompt() ignores system_extension -- it only returns
-        the static prompt + provider note.  The extension is layered on by
-        prefix.py's build_system_message (which has a stale import)."""
-        from core.prompt import build_system_prompt
+        from core.prefix import SessionPrefixCache
         from unittest.mock import MagicMock
+        cache = SessionPrefixCache()
         config = MagicMock()
         config.api_provider = "deepseek"
         config.system_extension = "EXTRA PROMPT"
-        msg = build_system_prompt(config)
-        # Extension is NOT present -- it's applied later in the pipeline
-        self.assertNotIn("EXTRA PROMPT", msg)
+        msg = cache.build_system_message(config)
         self.assertIn("mini_agent", msg)
+        self.assertIn("EXTRA PROMPT", msg)
 
     def test_build_system_message_no_extension_attr(self):
-        from core.prompt import build_system_prompt
+        from core.prefix import SessionPrefixCache
         from unittest.mock import MagicMock
-        config = MagicMock(spec=[])
-        # build_system_prompt gets provider via getattr, defaults to "deepseek"
-        msg = build_system_prompt(config)
+        cache = SessionPrefixCache()
+        config = MagicMock(spec=[])  # no system_extension attribute
+        msg = cache.build_system_message(config)
         self.assertIsInstance(msg, str)
         self.assertTrue(len(msg) > 0)
 

@@ -131,8 +131,8 @@ class SessionPrefixCache:
         Extracted from api.py/call_llm so we have a single source of truth.
         The caller should pass get_active_tools() result as tool_specs.
         """
-        from core.prompt import SYSTEM_PROMPT
-        system = SYSTEM_PROMPT
+        from core.prompt import build_system_prompt
+        system = build_system_prompt(config)
         if hasattr(config, "system_extension") and config.system_extension:
             system += "\n\n" + config.system_extension
         return system

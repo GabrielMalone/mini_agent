@@ -2,6 +2,11 @@
 
 Self-modification audit trail -- what the agent changed and why.
 
+## 2026-06-20
+
+### Fixed
+- `core/prefix.py`: `build_system_message()` imported non-existent `SYSTEM_PROMPT` from `core.prompt` (was renamed to `build_system_prompt()`). Fixed to call `build_system_prompt(config)` + layer extension.
+
 
 ## 2026-06-20 -- Full test coverage push: +116 tests across previously-untested modules
 
