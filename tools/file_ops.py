@@ -24,6 +24,8 @@ from tools._file_utils import (
     _validate_python_syntax,
     _auto_advance_plan,
     _backup_before_write,
+    _run_ruff_check,
+    _lint_error_set,
     _READ_FILES,
     _FILE_CACHE,
     _FILE_CACHE_MAX,
@@ -252,6 +254,8 @@ def _write_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolRes
         # Only gate if the existing file was already valid Python. If the file
         # doesn't even compile now (e.g. prose in a .py test fixture), skip.
         syntax_error = None
+        original_is_valid = False
+        _prev: str = ""
         if safety_result.resolved_path.endswith(".py"):
             try:
                 with open(safety_result.resolved_path, "r", encoding="utf-8") as _f:
@@ -260,6 +264,7 @@ def _write_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolRes
             except (FileNotFoundError, SyntaxError):
                 pass  # No existing file, or existing content isn't valid Python
             else:
+                original_is_valid = True
                 syntax_error = _validate_python_syntax(
                     content, safety_result.resolved_path
                 )
@@ -271,6 +276,22 @@ def _write_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolRes
                     f"{syntax_error}"
                 ),
             )
+        # --- Lint gate: run ruff on .py files (opt-out via MINI_AGENT_LINT_ON_EDIT=0). ---
+        # Mirrors _try_apply_edit in _file_utils.py. Only block if the write
+        # *introduced* new (code, line) errors vs the pre-existing file.
+        if original_is_valid and os.environ.get("MINI_AGENT_LINT_ON_EDIT") != "0":
+            original_errors = _lint_error_set(_prev, safety_result.resolved_path)
+            updated_errors = _lint_error_set(content, safety_result.resolved_path)
+            new_errors = updated_errors - original_errors
+            if new_errors:
+                lint_error = _run_ruff_check(content, safety_result.resolved_path)
+                return ToolResult(
+                    success=False,
+                    content=(
+                        f"Lint check failed -- file NOT written to prevent style regressions.\n"
+                        f"{lint_error}"
+                    ),
+                )
         with open(safety_result.resolved_path, "w", encoding="utf-8") as f:
             f.write(content)
         from tools import add_modified_file
@@ -306,7 +327,6 @@ def _write_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolRes
             success=False,
             content=f"Error writing '{safety_result.resolved_path}': {e}",
         )
-
 
 @_summarize("write_file")
 def _write_file_summary(args: dict) -> str:

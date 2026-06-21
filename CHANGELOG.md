@@ -4,6 +4,12 @@ Self-modification audit trail -- what the agent changed and why.
 
 ## 2026-06-21
 
+### write_file lint gate
+
+- **write_file now runs ruff**: Added lint gate to `_write_file` (file_ops.py) matching the pattern already used by `_try_apply_edit` in `_file_utils.py`. After syntax validation, runs `_lint_error_set` on both original and new content, and blocks the write if new (code, line) errors are introduced. Opt-out via `MINI_AGENT_LINT_ON_EDIT=0`. Fixes the papercut where `write_file` could create lint errors that would block subsequent `edit_file` calls.
+
+## 2026-06-21
+
 ### Memory & Performance Audit
 
 - **_token_count drift fix**: Replaced incremental token accounting in `_prepare_messages()` with a full recount of the final kept list. Previously, if `_write_messages` failed (retries exhausted), `_token_count` was updated but `_last_saved_count` wasn't, causing double-counting on the next save and premature pruning.
