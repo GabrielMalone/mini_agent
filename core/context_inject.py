@@ -1225,6 +1225,14 @@ def _inject_self_critique(messages: list[dict], *, turn_count: int) -> None:
     Also detects consecutive same-tool failures (e.g. edit_file failing
     3+ times with 'not found') and injects a targeted nudge.
     """
+
+    # --- Cooldown: don't inject self-critique every turn ---
+    _CRITIQUE_COOLDOWN_TURNS = 5
+    if _TOOL_CONTEXT is not None:
+        last = getattr(_TOOL_CONTEXT, "_last_self_critique_turn", -999)
+        if turn_count - last < _CRITIQUE_COOLDOWN_TURNS:
+            return
+
     try:
         # --- Consecutive same-tool failure detection ---
         _CONSECUTIVE_FAILURE_THRESHOLD = 3
@@ -1273,6 +1281,8 @@ def _inject_self_critique(messages: list[dict], *, turn_count: int) -> None:
                             "_transient": True,
                         }
                     )
+                    if _TOOL_CONTEXT is not None:
+                        _TOOL_CONTEXT._last_self_critique_turn = turn_count
                     return  # Don't also inject the general self-critique
 
         # --- Original self-critique logic ---
@@ -1319,6 +1329,8 @@ def _inject_self_critique(messages: list[dict], *, turn_count: int) -> None:
                         "_transient": True,
                     }
                 )
+                if _TOOL_CONTEXT is not None:
+                    _TOOL_CONTEXT._last_self_critique_turn = turn_count
     except (AttributeError, KeyError, ValueError, TypeError):
         pass
 

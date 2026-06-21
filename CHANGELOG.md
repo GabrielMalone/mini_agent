@@ -5,6 +5,8 @@ Self-modification audit trail -- what the agent changed and why.
 ## 2026-06-21
 
 ### Fixed
+- **Self-critique hallucination**: `_inject_self_critique()` scanned ALL historical messages for tool failures (including ancient failures from past sessions), firing every single turn. Added 5-turn cooldown via `_TOOL_CONTEXT._last_self_critique_turn` tracking. Now only fires at most every 5 turns and tracks last injection to prevent spamming.
+- **Thinking UI doubling**: `useSmoothStream.flush()` returned the full text AND left `displayedText` visible, causing the thinking block to render twice — once as a flushed block and once as live streaming text. Fix: `flush()` now clears `fullRef` and `setDisplayedText('')` after capturing the return value.
 - **Prompts.log silent-failure bug**: `_TOOL_CONTEXT` was only imported inside the semantic cache hit block (line 325), but referenced outside it (line 363) in the prompt logging section. When the cache missed (common case), `_TOOL_CONTEXT` was undefined → `NameError`, silently swallowed by `except Exception: pass`. Root cause: `from tools import _TOOL_CONTEXT` was scoped inside the `if` block. Fix: moved the import into the prompt logging `try` block. Also replaced the bare `except: pass` with proper error logging to `agent.log` so future prompt-log failures aren't silent.
 
 ### Added

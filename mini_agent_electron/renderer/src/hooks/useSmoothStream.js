@@ -71,9 +71,11 @@ export default function useSmoothStream() {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
     }
-    indexRef.current = fullRef.current.length;
-    setDisplayedText(fullRef.current);
-    return fullRef.current;
+    const full = fullRef.current;
+    indexRef.current = full.length;
+    fullRef.current = '';
+    setDisplayedText('');
+    return full;
   }, []);
 
   // Cleanup on unmount
