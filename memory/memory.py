@@ -1251,15 +1251,13 @@ class MemoryStore:
             gentle_recent=_COMPRESSION_GENTLE_RECENT,
         )
 
-        # Incremental token accounting: only count new messages since last save.
-        new_start = min(self._last_saved_count, len(cleaned))
-        new_tokens = sum(_estimate_tokens(m) for m in cleaned[new_start:])
-        self._token_count += new_tokens
-
         # Decide whether to prune: always prune when over the hard message-count
         # cap, or when token budget is significantly exceeded and cooldown expired.
+        # Compute full token count from scratch to avoid drift from partial
+        # save failures or stale _last_saved_count.
+        full_token_count = sum(_estimate_tokens(m) for m in cleaned)
         overage_ratio = (
-            (self._token_count / self._max_tokens) if self._max_tokens > 0 else 0.0
+            (full_token_count / self._max_tokens) if self._max_tokens > 0 else 0.0
         )
         over_message_cap = len(cleaned) > self._max_messages
         should_prune = over_message_cap or (
@@ -1271,7 +1269,6 @@ class MemoryStore:
                 cleaned, self._max_tokens, self._max_messages
             )
             if pruned:
-                self._token_count -= sum(_estimate_tokens(m) for m in pruned)
                 summary = _summarize_pruned(pruned)
                 if summary:
                     summary_msg = {"role": "user", "content": summary}
@@ -1280,7 +1277,6 @@ class MemoryStore:
                     # index 0, so cache hits survive compaction.
                     # (Reasonix Pillar 1: Cache-First Loop)
                     kept.append(summary_msg)
-                    self._token_count += _estimate_tokens(summary_msg)
                     self.last_prune_summary = summary
             self._prune_cooldown = _PRUNE_COOLDOWN
         else:
@@ -1289,6 +1285,10 @@ class MemoryStore:
             if self._prune_cooldown > 0:
                 self._prune_cooldown -= 1
 
+        # Recalculate token count from final kept list to stay accurate
+        # regardless of save failures, message list identity changes, or
+        # external manipulation.
+        self._token_count = sum(_estimate_tokens(m) for m in kept)
         return kept, pruned, compressed
 
     def _write_messages(
@@ -1364,10 +1364,17 @@ class MemoryStore:
             pass  # VACUUM is opportunistic; ignore failures
 
     def _maybe_cap_rows(self, conn: sqlite3.Connection) -> None:
-        """Delete oldest rows when the messages table exceeds _MAX_ROWS."""
+        """Delete oldest rows when the messages table exceeds _MAX_ROWS.
+
+        Uses ``SELECT MAX(id)`` instead of ``SELECT COUNT(*)`` to avoid a
+        full table scan on every save.  MAX(id) is an indexed lookup (O(1))
+        on the INTEGER PRIMARY KEY; the approximation is accurate enough
+        for this safety-net cap since token-aware pruning is the primary
+        size guard.
+        """
         try:
-            row = conn.execute("SELECT COUNT(*) FROM messages").fetchone()
-            if row and row[0] > _MAX_ROWS:
+            row = conn.execute("SELECT MAX(id) FROM messages").fetchone()
+            if row and row[0] is not None and row[0] > _MAX_ROWS:
                 excess = row[0] - _MAX_ROWS
                 conn.execute(
                     "DELETE FROM messages WHERE id IN ("

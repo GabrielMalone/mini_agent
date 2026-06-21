@@ -4,6 +4,14 @@ Self-modification audit trail -- what the agent changed and why.
 
 ## 2026-06-21
 
+### Memory & Performance Audit
+
+- **_token_count drift fix**: Replaced incremental token accounting in `_prepare_messages()` with a full recount of the final kept list. Previously, if `_write_messages` failed (retries exhausted), `_token_count` was updated but `_last_saved_count` wasn't, causing double-counting on the next save and premature pruning.
+- **_maybe_cap_rows optimization**: Swapped `SELECT COUNT(*)` (full table scan, O(n)) for `SELECT MAX(id)` (indexed primary key lookup, O(1)). The 100K-row cap is a safety net anyway; token-aware pruning is the primary guard. Saves a full scan on every save call.
+- **Memory system design review**: Confirmed shared connection cache (WAL mode, ping-before-use, cache_size=-8000, busy_timeout=5000), "middle" pruning strategy (preserves head+tail), background VACUUM, rate-limited consolidation -- all well-designed. No structural issues found.
+
+## 2026-06-21
+
 ### Fixed
 - **Tool-result truncation**: `_append_tool_result()` now caps tool results at `TURN_END_RESULT_CAP_CHARS` (8000 chars) BEFORE appending to messages. Previously large tool results (e.g. `run_shell` returning 244K chars of log output) were appended verbatim, balloning context 7x (13K → 94K tokens per turn). Truncation preserves first 200 chars + last ~7400 chars with a marker.
 - **Thinking UI doubling**: `useSmoothStream.flush()` returned the full text AND left `displayedText` visible, causing the thinking block to render twice — once as a flushed block and once as live streaming text. Fix: `flush()` now clears `fullRef` and `setDisplayedText('')` after capturing the return value.
