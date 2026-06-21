@@ -15,6 +15,8 @@ from typing import Any
 
 from tools.result import ToolResult
 from tools import _register, _summarize
+from tools._file_utils import _FILE_CACHE
+from core.file_context_tracker import get_tracker
 from core.safety import WriteSafetyGate, ReadSafetyGate
 
 
