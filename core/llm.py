@@ -649,7 +649,10 @@ def _tool_execution_phase(
                                 recent_keys=recent_tool_keys,
                                 lock=tool_keys_lock)
         # Record streaming-executed tools to ToolGraph
-        _record_tool_sequence_to_graph(deferred_stream_results)
+        _all_ok = all(
+            getattr(r, "success", True) for _, r in deferred_stream_results
+        )
+        _record_tool_sequence_to_graph(deferred_stream_results, successful_turn=_all_ok)
         _save_turn_summary(turn_count, msg, deferred_stream_results, messages)
         return False  # continue the turn loop
 
@@ -686,7 +689,10 @@ def _tool_execution_phase(
     # --- Record tool sequence to ToolGraph for future pattern learning ---
     # Include deferred results for complete turn picture
     all_results = deferred_stream_results + tool_results
-    _record_tool_sequence_to_graph(all_results)
+    _all_ok = all(
+        getattr(r, "success", True) for _, r in all_results
+    )
+    _record_tool_sequence_to_graph(all_results, successful_turn=_all_ok)
 
     # --- SelfCritique: post-turn failure analysis ---
     # Inject corrective context when multiple failures occur in a turn

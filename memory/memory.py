@@ -337,10 +337,16 @@ class MemoryStore:
                 "detail TEXT NOT NULL DEFAULT '',"
                 "importance INTEGER NOT NULL DEFAULT 1,"
                 "hits INTEGER NOT NULL DEFAULT 0,"
+                "embedding BLOB DEFAULT NULL,"
                 "created_at TEXT NOT NULL DEFAULT (datetime('now')),"
                 "updated_at TEXT NOT NULL DEFAULT (datetime('now'))"
                 ")"
             )
+            # Migration: add embedding column if missing from older DBs
+            try:
+                conn.execute("ALTER TABLE project_knowledge ADD COLUMN embedding BLOB DEFAULT NULL")
+            except sqlite3.OperationalError:
+                pass  # column already exists
             # Core memory -- bounded snapshot injected frozen at session start.
             # Model-agnostic persistent memory that the agent itself curates.
             # Hard-capped by CHAR limit (not lines): the bound forces consolidation.
@@ -523,18 +529,23 @@ class MemoryStore:
     def add_knowledge(
         self, summary: str, category: str = "general",
         detail: str = "", importance: int = 1,
-    ) -> None:
-        """Store a project-level learning that persists across sessions."""
+    ) -> int | None:
+        """Store a project-level learning that persists across sessions.
+
+        Returns the new row id, or None on failure.
+        """
         try:
             conn = self._get_conn()
-            conn.execute(
+            cursor = conn.execute(
                 "INSERT INTO project_knowledge (category, summary, detail, importance)"
                 " VALUES (?, ?, ?, ?)",
                 (category, summary, detail, importance),
             )
             conn.commit()
+            return cursor.lastrowid
         except sqlite3.Error:
             warnings.warn("Failed to store project knowledge", stacklevel=2)
+            return None
 
     def get_top_knowledge(self, limit: int = 20) -> list[dict]:
         """Return highest-importance knowledge entries."""
@@ -632,6 +643,84 @@ class MemoryStore:
             ]
         except sqlite3.Error:
             warnings.warn("Failed to list project knowledge", stacklevel=2)
+            return []
+
+    def set_knowledge_embedding(self, knowledge_id: int, embedding: bytes) -> None:
+        """Store a pre-computed embedding for a knowledge entry."""
+        try:
+            conn = self._get_conn()
+            conn.execute(
+                "UPDATE project_knowledge SET embedding = ?,"
+                " updated_at = datetime('now') WHERE id = ?",
+                (embedding, knowledge_id),
+            )
+            conn.commit()
+        except sqlite3.Error:
+            warnings.warn("Failed to store knowledge embedding", stacklevel=2)
+
+    def get_knowledge_without_embeddings(self, limit: int = 100) -> list[dict]:
+        """Return knowledge entries that lack embeddings (for batch encoding)."""
+        try:
+            conn = self._get_conn()
+            rows = conn.execute(
+                "SELECT id, summary, detail FROM project_knowledge"
+                " WHERE embedding IS NULL"
+                " LIMIT ?",
+                (limit,),
+            ).fetchall()
+            return [{"id": r[0], "summary": r[1], "detail": r[2]} for r in rows]
+        except sqlite3.Error:
+            warnings.warn("Failed to query unembedded knowledge", stacklevel=2)
+            return []
+
+    def query_semantic_knowledge(
+        self, query_embedding: bytes, k: int = 5,
+    ) -> list[dict]:
+        """Return top-k knowledge entries by cosine similarity to query_embedding.
+
+        Embeddings are stored as float32 numpy arrays serialized to bytes.
+        Cosine similarity is computed in Python (not SQLite) for simplicity.
+        Returns entries with 'similarity' score appended.
+        """
+        import numpy as np
+        try:
+            conn = self._get_conn()
+            rows = conn.execute(
+                "SELECT id, category, summary, detail, importance, hits, embedding"
+                " FROM project_knowledge"
+                " WHERE embedding IS NOT NULL"
+            ).fetchall()
+            if not rows:
+                return []
+
+            query_vec = np.frombuffer(query_embedding, dtype=np.float32)
+            query_norm = np.linalg.norm(query_vec)
+            if query_norm == 0:
+                return []
+
+            scored = []
+            for r in rows:
+                emb = r[6]
+                if emb is None:
+                    continue
+                doc_vec = np.frombuffer(emb, dtype=np.float32)
+                doc_norm = np.linalg.norm(doc_vec)
+                if doc_norm == 0:
+                    continue
+                sim = float(np.dot(query_vec, doc_vec) / (query_norm * doc_norm))
+                scored.append((sim, {
+                    "id": r[0], "category": r[1], "summary": r[2],
+                    "detail": r[3], "importance": r[4], "hits": r[5],
+                }))
+
+            scored.sort(key=lambda x: x[0], reverse=True)
+            top = scored[:k]
+            return [
+                {**entry, "similarity": round(sim, 4)}
+                for sim, entry in top
+            ]
+        except (sqlite3.Error, ValueError):
+            warnings.warn("Failed to query semantic knowledge", stacklevel=2)
             return []
 
     # ------------------------------------------------------------------

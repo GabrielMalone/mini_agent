@@ -224,7 +224,20 @@ def _remember(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResu
             content="No memory store available. Project knowledge requires an active session.",
         )
     try:
-        memory_store.add_knowledge(topic, detail, category or "general")
+        new_id = memory_store.add_knowledge(topic, detail, category or "general")
+        # Trigger async embedding for the new knowledge entry
+        if new_id is not None:
+            try:
+                from core.semantic_memory import _embed_text, _get_model
+                model = _get_model()
+                if model is not None:
+                    import numpy as np
+                    text = f"{topic}\n{detail}" if detail else topic
+                    vec = model.encode(text, show_progress_bar=False)
+                    emb_bytes = np.asarray(vec, dtype=np.float32).tobytes()
+                    memory_store.set_knowledge_embedding(new_id, emb_bytes)
+            except Exception:
+                pass  # Non-critical: embedding can be backfilled later
         return ToolResult(
             success=True,
             content=f"Remembered: [{category or 'general'}] {topic}",

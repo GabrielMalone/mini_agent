@@ -1493,6 +1493,42 @@ def _inject_experience_context(
         pass
 
 
+def _inject_semantic_memory_context(
+    messages: list[dict],
+    memory_store=None,
+) -> None:
+    """Inject semantically relevant project_knowledge entries.
+
+    Uses embedding-based cosine similarity to find knowledge entries
+    relevant to the current user query.  Complements _inject_experience_context
+    which uses keyword matching.
+    """
+    if memory_store is None:
+        return
+    try:
+        from core.semantic_memory import query_and_format
+
+        # Extract the latest user message as query context
+        search_context = ""
+        for msg in reversed(messages):
+            if msg.get("role") == "user" and not msg.get("_transient"):
+                search_context = msg.get("content", "")[:500]
+                break
+
+        if not search_context:
+            return
+
+        ctx_msg = query_and_format(memory_store, search_context, k=3)
+        if ctx_msg:
+            messages.append({
+                "role": "user",
+                "content": ctx_msg,
+                "_transient": True,
+            })
+    except Exception:
+        pass  # Non-critical: semantic memory injection is best-effort
+
+
 def _inject_dead_tool_pruning(
     messages: list[dict],
     turn_count: int,
@@ -1621,8 +1657,14 @@ def _inject_pre_execution_context(
 
 def _record_tool_sequence_to_graph(
     tool_results: list[tuple[dict, object]],
+    *,
+    successful_turn: bool = False,
 ) -> None:
-    """Record a turn's tool execution sequence to the ToolGraph."""
+    """Record a turn's tool execution sequence to the ToolGraph.
+
+    *successful_turn* should be True when the overall user task is progressing
+    (no fatal errors, not cancelled).  Derived heuristically by the caller.
+    """
     try:
         tg = getattr(_TOOL_CONTEXT, "_tool_graph", None)
         if tg is None:
@@ -1634,7 +1676,7 @@ def _record_tool_sequence_to_graph(
             if tc.get("function", {}).get("name", "")
         ]
         if len(tool_names) >= 2:
-            tg.record_turn_tool_sequence(tool_names)
+            tg.record_turn_tool_sequence(tool_names, successful_turn=successful_turn)
     except (AttributeError, KeyError, ValueError, TypeError):
         pass
 
@@ -1706,6 +1748,7 @@ def _inject_context(
     _inject_confidence_web_search_nudge(messages, turn_count=turn_count)
     _inject_tool_graph_context(messages)
     _inject_experience_context(messages, memory_store=memory_store)
+    _inject_semantic_memory_context(messages, memory_store=memory_store)
     _inject_dead_tool_pruning(messages, turn_count=turn_count)
     _inject_post_edit_verification(messages)
 

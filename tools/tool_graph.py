@@ -225,12 +225,18 @@ class ToolGraph:
                 ).fetchall()
                 hints: list[str] = []
                 for to_tool, count, success_count in rows:
-                    success_rate = success_count / max(count, 1)
-                    marker = " [OK]" if success_rate >= _MIN_SUCCESS_RATE else ""
-                    hints.append(
-                        f"After {current_tool}, common next: {to_tool} "
-                        f"(seen {count}x, {int(success_rate * 100)}% success rate){marker}"
-                    )
+                    if success_count > 0:
+                        success_rate = success_count / max(count, 1)
+                        marker = " [OK]" if success_rate >= _MIN_SUCCESS_RATE else ""
+                        hints.append(
+                            f"After {current_tool}, common next: {to_tool} "
+                            f"(seen {count}x, {int(success_rate * 100)}% success rate){marker}"
+                        )
+                    else:
+                        hints.append(
+                            f"After {current_tool}, common next: {to_tool} "
+                            f"(seen {count}x)"
+                        )
                 return hints
             except sqlite3.Error:
                 return []
