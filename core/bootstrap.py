@@ -131,19 +131,21 @@ def init_session(
     config = AgentConfig.load(workspace, cli_args=cli_args)
 
     # --- Early dependency check (fail fast with clear message) ---
+    import shutil as _shutil
     _missing = []
-    for _pkg, _import_name in [
-        ("sentence-transformers", "sentence_transformers"),
-        ("pylsp (python-lsp-server)", "pylsp"),
-    ]:
-        try:
-            __import__(_import_name)
-        except ImportError:
-            _missing.append(_pkg)
+    _missing_features = []
+    try:
+        __import__("sentence_transformers")
+    except ImportError:
+        _missing.append("sentence-transformers")
+        _missing_features.append("semantic search")
+    if not _shutil.which("pylsp"):
+        _missing.append("python-lsp-server")
+        _missing_features.append("LSP")
     if _missing:
         print(
             f"  WARNING: Optional packages not installed: {', '.join(_missing)}. "
-            "Some features (semantic search, LSP) will be unavailable.",
+            f"Feature(s) affected: {', '.join(_missing_features)}.",
             file=sys.stderr,
             flush=True,
         )

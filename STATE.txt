@@ -1,5 +1,5 @@
 # mini_agent Architecture Map
-# Last updated: 2026-06-21 -- deferred startup audit fixes: _bootstrap_warn logging, progress_callback, dep check
+# Last updated: 2026-06-21 -- fix dependency check: pylsp uses subprocess, not import
 #
 # This file is the agent's map of the codebase. Update it after completed changes.
 # Behavioral rules live in AGENTS.md. Long-term facts live in core memory.
