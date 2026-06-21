@@ -15,11 +15,9 @@ Covers gaps the basic test suite doesn't hit:
 import os
 import subprocess
 import tempfile
-import textwrap
 import unittest
 
 from core.checkpoint import (
-    Checkpoint,
     CheckpointManager,
     checkpoint_before_risky,
     get_checkpoint_manager,
@@ -30,6 +28,7 @@ from core.checkpoint import (
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _init_git_repo(path: str) -> None:
     """Initialize a git repo at *path* with an initial commit."""
@@ -91,6 +90,7 @@ def _read(path: str, relpath: str) -> str:
 # ---------------------------------------------------------------------------
 # Edge Case Tests
 # ---------------------------------------------------------------------------
+
 
 class TestMultiTurnLifecycle(unittest.TestCase):
     """Checkpoint state across multiple turns: reset, accumulate, restore."""
@@ -180,14 +180,17 @@ class TestMaxCheckpointsPruning(unittest.TestCase):
         self.assertGreaterEqual(len(cps), 1)
         # Oldest items (cp-0 through cp-9) should have been pruned
         visible_messages = {cp["message"] for cp in cps}
-        self.assertNotIn("cp-0", visible_messages,
-                         "cp-0 should have been pruned from the ring")
+        self.assertNotIn(
+            "cp-0", visible_messages, "cp-0 should have been pruned from the ring"
+        )
         # Newest should be present
-        self.assertIn("cp-59", visible_messages,
-                      "cp-59 (newest) should still be in the ring")
+        self.assertIn(
+            "cp-59", visible_messages, "cp-59 (newest) should still be in the ring"
+        )
 
         CheckpointManager.reset()
         import shutil
+
         shutil.rmtree(workspace, ignore_errors=True)
 
 
@@ -530,12 +533,17 @@ class TestEditFileCheckpointIntegration(unittest.TestCase):
             self.read_gate,
         )
         self.assertTrue(r2.success)
-        self.assertEqual(cm.checkpoint_count(), 1, "Per-turn gating: still 1 checkpoint after second write")
+        self.assertEqual(
+            cm.checkpoint_count(),
+            1,
+            "Per-turn gating: still 1 checkpoint after second write",
+        )
 
 
 # ---------------------------------------------------------------------------
 # Debug/listing edge cases
 # ---------------------------------------------------------------------------
+
 
 class TestListCheckpointsEdgeCases(unittest.TestCase):
     """list_checkpoints edge cases."""

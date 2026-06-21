@@ -100,15 +100,15 @@ def _escape_applescript_string(s: str) -> str:
     result: list[str] = []
     for ch in s:
         oc = ord(ch)
-        if oc == 92:          # backslash
+        if oc == 92:  # backslash
             result.append(chr(92) + chr(92))
-        elif oc == 34:        # double quote
+        elif oc == 34:  # double quote
             result.append(chr(92) + chr(34))
-        elif oc == 10:        # newline
+        elif oc == 10:  # newline
             result.append(chr(92) + "n")
-        elif oc == 13:        # carriage return
+        elif oc == 13:  # carriage return
             result.append(chr(92) + "r")
-        elif oc == 9:         # tab
+        elif oc == 9:  # tab
             result.append(chr(92) + "t")
         elif oc < 0x20:
             result.append(chr(92) + "x" + format(oc, "02x"))
@@ -120,6 +120,7 @@ def _escape_applescript_string(s: str) -> str:
 # ===========================================================================
 # Helpers
 # ===========================================================================
+
 
 def _mac_only() -> ToolResult:
     """Return a standard error when called on non-macOS."""
@@ -134,7 +135,9 @@ def _run_osascript(script: str, timeout: float = 10.0) -> tuple[bool, str]:
     try:
         result = subprocess.run(
             ["osascript", "-e", script],
-            capture_output=True, text=True, timeout=timeout,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
         )
         if result.returncode != 0:
             return False, result.stderr.strip() or result.stdout.strip()
@@ -164,6 +167,7 @@ def _run_command(cmd: list[str], timeout: float = 10.0) -> tuple[bool, str, str]
 # desktop_apps -- list running applications
 # ===========================================================================
 
+
 def _macos_list_apps() -> ToolResult:
     """List running applications via NSWorkspace."""
     try:
@@ -180,7 +184,8 @@ def _macos_list_apps() -> ToolResult:
 
         return ToolResult(
             success=True,
-            content=f"Running applications ({len(apps)} total):\n" + "\n".join(sorted(lines)),
+            content=f"Running applications ({len(apps)} total):\n"
+            + "\n".join(sorted(lines)),
         )
     except ImportError:
         return _fallback_apps_via_ps()
@@ -199,13 +204,15 @@ def _fallback_apps_via_ps() -> ToolResult:
     lines = stdout.splitlines()
     return ToolResult(
         success=True,
-        content=f"Running processes ({len(lines)-1} total):\n" + "\n".join(f"  {l}" for l in lines[:60]),
+        content=f"Running processes ({len(lines) - 1} total):\n"
+        + "\n".join(f"  {l}" for l in lines[:60]),
     )
 
 
 # ===========================================================================
 # desktop_launch -- launch an application
 # ===========================================================================
+
 
 def _macos_launch_app(name: str) -> ToolResult:
     """Launch an app by name or bundle ID."""
@@ -249,6 +256,7 @@ def _macos_launch_app(name: str) -> ToolResult:
 # desktop_quit -- quit an application
 # ===========================================================================
 
+
 def _macos_quit_app(name_or_pid: str) -> ToolResult:
     """Quit an app by name or PID.
 
@@ -263,9 +271,11 @@ def _macos_quit_app(name_or_pid: str) -> ToolResult:
         NSWorkspace = _get_nsworkspace()
         ws = NSWorkspace.sharedWorkspace()
         for app in ws.runningApplications():
-            if (name_or_pid.isdigit() and str(app.processIdentifier()) == name_or_pid) or \
-               (app.localizedName() or "").lower() == name_or_pid.lower() or \
-               (app.bundleIdentifier() or "").lower() == name_or_pid.lower():
+            if (
+                (name_or_pid.isdigit() and str(app.processIdentifier()) == name_or_pid)
+                or (app.localizedName() or "").lower() == name_or_pid.lower()
+                or (app.bundleIdentifier() or "").lower() == name_or_pid.lower()
+            ):
                 app_is_running = True
                 break
     except ImportError:
@@ -293,7 +303,9 @@ def _macos_quit_app(name_or_pid: str) -> ToolResult:
         timeout=5.0,
     )
     if ok2:
-        return ToolResult(success=True, content=f"Force-quit '{name_or_pid}' via pkill.")
+        return ToolResult(
+            success=True, content=f"Force-quit '{name_or_pid}' via pkill."
+        )
 
     return ToolResult(
         success=False,
@@ -305,6 +317,7 @@ def _macos_quit_app(name_or_pid: str) -> ToolResult:
 # ===========================================================================
 # desktop_focus -- bring an app to the foreground
 # ===========================================================================
+
 
 def _macos_focus_app(name: str) -> ToolResult:
     """Bring an app to the foreground."""
@@ -334,6 +347,7 @@ def _macos_focus_app(name: str) -> ToolResult:
 # ===========================================================================
 # desktop_clipboard -- read or write the system clipboard
 # ===========================================================================
+
 
 def _macos_clipboard(action: str, text: str = "") -> ToolResult:
     """Read or write the system clipboard."""
@@ -377,19 +391,25 @@ def _clipboard_via_osascript(action: str, text: str = "") -> ToolResult:
     if action == "read":
         ok, output = _run_osascript("get the clipboard", timeout=5.0)
         if ok:
-            return ToolResult(success=True, content=output if output else "(clipboard empty)")
+            return ToolResult(
+                success=True, content=output if output else "(clipboard empty)"
+            )
         return ToolResult(success=False, content=f"Clipboard read failed: {output}")
 
     elif action == "write":
         if not text:
-            return ToolResult(success=False, content="Missing 'text' parameter for clipboard write.")
+            return ToolResult(
+                success=False, content="Missing 'text' parameter for clipboard write."
+            )
         escaped = _escape_applescript_string(text)
         ok, output = _run_osascript(
             f'set the clipboard to "{escaped}"',
             timeout=5.0,
         )
         if ok:
-            return ToolResult(success=True, content=f"Clipboard set ({len(text)} chars).")
+            return ToolResult(
+                success=True, content=f"Clipboard set ({len(text)} chars)."
+            )
         return ToolResult(success=False, content=f"Clipboard write failed: {output}")
 
     return ToolResult(success=False, content=f"Unknown action: '{action}'.")
@@ -399,11 +419,15 @@ def _clipboard_via_osascript(action: str, text: str = "") -> ToolResult:
 # desktop_windows -- list all visible windows across all apps
 # ===========================================================================
 
+
 def _macos_list_windows() -> ToolResult:
     """List all visible windows via CGWindowList."""
     try:
         Quartz = _get_quartz()
-        option = Quartz.kCGWindowListOptionOnScreenOnly | Quartz.kCGWindowListExcludeDesktopElements
+        option = (
+            Quartz.kCGWindowListOptionOnScreenOnly
+            | Quartz.kCGWindowListExcludeDesktopElements
+        )
         window_list = Quartz.CGWindowListCopyWindowInfo(option, Quartz.kCGNullWindowID)
 
         # Filter to regular app windows (layer 0 = normal, skip menubar/dock/etc)
@@ -438,7 +462,10 @@ def _macos_list_windows() -> ToolResult:
         )
         if ok:
             return ToolResult(success=True, content=f"Windows: {output}")
-        return ToolResult(success=False, content="pyobjc-framework-Quartz not installed and osascript fallback failed.")
+        return ToolResult(
+            success=False,
+            content="pyobjc-framework-Quartz not installed and osascript fallback failed.",
+        )
     except Exception as exc:
         return ToolResult(success=False, content=f"Window list failed: {exc}")
 
@@ -446,6 +473,7 @@ def _macos_list_windows() -> ToolResult:
 # ===========================================================================
 # desktop_system_info -- CPU, memory, disk, battery, thermal, uptime
 # ===========================================================================
+
 
 def _macos_system_info() -> ToolResult:
     """Gather system metrics from multiple sources.
@@ -461,7 +489,9 @@ def _macos_system_info() -> ToolResult:
         pi = NSProcessInfo.processInfo()
         lines.append(f"Hostname:         {pi.hostName()}")
         lines.append(f"OS Version:       {pi.operatingSystemVersionString()}")
-        lines.append(f"CPU Cores:        {pi.processorCount()} ({pi.activeProcessorCount()} active)")
+        lines.append(
+            f"CPU Cores:        {pi.processorCount()} ({pi.activeProcessorCount()} active)"
+        )
         lines.append(f"Physical Memory:  {pi.physicalMemory() // (1024**3)} GB")
         lines.append(f"System Uptime:    {_format_uptime(pi.systemUptime())}")
     except ImportError:
@@ -513,13 +543,19 @@ def _macos_system_info() -> ToolResult:
     if ok:
         parts = stdout.splitlines()[-1].split()
         if len(parts) >= 4:
-            lines.append(f"Root Disk:        {parts[1]} total, {parts[2]} used, {parts[3]} avail ({parts[4]} used)")
+            lines.append(
+                f"Root Disk:        {parts[1]} total, {parts[2]} used, {parts[3]} avail ({parts[4]} used)"
+            )
 
     # Battery
     ok, stdout, _ = results.get("battery", (False, "", ""))
     if ok:
         for line in stdout.splitlines():
-            if "%" in line and ("discharging" in line.lower() or "charging" in line.lower() or "charged" in line.lower()):
+            if "%" in line and (
+                "discharging" in line.lower()
+                or "charging" in line.lower()
+                or "charged" in line.lower()
+            ):
                 lines.append(f"Battery:          {line.strip()}")
                 break
 
@@ -541,7 +577,9 @@ def _macos_system_info() -> ToolResult:
                 lines.append(f"  {line.strip()}")
                 break
 
-    return ToolResult(success=True, content="System Info:\n" + "\n".join(f"  {l}" for l in lines))
+    return ToolResult(
+        success=True, content="System Info:\n" + "\n".join(f"  {l}" for l in lines)
+    )
 
 
 def _format_uptime(seconds: float) -> str:
@@ -564,29 +602,49 @@ def _format_uptime(seconds: float) -> str:
 
 # Keycode map for special keys (macOS virtual key codes)
 _KEYCODE_MAP: dict[str, int] = {
-    "return": 0x24, "enter": 0x24,
+    "return": 0x24,
+    "enter": 0x24,
     "tab": 0x30,
     "space": 0x31,
-    "delete": 0x33, "backspace": 0x33,
-    "escape": 0x35, "esc": 0x35,
-    "right": 0x7C, "left": 0x7B,
-    "down": 0x7D, "up": 0x7E,
-    "f1": 0x7A, "f2": 0x78, "f3": 0x63, "f4": 0x76,
-    "f5": 0x60, "f6": 0x61, "f7": 0x62, "f8": 0x64,
-    "f9": 0x65, "f10": 0x6D, "f11": 0x67, "f12": 0x6F,
-    "home": 0x73, "end": 0x77,
-    "pageup": 0x74, "pagedown": 0x79,
+    "delete": 0x33,
+    "backspace": 0x33,
+    "escape": 0x35,
+    "esc": 0x35,
+    "right": 0x7C,
+    "left": 0x7B,
+    "down": 0x7D,
+    "up": 0x7E,
+    "f1": 0x7A,
+    "f2": 0x78,
+    "f3": 0x63,
+    "f4": 0x76,
+    "f5": 0x60,
+    "f6": 0x61,
+    "f7": 0x62,
+    "f8": 0x64,
+    "f9": 0x65,
+    "f10": 0x6D,
+    "f11": 0x67,
+    "f12": 0x6F,
+    "home": 0x73,
+    "end": 0x77,
+    "pageup": 0x74,
+    "pagedown": 0x79,
     "forwarddelete": 0x75,
     "help": 0x72,
 }
 
 # Modifier mask bits
 _MODIFIER_MASKS: dict[str, int] = {
-    "cmd": 0x100, "command": 0x100,
+    "cmd": 0x100,
+    "command": 0x100,
     "shift": 0x200,
-    "option": 0x800, "alt": 0x800,
-    "control": 0x1000, "ctrl": 0x1000,
-    "fn": 0x800000, "function": 0x800000,
+    "option": 0x800,
+    "alt": 0x800,
+    "control": 0x1000,
+    "ctrl": 0x1000,
+    "fn": 0x800000,
+    "function": 0x800000,
 }
 
 
@@ -711,10 +769,13 @@ def _press_keys_via_osascript(combo: str) -> ToolResult:
     mod_parts = parts[:-1]
 
     mod_map = {
-        "cmd": "command down", "command": "command down",
+        "cmd": "command down",
+        "command": "command down",
         "shift": "shift down",
-        "option": "option down", "alt": "option down",
-        "ctrl": "control down", "control": "control down",
+        "option": "option down",
+        "alt": "option down",
+        "ctrl": "control down",
+        "control": "control down",
     }
 
     modifiers_script = []
@@ -748,6 +809,7 @@ def _press_keys_via_osascript(combo: str) -> ToolResult:
 # desktop_open -- open a file, folder, or URL in the default application
 # ===========================================================================
 
+
 def _macos_open(target: str) -> ToolResult:
     """Open a file, folder, or URL."""
     ok, stdout, stderr = _run_command(
@@ -766,6 +828,7 @@ def _macos_open(target: str) -> ToolResult:
 # ===========================================================================
 # desktop_reveal -- reveal a file in Finder
 # ===========================================================================
+
 
 def _macos_reveal(path: str) -> ToolResult:
     """Reveal a file in Finder."""
@@ -787,16 +850,15 @@ def _macos_reveal(path: str) -> ToolResult:
 # desktop_notify -- post a system notification
 # ===========================================================================
 
+
 def _macos_notify(title: str, message: str = "", sound: bool = False) -> ToolResult:
     """Post a macOS notification."""
     sound_clause = 'sound name "default"' if sound else ""
     escaped_title = _escape_applescript_string(title)
     escaped_msg = _escape_applescript_string(message)
 
-    script = (
-        f'display notification "{escaped_msg}" '
-        f'with title "{escaped_title}"'
-        + (f" {sound_clause}" if sound_clause else "")
+    script = f'display notification "{escaped_msg}" with title "{escaped_title}"' + (
+        f" {sound_clause}" if sound_clause else ""
     )
 
     ok, output = _run_osascript(script, timeout=5.0)
@@ -809,26 +871,33 @@ def _macos_notify(title: str, message: str = "", sound: bool = False) -> ToolRes
 # Tool registrations
 # ===========================================================================
 
+
 @_register("desktop_apps")
 def _desktop_apps(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
     """List running desktop applications."""
     if PLATFORM != "Darwin":
         if PLATFORM == "Windows":
             from tools.win_ops import _win_list_apps
+
             return _win_list_apps()
         return _mac_only()
     return _macos_list_apps()
 
 
 @_register("desktop_launch")
-def _desktop_launch(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
+def _desktop_launch(
+    args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate
+) -> ToolResult:
     """Launch an application by name or bundle ID."""
     if PLATFORM != "Darwin":
         if PLATFORM == "Windows":
             from tools.win_ops import _win_launch_app
+
             name = args.get("name", "").strip()
             if not name:
-                return ToolResult(success=False, content="Missing required parameter: 'name'.")
+                return ToolResult(
+                    success=False, content="Missing required parameter: 'name'."
+                )
             return _win_launch_app(name)
         return _mac_only()
     name = args.get("name", "").strip()
@@ -843,9 +912,12 @@ def _desktop_quit(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> Tool
     if PLATFORM != "Darwin":
         if PLATFORM == "Windows":
             from tools.win_ops import _win_quit_app
+
             name = args.get("name", "").strip()
             if not name:
-                return ToolResult(success=False, content="Missing required parameter: 'name'.")
+                return ToolResult(
+                    success=False, content="Missing required parameter: 'name'."
+                )
             return _win_quit_app(name)
         return _mac_only()
     name = args.get("name", "").strip()
@@ -860,9 +932,12 @@ def _desktop_focus(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> Too
     if PLATFORM != "Darwin":
         if PLATFORM == "Windows":
             from tools.win_ops import _win_focus_app
+
             name = args.get("name", "").strip()
             if not name:
-                return ToolResult(success=False, content="Missing required parameter: 'name'.")
+                return ToolResult(
+                    success=False, content="Missing required parameter: 'name'."
+                )
             return _win_focus_app(name)
         return _mac_only()
     name = args.get("name", "").strip()
@@ -872,11 +947,14 @@ def _desktop_focus(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> Too
 
 
 @_register("desktop_clipboard")
-def _desktop_clipboard(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
+def _desktop_clipboard(
+    args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate
+) -> ToolResult:
     """Read from or write to the system clipboard."""
     if PLATFORM != "Darwin":
         if PLATFORM == "Windows":
             from tools.win_ops import _win_clipboard
+
             action = args.get("action", "read").strip().lower()
             text = args.get("text", "")
             return _win_clipboard(action, text)
@@ -887,22 +965,28 @@ def _desktop_clipboard(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) ->
 
 
 @_register("desktop_windows")
-def _desktop_windows(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
+def _desktop_windows(
+    args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate
+) -> ToolResult:
     """List all visible windows across all applications."""
     if PLATFORM != "Darwin":
         if PLATFORM == "Windows":
             from tools.win_ops import _win_list_windows
+
             return _win_list_windows()
         return _mac_only()
     return _macos_list_windows()
 
 
 @_register("desktop_system_info")
-def _desktop_system_info(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
+def _desktop_system_info(
+    args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate
+) -> ToolResult:
     """Gather system metrics: CPU, memory, disk, battery, thermal, uptime."""
     if PLATFORM != "Darwin":
         if PLATFORM == "Windows":
             from tools.win_ops import _win_system_info
+
             return _win_system_info()
         return _mac_only()
     return _macos_system_info()
@@ -914,9 +998,12 @@ def _desktop_key(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolR
     if PLATFORM != "Darwin":
         if PLATFORM == "Windows":
             from tools.win_ops import _win_press_keys
+
             combo = args.get("combo", "").strip()
             if not combo:
-                return ToolResult(success=False, content="Missing required parameter: 'combo'.")
+                return ToolResult(
+                    success=False, content="Missing required parameter: 'combo'."
+                )
             return _win_press_keys(combo)
         return _mac_only()
     combo = args.get("combo", "").strip()
@@ -931,26 +1018,36 @@ def _desktop_open(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> Tool
     if PLATFORM != "Darwin":
         if PLATFORM == "Windows":
             from tools.win_ops import _win_open
+
             target = args.get("target", "").strip()
             if not target:
-                return ToolResult(success=False, content="Missing required parameter: 'target'.")
+                return ToolResult(
+                    success=False, content="Missing required parameter: 'target'."
+                )
             return _win_open(target)
         return _mac_only()
     target = args.get("target", "").strip()
     if not target:
-        return ToolResult(success=False, content="Missing required parameter: 'target'.")
+        return ToolResult(
+            success=False, content="Missing required parameter: 'target'."
+        )
     return _macos_open(target)
 
 
 @_register("desktop_reveal")
-def _desktop_reveal(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
+def _desktop_reveal(
+    args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate
+) -> ToolResult:
     """Reveal a file in Finder."""
     if PLATFORM != "Darwin":
         if PLATFORM == "Windows":
             from tools.win_ops import _win_reveal
+
             path = args.get("path", "").strip()
             if not path:
-                return ToolResult(success=False, content="Missing required parameter: 'path'.")
+                return ToolResult(
+                    success=False, content="Missing required parameter: 'path'."
+                )
             return _win_reveal(path)
         return _mac_only()
     path = args.get("path", "").strip()
@@ -960,16 +1057,21 @@ def _desktop_reveal(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> To
 
 
 @_register("desktop_notify")
-def _desktop_notify(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
+def _desktop_notify(
+    args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate
+) -> ToolResult:
     """Post a system notification."""
     if PLATFORM != "Darwin":
         if PLATFORM == "Windows":
             from tools.win_ops import _win_notify
+
             title = args.get("title", "").strip()
             message = args.get("message", "").strip()
             sound = args.get("sound", False)
             if not title:
-                return ToolResult(success=False, content="Missing required parameter: 'title'.")
+                return ToolResult(
+                    success=False, content="Missing required parameter: 'title'."
+                )
             return _win_notify(title, message, sound)
         return _mac_only()
     title = args.get("title", "").strip()
@@ -984,46 +1086,57 @@ def _desktop_notify(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> To
 # Summaries
 # ===========================================================================
 
+
 @_summarize("desktop_apps")
 def _desktop_apps_summary(args: dict) -> str:
     return "desktop_apps()"
+
 
 @_summarize("desktop_launch")
 def _desktop_launch_summary(args: dict) -> str:
     return f"desktop_launch({args.get('name', '?')})"
 
+
 @_summarize("desktop_quit")
 def _desktop_quit_summary(args: dict) -> str:
     return f"desktop_quit({args.get('name', '?')})"
 
+
 @_summarize("desktop_focus")
 def _desktop_focus_summary(args: dict) -> str:
     return f"desktop_focus({args.get('name', '?')})"
+
 
 @_summarize("desktop_clipboard")
 def _desktop_clipboard_summary(args: dict) -> str:
     action = args.get("action", "read")
     return f"desktop_clipboard({action})"
 
+
 @_summarize("desktop_windows")
 def _desktop_windows_summary(args: dict) -> str:
     return "desktop_windows()"
+
 
 @_summarize("desktop_system_info")
 def _desktop_system_info_summary(args: dict) -> str:
     return "desktop_system_info()"
 
+
 @_summarize("desktop_key")
 def _desktop_key_summary(args: dict) -> str:
     return f"desktop_key({args.get('combo', '?')})"
+
 
 @_summarize("desktop_open")
 def _desktop_open_summary(args: dict) -> str:
     return f"desktop_open({args.get('target', '?')[:40]})"
 
+
 @_summarize("desktop_reveal")
 def _desktop_reveal_summary(args: dict) -> str:
     return f"desktop_reveal({args.get('path', '?')[:40]})"
+
 
 @_summarize("desktop_notify")
 def _desktop_notify_summary(args: dict) -> str:

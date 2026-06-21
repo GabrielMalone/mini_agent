@@ -58,15 +58,16 @@ DISCORD_MAX_MSG = 1900  # Discord limit is 2000; leave margin
 # fail to connect. workspace_bot.py has retry logic to fall back to
 # non-privileged intents automatically.
 INTENTS = discord.Intents.default()
-INTENTS.message_content = True   # needed to read @mention content
-INTENTS.messages = True          # needed for on_message events
-INTENTS.voice_states = True      # needed for voice-channel join/leave detection
-INTENTS.members = True           # needed for member lists & events
-INTENTS.presences = True         # needed for user activity/status
+INTENTS.message_content = True  # needed to read @mention content
+INTENTS.messages = True  # needed for on_message events
+INTENTS.voice_states = True  # needed for voice-channel join/leave detection
+INTENTS.members = True  # needed for member lists & events
+INTENTS.presences = True  # needed for user activity/status
 
 # ---------------------------------------------------------------------------
 # Per-channel session
 # ---------------------------------------------------------------------------
+
 
 class ChannelSession:
     """Holds the conversation state for one Discord channel."""
@@ -97,6 +98,7 @@ class ChannelSession:
 # ---------------------------------------------------------------------------
 # Discord bot client
 # ---------------------------------------------------------------------------
+
 
 class MiniAgentDiscordBot(discord.Client):
     """Discord client that routes @mentions to mini_agent per channel."""
@@ -162,7 +164,9 @@ class MiniAgentDiscordBot(discord.Client):
         # Get or create the channel session
         with self._channels_lock:
             if channel_id not in self.channels:
-                self.channels[channel_id] = ChannelSession(channel_id, self.base_messages)
+                self.channels[channel_id] = ChannelSession(
+                    channel_id, self.base_messages
+                )
             channel_sess = self.channels[channel_id]
 
         # Check if already processing
@@ -178,6 +182,7 @@ class MiniAgentDiscordBot(discord.Client):
                 # Inject Discord context so the agent can search server history
                 self._current_guild_id = msg.guild.id if msg.guild else None
                 from tools.context import set_context
+
                 set_context(
                     discord_guild_id=self._current_guild_id,
                     discord_token=self.http.token,
@@ -229,7 +234,9 @@ class MiniAgentDiscordBot(discord.Client):
             # /search <keyword> -- scan channel history across the server
             term = content[7:].strip()
             if not term:
-                await msg.channel.send("Usage: `/search <keyword>` — scans server history")
+                await msg.channel.send(
+                    "Usage: `/search <keyword>` — scans server history"
+                )
                 return
             await self._search_server(msg, term)
 
@@ -257,7 +264,9 @@ class MiniAgentDiscordBot(discord.Client):
             else:
                 text = content[4:].strip()
                 if not text:
-                    await msg.channel.send("Usage: `/say <text>` — speak in voice channel")
+                    await msg.channel.send(
+                        "Usage: `/say <text>` — speak in voice channel"
+                    )
                 else:
                     result = await self.voice.say(msg.guild.id, text)
                     if result:
@@ -293,6 +302,7 @@ class MiniAgentDiscordBot(discord.Client):
         """Execute one agent turn synchronously (called from a thread)."""
         # Safety: re-inject Discord context in case contextvars didn't propagate
         from tools.context import set_context
+
         guild_id = getattr(self, "_current_guild_id", None)
         if guild_id:
             set_context(discord_guild_id=guild_id, discord_token=self.http.token)
@@ -334,6 +344,7 @@ class MiniAgentDiscordBot(discord.Client):
 
             except Exception:
                 import traceback
+
                 traceback.print_exc()
                 return f"**Error during agent turn:**\n```\n{traceback.format_exc()[:1500]}\n```"
             finally:
@@ -343,7 +354,9 @@ class MiniAgentDiscordBot(discord.Client):
     # Build recent-history context for the agent
     # ------------------------------------------------------------------
 
-    async def _build_history_context(self, msg: discord.Message, limit: int = 15) -> str:
+    async def _build_history_context(
+        self, msg: discord.Message, limit: int = 15
+    ) -> str:
         """Fetch recent messages before *msg* in the same channel and format
         them as a conversation snippet for the agent.
 
@@ -378,7 +391,9 @@ class MiniAgentDiscordBot(discord.Client):
         """Search recent message history across all accessible channels."""
         await msg.channel.send(f'🔍 Searching server history for **"{term}"**...')
 
-        results: list[tuple[str, str, str, str, str]] = []  # channel, author, ts, content, jump_url
+        results: list[
+            tuple[str, str, str, str, str]
+        ] = []  # channel, author, ts, content, jump_url
         term_lower = term.lower()
 
         for channel in msg.guild.text_channels:
@@ -391,13 +406,15 @@ class MiniAgentDiscordBot(discord.Client):
                     if term_lower in hist_msg.content.lower():
                         ts = hist_msg.created_at.strftime("%Y-%m-%d %H:%M")
                         preview = hist_msg.content[:300].replace("\n", " ")
-                        results.append((
-                            channel.name,
-                            hist_msg.author.display_name,
-                            ts,
-                            preview,
-                            hist_msg.jump_url,
-                        ))
+                        results.append(
+                            (
+                                channel.name,
+                                hist_msg.author.display_name,
+                                ts,
+                                preview,
+                                hist_msg.jump_url,
+                            )
+                        )
                     if len(results) >= 25:
                         break
             except discord.Forbidden:
@@ -469,6 +486,7 @@ class MiniAgentDiscordBot(discord.Client):
 # Main
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
     # --- Resolve workspace -------------------------------------------------
     workspace = os.environ.get(ENV_AGENT_WORKSPACE, "")
@@ -499,12 +517,15 @@ def main() -> None:
     # Clear any stale sub-agent callback (system removed in 25d41eb)
     try:
         from tools import _TOOL_CONTEXT
+
         _TOOL_CONTEXT._subagent_callback = None
     except Exception:
         pass
 
-    print(f"[discord_bot] Agent initialized (model={config.model}, "
-          f"provider={config.api_provider})")
+    print(
+        f"[discord_bot] Agent initialized (model={config.model}, "
+        f"provider={config.api_provider})"
+    )
 
     # --- Resolve Discord token ---------------------------------------------
     # init_session() already loaded the workspace .env file via

@@ -4,6 +4,7 @@ shell_ops.py -- shell, search, test, and git tools for mini_agent.
 
 Tools: run_shell, task_status, search_files, run_tests, verify, git
 """
+
 from __future__ import annotations
 
 import os
@@ -19,7 +20,9 @@ from tools.result import ToolResult
 from tools import _register, _summarize, _TASK_REGISTRY
 
 _WINDOWS = platform.system() == "Windows"
-_WINDOWS_POPEN_KWARGS = {"creationflags": subprocess.CREATE_NO_WINDOW} if _WINDOWS else {}
+_WINDOWS_POPEN_KWARGS = (
+    {"creationflags": subprocess.CREATE_NO_WINDOW} if _WINDOWS else {}
+)
 
 # Common Git Bash paths on Windows (checked in priority order)
 _WIN_GIT_BASH_PATHS: list[str] = [
@@ -32,9 +35,10 @@ _WIN_GIT_BASH_PATHS: list[str] = [
 # Platform helpers for cross-platform shell execution
 # ---------------------------------------------------------------------------
 
+
 def _get_shell_command() -> list[str]:
     """Return the best available shell command on this platform.
-    
+
     On Windows: prefers Git Bash, then PowerShell, fallback to cmd.exe.
     On Unix: returns /bin/sh.
     """
@@ -69,6 +73,8 @@ def _is_bash_available() -> bool:
 
 
 _PYTHON_CMD: list[str] = []
+
+
 def _get_python_cmd() -> list[str]:
     """Return the best available python command as a list.
 
@@ -99,7 +105,9 @@ def _get_python_cmd() -> list[str]:
             try:
                 result = subprocess.run(
                     cmd + ["-m", "pytest", "--version"],
-                    capture_output=True, text=True, timeout=5,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
                 )
                 if result.returncode == 0:
                     with_pytest.append(cmd)
@@ -118,11 +126,13 @@ def _get_python_cmd() -> list[str]:
 def _persist_test_output(output: str) -> None:
     """Save test run output to the memory DB for later inspection."""
     from tools import _TOOL_CONTEXT
+
     db_path = _TOOL_CONTEXT.scratchpad_path
     if not db_path:
         return
     try:
         import sqlite3
+
         conn = sqlite3.connect(db_path)
         conn.execute("PRAGMA busy_timeout=5000")
         conn.execute(
@@ -153,14 +163,20 @@ def _get_memory_store():
     global _MEMORY_STORE_CACHE
     if _MEMORY_STORE_CACHE is None:
         from memory.memory import MemoryStore
+
         _MEMORY_STORE_CACHE = MemoryStore(
             os.path.join(os.getcwd(), ".mini_agent_memory.db"), max_messages=500
         )
     return _MEMORY_STORE_CACHE
 
 
-def _stream_reader(stream, collector: list[str], forward: bool = False,
-                   on_output: callable = None, prefix: str = "") -> None:
+def _stream_reader(
+    stream,
+    collector: list[str],
+    forward: bool = False,
+    on_output: callable = None,
+    prefix: str = "",
+) -> None:
     """Read lines from *stream* into *collector*, optionally forwarding via *on_output*."""
     for line in iter(stream.readline, ""):
         line = line.rstrip("\n")
@@ -204,7 +220,10 @@ def _parse_pytest_output(raw_output: str, exit_code: int = 0) -> tuple[str, bool
 # Patterns for dangerous commands that should warn or block
 _DANGEROUS_COMMANDS: list[tuple[str, str]] = [
     # (regex pattern, explanation)
-    (r"\brm\s+-rf\b", "rm -rf: recursive force delete -- will permanently remove files"),
+    (
+        r"\brm\s+-rf\b",
+        "rm -rf: recursive force delete -- will permanently remove files",
+    ),
     (r"\bgit\s+push\s+.*--force\b", "git push --force: overwrites remote history"),
     (r"\bgit\s+push\s+.*-f\b", "git push -f: overwrites remote history"),
     (r"\bsudo\b", "sudo: requires elevated privileges"),
@@ -214,6 +233,7 @@ _DANGEROUS_COMMANDS: list[tuple[str, str]] = [
     (r">\s*/dev/sd[a-z]", "redirect to /dev/sd*: raw disk write"),
     (r"\bformat\s+[A-Z]:\\?", "format drive: destroys all data on the drive"),
 ]
+
 
 def _check_dangerous_command(command: str, force: bool) -> str | None:
     """Return a warning/block message for dangerous commands, or None if safe."""
@@ -233,7 +253,6 @@ def _check_dangerous_command(command: str, force: bool) -> str | None:
     return None
 
 
-
 @_register("task_status")
 def _task_status(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
     task_id = args.get("task_id", "")
@@ -241,7 +260,10 @@ def _task_status(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolR
         return ToolResult(success=False, content="Missing task_id parameter.")
     proc = _TASK_REGISTRY.get(task_id)
     if proc is None:
-        return ToolResult(success=True, content=f"Task {task_id} not found (may have completed or never existed).")
+        return ToolResult(
+            success=True,
+            content=f"Task {task_id} not found (may have completed or never existed).",
+        )
     returncode = proc.poll()
     if returncode is None:
         return ToolResult(success=True, content=f"Task {task_id}: still running.")
@@ -255,11 +277,17 @@ def _task_status(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolR
         if test_out and test_out.strip():
             lines = test_out.split("\n")
             if len(lines) > 100:
-                test_out = "\n".join(lines[:100]) + f"\n... (truncated - {len(lines)} total lines)"
+                test_out = (
+                    "\n".join(lines[:100])
+                    + f"\n... (truncated - {len(lines)} total lines)"
+                )
             output_msg = f"\n\n--- Test Output ---\n{test_out}"
     except Exception:
         pass
-    return ToolResult(success=True, content=f"Task {task_id}: completed with exit_code={returncode}.{output_msg}")
+    return ToolResult(
+        success=True,
+        content=f"Task {task_id}: completed with exit_code={returncode}.{output_msg}",
+    )
 
 
 @_summarize("task_status")
@@ -268,9 +296,12 @@ def _task_status_summary(args: dict) -> str:
 
 
 @_register("run_shell")
-def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: callable = None) -> ToolResult:
+def _run_shell(
+    args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: callable = None
+) -> ToolResult:
     import sys as _sys
     import time as _time
+
     command = args["command"]
     force = args.get("force", False)
     timeout = min(int(args.get("timeout", 60)), 300)
@@ -281,7 +312,10 @@ def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: 
     # ACI upgrade: check for dangerous commands before executing
     danger_warning = _check_dangerous_command(command, force)
     if danger_warning and not force:
-        return ToolResult.authorization_error(danger_warning, hint="Use force=True to bypass this safety check, or choose a non-destructive alternative.")
+        return ToolResult.authorization_error(
+            danger_warning,
+            hint="Use force=True to bypass this safety check, or choose a non-destructive alternative.",
+        )
     # If force=True, retain the warning to prepend to final output
     _danger_prefix = danger_warning + "\n\n" if danger_warning else ""
     # Guard against hallucinated flags treated as commands.
@@ -307,18 +341,19 @@ def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: 
             "Some shell commands (pipes, redirects, etc.) may behave differently than on Unix."
         )
     # Auto-backup files before any rm command (prevents permanent data loss)
-    if force and re.search(r'\brm\b', command):
+    if force and re.search(r"\brm\b", command):
         from tools.file_ops import _backup_before_write
         import shlex
+
         try:
             tokens = shlex.split(command)
             idx = 1  # skip 'rm'
             while idx < len(tokens):
                 token = tokens[idx]
-                if token == '-r' or token == '-rf' or token == '-f':
+                if token == "-r" or token == "-rf" or token == "-f":
                     idx += 1
                     continue
-                if not token.startswith('-'):
+                if not token.startswith("-"):
                     _backup_before_write(token)
                 idx += 1
         except Exception:
@@ -327,9 +362,16 @@ def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: 
         # Commands that need a real terminal (sudo, ssh, etc.) get spawned
         # in a separate terminal window so the user can interact with them.
         _INTERACTIVE_PATTERNS = [
-            r"\bsudo\b", r"\bssh\b", r"\bsu\b", r"\bpasswd\b",
-            r"\blogin\b", r"\bhg\s+commit\b", r"\bpkexec\b",
-            r"\bgit\s+push\b", r"\bgit\s+pull\b", r"\bgit\s+clone\b",
+            r"\bsudo\b",
+            r"\bssh\b",
+            r"\bsu\b",
+            r"\bpasswd\b",
+            r"\blogin\b",
+            r"\bhg\s+commit\b",
+            r"\bpkexec\b",
+            r"\bgit\s+push\b",
+            r"\bgit\s+pull\b",
+            r"\bgit\s+clone\b",
         ]
         _interactive = (
             not args.get("background", False)
@@ -339,8 +381,13 @@ def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: 
         )
         if _interactive:
             import shutil
-            term = (shutil.which("xterm") or shutil.which("gnome-terminal")
-                    or shutil.which("konsole") or shutil.which("kitty"))
+
+            term = (
+                shutil.which("xterm")
+                or shutil.which("gnome-terminal")
+                or shutil.which("konsole")
+                or shutil.which("kitty")
+            )
             xte = shutil.which("x-terminal-emulator")
             if term is None and xte:
                 if os.path.islink(xte):
@@ -360,11 +407,16 @@ def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: 
                     term_cmd += ["bash", "-c", wrap]
                 else:
                     term_cmd += ["-e", "bash", "-c", wrap]
-                proc = subprocess.run(term_cmd, cwd=rg.workspace_root,
-                                      timeout=timeout,
-                                      **(_WINDOWS_POPEN_KWARGS if _WINDOWS else {}))
-                return ToolResult(success=(proc.returncode == 0),
-                                  content=f"exit_code={proc.returncode}")
+                proc = subprocess.run(
+                    term_cmd,
+                    cwd=rg.workspace_root,
+                    timeout=timeout,
+                    **(_WINDOWS_POPEN_KWARGS if _WINDOWS else {}),
+                )
+                return ToolResult(
+                    success=(proc.returncode == 0),
+                    content=f"exit_code={proc.returncode}",
+                )
 
         # Default to DEVNULL so interactive prompts don't hang the TUI.
         stdin_kw = {"stdin": subprocess.DEVNULL}
@@ -380,10 +432,14 @@ def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: 
         # No bash wrapping -- it creates a fragile cmd->bash->command chain
         # and can cause process explosions when quoting is mishandled.
         proc = subprocess.Popen(
-            command, shell=True,
+            command,
+            shell=True,
             cwd=rg.workspace_root,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-            **stdin_kw, **popen_kwargs,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            **stdin_kw,
+            **popen_kwargs,
         )
 
         _register_proc(proc)
@@ -394,24 +450,38 @@ def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: 
         if background:
             task_id = str(uuid.uuid4())[:8]
             _TASK_REGISTRY[task_id] = proc
-            threading.Thread(target=_stream_reader, args=(proc.stdout, []), daemon=True).start()
-            threading.Thread(target=_stream_reader, args=(proc.stderr, []), daemon=True).start()
+            threading.Thread(
+                target=_stream_reader, args=(proc.stdout, []), daemon=True
+            ).start()
+            threading.Thread(
+                target=_stream_reader, args=(proc.stderr, []), daemon=True
+            ).start()
             if stdin_text is not None and proc.stdin is not None:
-                threading.Thread(target=lambda p, t: (p.stdin.write(t), p.stdin.close()),
-                                 args=(proc, stdin_text), daemon=True).start()
+                threading.Thread(
+                    target=lambda p, t: (p.stdin.write(t), p.stdin.close()),
+                    args=(proc, stdin_text),
+                    daemon=True,
+                ).start()
+
             def _auto_cleanup(reg, tid, p):
                 try:
                     if _WINDOWS:
-                        p.stdout.close(); p.stderr.close()
+                        p.stdout.close()
+                        p.stderr.close()
                     p.wait()
                 except (OSError, subprocess.SubprocessError):
                     pass
                 finally:
                     reg.pop(tid, None)
                     _unregister_proc(p)
-            threading.Thread(target=_auto_cleanup, args=(_TASK_REGISTRY, task_id, proc), daemon=True).start()
-            return ToolResult(success=True,
-                              content=f"Started background task {task_id}. Use task_status to check.")
+
+            threading.Thread(
+                target=_auto_cleanup, args=(_TASK_REGISTRY, task_id, proc), daemon=True
+            ).start()
+            return ToolResult(
+                success=True,
+                content=f"Started background task {task_id}. Use task_status to check.",
+            )
 
         if on_output is not None:
             if stdin_text is not None:
@@ -419,25 +489,37 @@ def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: 
                     proc.stdin.write(stdin_text)
                     proc.stdin.close()
                 else:
-                    _sys.stderr.write("[shell] Warning: stdin provided but proc.stdin is None, stdin not delivered\n")
+                    _sys.stderr.write(
+                        "[shell] Warning: stdin provided but proc.stdin is None, stdin not delivered\n"
+                    )
                     _sys.stderr.flush()
-            t_out = threading.Thread(target=_stream_reader,
-                                     args=(proc.stdout, stdout_lines, True, on_output, ""), daemon=True)
-            t_err = threading.Thread(target=_stream_reader,
-                                     args=(proc.stderr, stderr_lines, True, on_output, "[stderr] "), daemon=True)
+            t_out = threading.Thread(
+                target=_stream_reader,
+                args=(proc.stdout, stdout_lines, True, on_output, ""),
+                daemon=True,
+            )
+            t_err = threading.Thread(
+                target=_stream_reader,
+                args=(proc.stderr, stderr_lines, True, on_output, "[stderr] "),
+                daemon=True,
+            )
             t_out.start()
             t_err.start()
 
             from tools import _TOOL_CONTEXT
+
             _TOOL_CONTEXT._active_proc = proc
 
             if _WINDOWS:
                 kill_fired = threading.Event()
+
                 def _kill_timer():
                     kill_fired.set()
                     _kill_process_tree_windows(proc)
+
                 timer = threading.Timer(timeout, _kill_timer)
-                timer.daemon = True; timer.start()
+                timer.daemon = True
+                timer.start()
                 try:
                     # Poll t_out.join with short intervals so we can detect
                     # cancellation (via the per-thread _CURRENT_CANCEL_EVENT ContextVar).
@@ -448,6 +530,7 @@ def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: 
                         # Check per-thread cancel event
                         try:
                             from tools import _CURRENT_CANCEL_EVENT as _cce_var
+
                             _cce = _cce_var.get()
                             if _cce is not None and _cce.is_set():
                                 kill_fired.set()
@@ -465,7 +548,9 @@ def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: 
                     _unregister_proc(proc)
                     _TOOL_CONTEXT._active_proc = None
                     return ToolResult.transient_error(
-                        f"Command timed out after {timeout}s (process tree killed)", retry_after_ms=2000)
+                        f"Command timed out after {timeout}s (process tree killed)",
+                        retry_after_ms=2000,
+                    )
                 try:
                     proc.wait(timeout=5)
                 except subprocess.TimeoutExpired:
@@ -479,7 +564,9 @@ def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: 
                     t_err.join(timeout=2)
                     _unregister_proc(proc)
                     _TOOL_CONTEXT._active_proc = None
-                    return ToolResult.transient_error(f"Command timed out after {timeout}s", retry_after_ms=2000)
+                    return ToolResult.transient_error(
+                        f"Command timed out after {timeout}s", retry_after_ms=2000
+                    )
                 finally:
                     _TOOL_CONTEXT._active_proc = None
 
@@ -490,6 +577,7 @@ def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: 
             stderr = "\n".join(stderr_lines)
         else:
             from tools import _TOOL_CONTEXT
+
             _TOOL_CONTEXT._active_proc = proc
 
             if stdin_text is not None:
@@ -497,7 +585,9 @@ def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: 
                     proc.stdin.write(stdin_text)
                     proc.stdin.close()
                 else:
-                    _sys.stderr.write("[shell] Warning: stdin provided but proc.stdin is None, stdin not delivered\n")
+                    _sys.stderr.write(
+                        "[shell] Warning: stdin provided but proc.stdin is None, stdin not delivered\n"
+                    )
                     _sys.stderr.flush()
 
             if _WINDOWS:
@@ -508,9 +598,13 @@ def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: 
                     _TOOL_CONTEXT._active_proc = None
                     partial = getattr(exc, "output", None) or ""
                     if partial:
-                        return ToolResult(success=False,
-                                          content=f"Command timed out after {timeout}s\n\n{partial}")
-                    return ToolResult.transient_error(f"Command timed out after {timeout}s", retry_after_ms=2000)
+                        return ToolResult(
+                            success=False,
+                            content=f"Command timed out after {timeout}s\n\n{partial}",
+                        )
+                    return ToolResult.transient_error(
+                        f"Command timed out after {timeout}s", retry_after_ms=2000
+                    )
             else:
                 try:
                     out, err = proc.communicate(timeout=timeout)
@@ -519,7 +613,9 @@ def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: 
                     out, err = proc.communicate()
                     _unregister_proc(proc)
                     _TOOL_CONTEXT._active_proc = None
-                    return ToolResult.transient_error(f"Command timed out after {timeout}s", retry_after_ms=2000)
+                    return ToolResult.transient_error(
+                        f"Command timed out after {timeout}s", retry_after_ms=2000
+                    )
                 stdout = out
                 stderr = err
 
@@ -541,7 +637,18 @@ def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: 
             if "python" in command and " -c " in command:
                 if "#" in command:
                     hint += " Hint: '#' in python -c comments out the rest of the line. Use ';' separators instead of comments, or use a multi-line script."
-                elif any(kw in command for kw in (" if ", " try:", " for ", " while ", " with ", " def ", " class ")):
+                elif any(
+                    kw in command
+                    for kw in (
+                        " if ",
+                        " try:",
+                        " for ",
+                        " while ",
+                        " with ",
+                        " def ",
+                        " class ",
+                    )
+                ):
                     hint += " Hint: Compound statements (if/try/for/while/with/def/class) cannot follow ';' in python -c. Use newlines in a script instead."
             parts.append(hint)
         if stderr:
@@ -549,7 +656,9 @@ def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: 
             err_lines = err_output.split("\n")
             if len(err_lines) > 100:
                 err_output = "\n".join(err_lines[:100])
-                err_output += f"\n... (stderr truncated at 100 lines -- {len(err_lines)} total)"
+                err_output += (
+                    f"\n... (stderr truncated at 100 lines -- {len(err_lines)} total)"
+                )
             parts.append(f"stderr:\n{err_output}")
         content_out = "\n".join(parts)
         if _danger_prefix:
@@ -562,7 +671,10 @@ def _run_shell(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate, on_output: 
         return ToolResult(success=proc.returncode == 0, content=content_out)
     except Exception as e:
         hint = "\nHint: Check the command and flag spelling. Try with --help first, or use search_files to find the right syntax."
-        return ToolResult(success=False, content=f"Error running command: {e}{hint}{_windows_cmd_note}")
+        return ToolResult(
+            success=False,
+            content=f"Error running command: {e}{hint}{_windows_cmd_note}",
+        )
 
 
 @_summarize("run_shell")
@@ -584,23 +696,69 @@ def _run_shell_summary(args: dict) -> str:
 from core.constants import SKIP_DIRS as _SKIP_DIRS  # noqa: E402 — canonical skip-dirs set
 
 # Binary / non-text extensions to skip during search
-_BINARY_EXTS = {".pyc", ".pyo", ".so", ".o", ".a", ".dylib", ".dll",
-                ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".svg",
-                ".mp3", ".mp4", ".avi", ".mov", ".mkv", ".webm",
-                ".zip", ".tar", ".gz", ".bz2", ".xz", ".7z", ".rar",
-                ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
-                ".ttf", ".otf", ".woff", ".woff2", ".eot",
-                ".db", ".sqlite", ".sqlite3", ".mdb",
-                ".exe", ".bin", ".dat", ".pkl", ".pickle",
-                # SQLite auxiliary files -- os.path.splitext splits on last dot
-                "-wal", "-shm", "-journal",
-                # Coverage / profiling binary files
-                ".coverage",
-                ".prof", ".gcda", ".gcno",
-                # macOS resource forks
-                ".rsrc",
-                # No extension -- catches files like .DS_Store, .coverage (no dot variant)
-                ".ds_store"}
+_BINARY_EXTS = {
+    ".pyc",
+    ".pyo",
+    ".so",
+    ".o",
+    ".a",
+    ".dylib",
+    ".dll",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".bmp",
+    ".ico",
+    ".svg",
+    ".mp3",
+    ".mp4",
+    ".avi",
+    ".mov",
+    ".mkv",
+    ".webm",
+    ".zip",
+    ".tar",
+    ".gz",
+    ".bz2",
+    ".xz",
+    ".7z",
+    ".rar",
+    ".pdf",
+    ".doc",
+    ".docx",
+    ".xls",
+    ".xlsx",
+    ".ppt",
+    ".pptx",
+    ".ttf",
+    ".otf",
+    ".woff",
+    ".woff2",
+    ".eot",
+    ".db",
+    ".sqlite",
+    ".sqlite3",
+    ".mdb",
+    ".exe",
+    ".bin",
+    ".dat",
+    ".pkl",
+    ".pickle",
+    # SQLite auxiliary files -- os.path.splitext splits on last dot
+    "-wal",
+    "-shm",
+    "-journal",
+    # Coverage / profiling binary files
+    ".coverage",
+    ".prof",
+    ".gcda",
+    ".gcno",
+    # macOS resource forks
+    ".rsrc",
+    # No extension -- catches files like .DS_Store, .coverage (no dot variant)
+    ".ds_store",
+}
 
 
 def _is_binary_file(filepath: str) -> bool:
@@ -624,11 +782,15 @@ _SEARCH_MAX_RESULTS = 200
 
 
 def _search_single_file(
-    filepath: str, pattern: str, use_regex: bool, ignore_case: bool,
+    filepath: str,
+    pattern: str,
+    use_regex: bool,
+    ignore_case: bool,
     offset: int = 0,
 ) -> ToolResult:
     """Search for pattern in a single file.  Used by _search_files(file_path=...)."""
     import re as _re
+
     if use_regex:
         flags = _re.IGNORECASE if ignore_case else 0
         try:
@@ -665,33 +827,53 @@ def _search_single_file(
     return ToolResult(success=True, content="\n".join(results))
 
 
-def _search_with_rg(root_dir: str, pattern: str, use_regex: bool, ignore_case: bool, offset: int) -> ToolResult:
+def _search_with_rg(
+    root_dir: str, pattern: str, use_regex: bool, ignore_case: bool, offset: int
+) -> ToolResult:
     """Run ripgrep for fast file search, falling back to Python on failure."""
     import subprocess
-    cmd = ["rg", "--no-heading", "--with-filename", "--line-number",
-           "--max-count", str(_SEARCH_MAX_RESULTS + offset)]
+
+    cmd = [
+        "rg",
+        "--no-heading",
+        "--with-filename",
+        "--line-number",
+        "--max-count",
+        str(_SEARCH_MAX_RESULTS + offset),
+    ]
     if not use_regex:
         cmd.append("--fixed-strings")
     if ignore_case:
         cmd.append("--ignore-case")
     cmd.extend(["--", pattern, root_dir])
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=15,
-                                **(_WINDOWS_POPEN_KWARGS if _WINDOWS else {}))
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=15,
+            **(_WINDOWS_POPEN_KWARGS if _WINDOWS else {}),
+        )
         # Check for rg errors (regex parse errors, etc.)
         if result.returncode != 0 and result.stderr.strip():
             err = result.stderr.strip().split("\n")[0]
             return ToolResult(success=False, content=f"Invalid regex: {err}")
         lines = result.stdout.splitlines()
         if not lines:
-            return ToolResult(success=True, content=f"No matches for '{pattern}' in {root_dir}")
+            return ToolResult(
+                success=True, content=f"No matches for '{pattern}' in {root_dir}"
+            )
         if offset > 0:
             lines = lines[offset:]
         output = "\n".join(lines[:_SEARCH_MAX_RESULTS])
         if len(lines) > _SEARCH_MAX_RESULTS:
             output += f"\n... (showing first {_SEARCH_MAX_RESULTS} results. "
-            output += "There may be more matches. Narrow your search with a more specific "
-            output += "pattern, a subdirectory path, or use find_symbol for symbol lookups.)"
+            output += (
+                "There may be more matches. Narrow your search with a more specific "
+            )
+            output += (
+                "pattern, a subdirectory path, or use find_symbol for symbol lookups.)"
+            )
         return ToolResult(success=True, content=output)
     except (subprocess.TimeoutExpired, Exception):
         return ToolResult(success=False, content="rg search failed or timed out")
@@ -717,7 +899,9 @@ def _search_files(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolR
         resolved = file_safety.resolved_path
         if not os.path.isfile(resolved):
             return ToolResult(success=False, content=f"Not a file: {resolved}")
-        return _search_single_file(resolved, pattern, use_regex, ignore_case, offset=offset)
+        return _search_single_file(
+            resolved, pattern, use_regex, ignore_case, offset=offset
+        )
 
     # Directory search mode: safety-check the search path
     safety_result = rg.check(path)
@@ -729,11 +913,15 @@ def _search_files(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolR
 
     # --- Ripgrep fast path: use rg if available ---
     import shutil as _shutil
+
     if _shutil.which("rg") and not file_path:
-        return _search_with_rg(safety_result.resolved_path, pattern, use_regex, ignore_case, offset)
+        return _search_with_rg(
+            safety_result.resolved_path, pattern, use_regex, ignore_case, offset
+        )
 
     if use_regex:
         import re
+
         flags = re.IGNORECASE if ignore_case else 0
         try:
             compiled = re.compile(pattern, flags)
@@ -807,11 +995,16 @@ def _search_files_summary(args: dict) -> str:
 # run_tests
 # ---------------------------------------------------------------------------
 
+
 @_register("run_tests")
 def _run_tests(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
     from tools import _TOOL_CONTEXT
-    if getattr(_TOOL_CONTEXT, '_agent_depth', 0) > 0:
-        return ToolResult(success=False, content="run_tests is restricted to the orchestrator. Sub-agents must not run tests.")
+
+    if getattr(_TOOL_CONTEXT, "_agent_depth", 0) > 0:
+        return ToolResult(
+            success=False,
+            content="run_tests is restricted to the orchestrator. Sub-agents must not run tests.",
+        )
     target = args.get("path", "").strip()
     background = args.get("background", False)
     timeout = args.get("timeout", 120)
@@ -820,7 +1013,13 @@ def _run_tests(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResu
     _retried = False
 
     def _build_cmd() -> list[str]:
-        cmd = _get_python_cmd() + ["-m", "pytest", "-q", "--ignore=venv", "--ignore=eval"]
+        cmd = _get_python_cmd() + [
+            "-m",
+            "pytest",
+            "-q",
+            "--ignore=venv",
+            "--ignore=eval",
+        ]
         if target:
             cmd.append(target)
         return cmd
@@ -835,9 +1034,13 @@ def _run_tests(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResu
             cmd_str = subprocess.list2cmdline(cmd)
             try:
                 return subprocess.Popen(
-                    cmd_str, shell=True, cwd=rg.workspace_root,
+                    cmd_str,
+                    shell=True,
+                    cwd=rg.workspace_root,
                     stdin=subprocess.DEVNULL,
-                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
                     creationflags=subprocess.CREATE_NO_WINDOW,
                 )
             except Exception as e:
@@ -845,8 +1048,11 @@ def _run_tests(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResu
         else:
             try:
                 return subprocess.Popen(
-                    cmd, cwd=rg.workspace_root,
-                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                    cmd,
+                    cwd=rg.workspace_root,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
                 )
             except Exception as e:
                 return ToolResult(success=False, content=f"Error starting pytest: {e}")
@@ -861,8 +1067,13 @@ def _run_tests(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResu
         _TASK_REGISTRY[task_id] = proc
         stdout_lines: list[str] = []
         stderr_lines: list[str] = []
-        threading.Thread(target=_stream_reader, args=(proc.stdout, stdout_lines), daemon=True).start()
-        threading.Thread(target=_stream_reader, args=(proc.stderr, stderr_lines), daemon=True).start()
+        threading.Thread(
+            target=_stream_reader, args=(proc.stdout, stdout_lines), daemon=True
+        ).start()
+        threading.Thread(
+            target=_stream_reader, args=(proc.stderr, stderr_lines), daemon=True
+        ).start()
+
         def _persist_when_done():
             proc.wait()
             output = "".join(stdout_lines)
@@ -870,6 +1081,7 @@ def _run_tests(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResu
                 output += "\n[stderr]\n" + "".join(stderr_lines)
             _persist_test_output(output)
             _TASK_REGISTRY.pop(task_id, None)  # auto-cleanup on completion
+
         threading.Thread(target=_persist_when_done, daemon=True).start()
         return ToolResult(
             success=True,
@@ -891,8 +1103,11 @@ def _run_tests(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResu
         output = (out + err).strip()
         if output:
             return ToolResult.transient_error(
-                f"Tests timed out after {timeout}s\n\n{output}", retry_after_ms=2000)
-        return ToolResult.transient_error(f"Tests timed out after {timeout}s", retry_after_ms=2000)
+                f"Tests timed out after {timeout}s\n\n{output}", retry_after_ms=2000
+            )
+        return ToolResult.transient_error(
+            f"Tests timed out after {timeout}s", retry_after_ms=2000
+        )
 
     output = (out + err).strip()
 
@@ -912,7 +1127,9 @@ def _run_tests(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResu
             else:
                 out, err = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
-            return ToolResult.transient_error(f"Tests timed out after {timeout}s", retry_after_ms=2000)
+            return ToolResult.transient_error(
+                f"Tests timed out after {timeout}s", retry_after_ms=2000
+            )
         output = (out + err).strip()
 
     _persist_test_output(output)
@@ -932,6 +1149,7 @@ def _run_tests_summary(args: dict) -> str:
 # verify -- lint + run tests for recently modified files
 # ---------------------------------------------------------------------------
 
+
 @_register("verify")
 def _verify(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
     """Run lint + relevant tests for files modified this session.
@@ -941,22 +1159,37 @@ def _verify(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
     has been modified yet.
     """
     from tools import _TOOL_CONTEXT
-    if getattr(_TOOL_CONTEXT, '_agent_depth', 0) > 0:
-        return ToolResult(success=False, content="verify is restricted to the orchestrator. Sub-agents must not run tests.")
+
+    if getattr(_TOOL_CONTEXT, "_agent_depth", 0) > 0:
+        return ToolResult(
+            success=False,
+            content="verify is restricted to the orchestrator. Sub-agents must not run tests.",
+        )
     import subprocess
     import os as _os
+
     root = rg.workspace_root
 
     results: list[str] = []
 
     # Step 0: dead import detection (ruff if available, else pyflakes)
     import shutil
+
     if shutil.which("ruff"):
         try:
             r = subprocess.run(
-                ["ruff", "check", "--select", "F401,F811",
-                 "--output-format", "concise", root],
-                capture_output=True, text=True, timeout=10,
+                [
+                    "ruff",
+                    "check",
+                    "--select",
+                    "F401,F811",
+                    "--output-format",
+                    "concise",
+                    root,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10,
                 **(_WINDOWS_POPEN_KWARGS if _WINDOWS else {}),
             )
             if r.returncode == 0 and not r.stdout.strip():
@@ -970,13 +1203,17 @@ def _verify(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
         try:
             r = subprocess.run(
                 ["pyflakes", root],
-                capture_output=True, text=True, timeout=10,
+                capture_output=True,
+                text=True,
+                timeout=10,
                 **(_WINDOWS_POPEN_KWARGS if _WINDOWS else {}),
             )
             stdout = r.stdout
-            if (r.returncode == 0
-                    and "undefined" not in stdout
-                    and "unused import" not in stdout):
+            if (
+                r.returncode == 0
+                and "undefined" not in stdout
+                and "unused import" not in stdout
+            ):
                 results.append("pyflakes: no dead imports found")
             elif stdout.strip():
                 out = stdout.strip()[:500]
@@ -986,6 +1223,7 @@ def _verify(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
 
     # Step 1: tests for modified files
     from tools import get_modified_files
+
     test_targets: list[str] = []
     mod_files = get_modified_files()
     if mod_files:
@@ -1018,11 +1256,21 @@ def _verify(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
     # Run lint + all test targets in parallel
     jobs: list = []
     # Lint job
-    lint_cmd = _get_python_cmd() + ["-m", "flake8", "--count", "--select=E,F,W",
-                 "--exclude=.git,__pycache__,venv,.venv,.egg-info,node_modules,build,dist", "."]
+    lint_cmd = _get_python_cmd() + [
+        "-m",
+        "flake8",
+        "--count",
+        "--select=E,F,W",
+        "--exclude=.git,__pycache__,venv,.venv,.egg-info,node_modules,build,dist",
+        ".",
+    ]
     try:
         lint_proc = subprocess.Popen(
-            lint_cmd, cwd=root, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            lint_cmd,
+            cwd=root,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
             **(_WINDOWS_POPEN_KWARGS if _WINDOWS else {}),
         )
         jobs.append(("lint", lint_proc))
@@ -1034,7 +1282,10 @@ def _verify(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
         try:
             proc = subprocess.Popen(
                 _get_python_cmd() + ["-m", "pytest", target, "-q"],
-                cwd=root, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                cwd=root,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
                 **(_WINDOWS_POPEN_KWARGS if _WINDOWS else {}),
             )
             jobs.append(("test", (target, proc)))
@@ -1054,10 +1305,17 @@ def _verify(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
                 elif "No module named" in err or "No module named" in out:
                     results.append("Lint: skipped (flake8 not installed)")
                 else:
-                    last = out.split("\n")[-1] if out else err.split("\n")[-1] if err else "failed"
+                    last = (
+                        out.split("\n")[-1]
+                        if out
+                        else err.split("\n")[-1]
+                        if err
+                        else "failed"
+                    )
                     results.append(f"Lint: {last}")
             except subprocess.TimeoutExpired:
-                proc.kill(); proc.communicate()
+                proc.kill()
+                proc.communicate()
                 results.append("Lint: timed out")
         else:
             target, proc = payload
@@ -1069,7 +1327,8 @@ def _verify(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
                 summary, _ = _parse_pytest_output(out, proc.returncode)
                 results.append(f"Tests ({target}): {summary}")
             except subprocess.TimeoutExpired:
-                proc.kill(); proc.communicate()
+                proc.kill()
+                proc.communicate()
                 results.append(f"Tests ({target}): timed out")
 
     # Step 3: modified files summary
@@ -1096,19 +1355,26 @@ _FAILED_LINE_RE = re.compile(r"FAILED\s+(.+?\.py)::(.+?)(?:\s+-|\s*$)")
 
 
 @_register("diagnose_failures")
-def _diagnose_failures(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
+def _diagnose_failures(
+    args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate
+) -> ToolResult:
     """Read the last test output from MemoryStore, parse FAILED lines,
     extract test function names and file paths, and return a structured
     summary with relevant source snippets."""
     from tools import _TOOL_CONTEXT
-    if getattr(_TOOL_CONTEXT, '_agent_depth', 0) > 0:
-        return ToolResult(success=False, content="diagnose_failures is restricted to the orchestrator. Sub-agents must not run tests.")
+
+    if getattr(_TOOL_CONTEXT, "_agent_depth", 0) > 0:
+        return ToolResult(
+            success=False,
+            content="diagnose_failures is restricted to the orchestrator. Sub-agents must not run tests.",
+        )
     import os as _os
 
     # Build MemoryStore path -- same default used by _persist_test_output
     db_path = _os.path.join(rg.workspace_root, ".mini_agent_memory.db")
     try:
         from memory.memory import MemoryStore
+
         store = MemoryStore(db_path, max_messages=500)
         output = store.get_test_output()
     except Exception as e:
@@ -1139,21 +1405,27 @@ def _diagnose_failures(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> 
         m = _FAILED_LINE_RE.search(line)
         if m:
             file_path = m.group(1)
-            func_path = m.group(2)  # e.g. "TestEditFile::test_func_name" or just "test_func_name"
+            func_path = m.group(
+                2
+            )  # e.g. "TestEditFile::test_func_name" or just "test_func_name"
             # Split on "::" to handle class-qualified method names
             func_parts = func_path.split("::")
             func_name = func_parts[-1]  # Last part is the actual function/method name
-            failures.append({
-                "file": file_path,
-                "function": func_name,
-                "qualified_function": func_path,
-                "line": line.strip(),
-            })
+            failures.append(
+                {
+                    "file": file_path,
+                    "function": func_name,
+                    "qualified_function": func_path,
+                    "line": line.strip(),
+                }
+            )
 
     if not failures:
         # No FAILED lines -- check if there's useful output at all
         if summary_line:
-            return ToolResult(success=True, content=f"No FAILED lines parsed. Summary: {summary_line}")
+            return ToolResult(
+                success=True, content=f"No FAILED lines parsed. Summary: {summary_line}"
+            )
         return ToolResult(success=True, content="No FAILED lines found in test output.")
 
     # Read source snippets for each failure
@@ -1195,11 +1467,15 @@ def _diagnose_failures(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> 
         start_line = 0
         for i, sl in enumerate(src_lines):
             # Track class entry if we need it
-            if class_name and re.search(rf"^\s*(async\s+)?class\s+{re.escape(class_name)}\s*[(:]", sl):
+            if class_name and re.search(
+                rf"^\s*(async\s+)?class\s+{re.escape(class_name)}\s*[(:]", sl
+            ):
                 in_class = True
 
             # Match "def func_name" or "    def func_name" etc.
-            if not in_func and re.search(rf"^\s*(async\s+)?def\s+{re.escape(func)}\s*\(", sl):
+            if not in_func and re.search(
+                rf"^\s*(async\s+)?def\s+{re.escape(func)}\s*\(", sl
+            ):
                 in_func = True
                 start_line = i + 1
                 # Include class context line if we're inside a class
@@ -1211,12 +1487,14 @@ def _diagnose_failures(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> 
                 stripped_sl = sl.rstrip("\n")
                 indent = len(sl) - len(sl.lstrip())
                 first_indent = len(func_lines[0]) - len(func_lines[0].lstrip())
-                if (not stripped_sl.strip() or
-                    (indent <= first_indent and stripped_sl.strip()
-                     and not stripped_sl.startswith("@")
-                     and not stripped_sl.startswith("#")
-                     and not stripped_sl.startswith('"""')
-                     and not stripped_sl.startswith("'''"))):
+                if not stripped_sl.strip() or (
+                    indent <= first_indent
+                    and stripped_sl.strip()
+                    and not stripped_sl.startswith("@")
+                    and not stripped_sl.startswith("#")
+                    and not stripped_sl.startswith('"""')
+                    and not stripped_sl.startswith("'''")
+                ):
                     if len(func_lines) > 1:
                         break
                     if not stripped_sl.strip():
@@ -1245,14 +1523,20 @@ def _diagnose_failures(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> 
 def _diagnose_failures_summary(args: dict) -> str:
     return "diagnose_failures()"
 
+
 _ACTIVE_PROCS: set = set()
 _ACTIVE_PROCS_LOCK = threading.Lock()
 
+
 def _register_proc(proc):
-    with _ACTIVE_PROCS_LOCK: _ACTIVE_PROCS.add((proc.pid, proc))
+    with _ACTIVE_PROCS_LOCK:
+        _ACTIVE_PROCS.add((proc.pid, proc))
+
 
 def _unregister_proc(proc):
-    with _ACTIVE_PROCS_LOCK: _ACTIVE_PROCS.discard((proc.pid, proc))
+    with _ACTIVE_PROCS_LOCK:
+        _ACTIVE_PROCS.discard((proc.pid, proc))
+
 
 def _kill_process_tree_windows(proc):
     """Kill the process tree rooted at *proc* as aggressively as possible.
@@ -1269,8 +1553,9 @@ def _kill_process_tree_windows(proc):
     pid = proc.pid
     # Method 1: taskkill /F /T (kills entire tree)
     try:
-        subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)],
-                      capture_output=True, timeout=4)
+        subprocess.run(
+            ["taskkill", "/F", "/T", "/PID", str(pid)], capture_output=True, timeout=4
+        )
     except Exception:
         pass
     # Method 2: TerminateProcess on the parent (may leave orphans, but
@@ -1281,10 +1566,12 @@ def _kill_process_tree_windows(proc):
         pass
     # Method 3: taskkill /F (just the parent, no /T)
     try:
-        subprocess.run(["taskkill", "/F", "/PID", str(pid)],
-                      capture_output=True, timeout=4)
+        subprocess.run(
+            ["taskkill", "/F", "/PID", str(pid)], capture_output=True, timeout=4
+        )
     except Exception:
         pass
+
 
 def _cleanup_all_procs():
     with _ACTIVE_PROCS_LOCK:
@@ -1299,20 +1586,30 @@ def _cleanup_all_procs():
         except Exception:
             pass
 
+
 def _communicate_windows(proc, timeout):
     import time as _time
+
     if not _WINDOWS:
         raise RuntimeError("_communicate_windows called on non-Windows")
     out_lines, err_lines = [], []
-    t_out = threading.Thread(target=_stream_reader, args=(proc.stdout, out_lines), daemon=True)
-    t_err = threading.Thread(target=_stream_reader, args=(proc.stderr, err_lines), daemon=True)
-    t_out.start(); t_err.start()
+    t_out = threading.Thread(
+        target=_stream_reader, args=(proc.stdout, out_lines), daemon=True
+    )
+    t_err = threading.Thread(
+        target=_stream_reader, args=(proc.stderr, err_lines), daemon=True
+    )
+    t_out.start()
+    t_err.start()
     kill_fired = threading.Event()
+
     def _kill():
         kill_fired.set()
         _kill_process_tree_windows(proc)
+
     timer = threading.Timer(timeout, _kill)
-    timer.daemon = True; timer.start()
+    timer.daemon = True
+    timer.start()
     try:
         # Poll t_out.join with short intervals to detect cancellation.
         # A single t_out.join(timeout=timeout+10) blocks the tool thread
@@ -1321,6 +1618,7 @@ def _communicate_windows(proc, timeout):
         while t_out.is_alive() and _time.monotonic() < _deadline:
             try:
                 from tools import _CURRENT_CANCEL_EVENT as _cce_var
+
                 _cce = _cce_var.get()
                 if _cce is not None and _cce.is_set():
                     kill_fired.set()
@@ -1351,5 +1649,3 @@ def _communicate_windows(proc, timeout):
     except subprocess.TimeoutExpired:
         pass
     return "\n".join(out_lines), "\n".join(err_lines)
-
-

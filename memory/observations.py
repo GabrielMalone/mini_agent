@@ -25,16 +25,17 @@ import json
 import sqlite3
 import time
 import warnings
-from typing import Optional
 
 # --- Observation types (mirrors claude-mem) ---
-OBSERVATION_TYPES = frozenset({
-    "bugfix",
-    "discovery",
-    "decision",
-    "refactor",
-    "other",
-})
+OBSERVATION_TYPES = frozenset(
+    {
+        "bugfix",
+        "discovery",
+        "decision",
+        "refactor",
+        "other",
+    }
+)
 
 # --- Schema DDL (idempotent) ---
 OBSERVATIONS_DDL = """
@@ -67,13 +68,26 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_observations_dedup
 
 # --- Python types ---
 
+
 class Observation:
     """A single structured observation."""
+
     __slots__ = (
-        "id", "type", "title", "subtitle", "narrative",
-        "facts", "concepts", "files_read", "files_modified",
-        "tool_name", "session_id", "prompt_number",
-        "content_hash", "created_at", "created_at_epoch",
+        "id",
+        "type",
+        "title",
+        "subtitle",
+        "narrative",
+        "facts",
+        "concepts",
+        "files_read",
+        "files_modified",
+        "tool_name",
+        "session_id",
+        "prompt_number",
+        "content_hash",
+        "created_at",
+        "created_at_epoch",
     )
 
     def __init__(
@@ -133,10 +147,21 @@ class Observation:
     def from_row(cls, row: tuple) -> "Observation":
         """Build from a SQLite row tuple."""
         (
-            id_, type_, title, subtitle, narrative,
-            facts_json, concepts_json, files_read_json, files_modified_json,
-            tool_name, session_id, prompt_number,
-            content_hash, created_at, created_at_epoch,
+            id_,
+            type_,
+            title,
+            subtitle,
+            narrative,
+            facts_json,
+            concepts_json,
+            files_read_json,
+            files_modified_json,
+            tool_name,
+            session_id,
+            prompt_number,
+            content_hash,
+            created_at,
+            created_at_epoch,
         ) = row
         return cls(
             id=id_,
@@ -196,6 +221,7 @@ def compute_content_hash(
 
 
 # --- Store operations (operate on a sqlite3.Connection) ---
+
 
 def ensure_observations_table(conn: sqlite3.Connection) -> None:
     """Create the observations table and indexes if they don't exist."""
@@ -318,7 +344,9 @@ def count_observations(conn: sqlite3.Connection) -> int:
         return 0
 
 
-def get_recent_observation_types(conn: sqlite3.Connection, limit: int = 20) -> list[str]:
+def get_recent_observation_types(
+    conn: sqlite3.Connection, limit: int = 20
+) -> list[str]:
     """Return the types of the most recent observations (for context injection)."""
     try:
         rows = conn.execute(

@@ -33,26 +33,26 @@ _SAVE_RETRY_DELAY = 0.25  # seconds, multiplied by attempt number
 # ---------------------------------------------------------------------------
 
 # Token estimation
-_CHARS_PER_TOKEN = 2                 # heuristic: ~2 characters per token (code is denser)
-_CHARS_PER_TOKEN_ENGLISH = 4        # English prose: ~4 chars/token (e.g. user messages)
-_CHARS_PER_TOKEN_JSON = 3           # JSON/structured tool results: ~3 chars/token
-_MIN_TOKEN_ESTIMATE = 1              # floor for token count estimates
+_CHARS_PER_TOKEN = 2  # heuristic: ~2 characters per token (code is denser)
+_CHARS_PER_TOKEN_ENGLISH = 4  # English prose: ~4 chars/token (e.g. user messages)
+_CHARS_PER_TOKEN_JSON = 3  # JSON/structured tool results: ~3 chars/token
+_MIN_TOKEN_ESTIMATE = 1  # floor for token count estimates
 
 # Tool result compression
-_COMPRESSION_KEEP_RECENT = 6         # messages at the tail left uncompressed
-_COMPRESSION_GENTLE_RECENT = 20      # messages kept with only hard-truncation
-_COMPRESSION_MAX_LINES = 5           # lines before a tool result is compressed
-_COMPRESSION_GENTLE_MAX_LINES = 20   # lines for gentle-tier compression
-_COMPRESSION_MAX_FIRST_LINE = 500    # max length of the first line kept
-_TOOL_RESULT_MAX_CHARS = 8000        # per-result size budget before hard truncation
-_TOOL_RESULT_GENTLE_CHARS = 16000    # per-result size budget for gentle-tier
+_COMPRESSION_KEEP_RECENT = 6  # messages at the tail left uncompressed
+_COMPRESSION_GENTLE_RECENT = 20  # messages kept with only hard-truncation
+_COMPRESSION_MAX_LINES = 5  # lines before a tool result is compressed
+_COMPRESSION_GENTLE_MAX_LINES = 20  # lines for gentle-tier compression
+_COMPRESSION_MAX_FIRST_LINE = 500  # max length of the first line kept
+_TOOL_RESULT_MAX_CHARS = 8000  # per-result size budget before hard truncation
+_TOOL_RESULT_GENTLE_CHARS = 16000  # per-result size budget for gentle-tier
 
 # Conversation summarization
-_SUMMARY_PREVIEW_LENGTH = 120        # character limit for content previews
-_SUMMARY_PATH_PREVIEW = 80           # character limit for path / command previews
-_SUMMARY_MAX_TURNS = 3               # max recent user turns shown
-_SUMMARY_MAX_FILES = 5               # max files listed per category
-_SUMMARY_MAX_COMMANDS = 3            # max commands listed
+_SUMMARY_PREVIEW_LENGTH = 120  # character limit for content previews
+_SUMMARY_PATH_PREVIEW = 80  # character limit for path / command previews
+_SUMMARY_MAX_TURNS = 3  # max recent user turns shown
+_SUMMARY_MAX_FILES = 5  # max files listed per category
+_SUMMARY_MAX_COMMANDS = 3  # max commands listed
 
 # Context budget injection
 # Markdown export
@@ -64,8 +64,8 @@ _MARKDOWN_TOOL_RESULT_PREVIEW = 500  # char limit for tool results in export
 # for the same message within a single save() call.
 # ---------------------------------------------------------------------------
 
-_TOOL_PARSE_CACHE: dict[int, str] = {}   # id(msg) -> extracted text content
-_TOKEN_EST_CACHE: dict[int, int] = {}     # id(msg) -> estimated token count
+_TOOL_PARSE_CACHE: dict[int, str] = {}  # id(msg) -> extracted text content
+_TOKEN_EST_CACHE: dict[int, int] = {}  # id(msg) -> estimated token count
 
 
 def _clear_message_caches() -> None:
@@ -97,6 +97,7 @@ def _get_tool_content(msg: dict) -> str:
 # ---------------------------------------------------------------------------
 # Token estimation
 # ---------------------------------------------------------------------------
+
 
 def _estimate_tokens(msg: dict) -> int:
     """Rough token estimate for a single message.
@@ -195,6 +196,7 @@ _ACCUM_LOCK: threading.Lock = threading.Lock()
 # ---------------------------------------------------------------------------
 # Tool result compression
 # ---------------------------------------------------------------------------
+
 
 def _find_tool_call_name(messages: list[dict], tool_idx: int) -> str | None:
     """Find the tool function name for a tool-result message at *tool_idx*.
@@ -303,7 +305,9 @@ def _compress_tool_results(
         # Determine zone: gentle or aggressive
         is_gentle = two_tier and i >= gentle_cutoff
         budget = _TOOL_RESULT_GENTLE_CHARS if is_gentle else _TOOL_RESULT_MAX_CHARS
-        max_lines = _COMPRESSION_GENTLE_MAX_LINES if is_gentle else _COMPRESSION_MAX_LINES
+        max_lines = (
+            _COMPRESSION_GENTLE_MAX_LINES if is_gentle else _COMPRESSION_MAX_LINES
+        )
 
         # Hard truncation for oversized results (both zones)
         if len(text) > budget:
@@ -328,7 +332,9 @@ def _compress_tool_results(
             # Gentle: keep first N lines instead of type-aware trimming
             if len(lines) > max_lines:
                 kept = "\n".join(lines[:max_lines])
-                kept += f"\n... (gentle truncation: {len(lines) - max_lines} lines omitted)"
+                kept += (
+                    f"\n... (gentle truncation: {len(lines) - max_lines} lines omitted)"
+                )
                 data["content"] = kept
                 m["content"] = json.dumps(data)
                 _TOOL_PARSE_CACHE.pop(id(m), None)
@@ -426,7 +432,7 @@ def _is_match_line(line: str) -> bool:
         prefix = line[:first_colon]
         if "/" not in prefix and "\\" not in prefix and "." not in prefix:
             return False
-        rest = line[first_colon + 1:]
+        rest = line[first_colon + 1 :]
         second_colon = rest.index(":")
         between = rest[:second_colon].strip()
         return between.isdigit() and len(between) > 0
@@ -449,8 +455,19 @@ def _compress_run_shell(lines: list[str]) -> str:
     head: list[str] = []
     for line in lines[:3]:
         s = line.strip().lower()
-        if any(marker in s for marker in
-               ("exit_code", "returncode", "exit", "failed", "ok", "success", "error", "status")):
+        if any(
+            marker in s
+            for marker in (
+                "exit_code",
+                "returncode",
+                "exit",
+                "failed",
+                "ok",
+                "success",
+                "error",
+                "status",
+            )
+        ):
             head.append(line)
 
     tail = lines[-20:]
@@ -477,7 +494,9 @@ def _compress_run_tests(lines: list[str]) -> str:
     for idx, line in enumerate(lines):
         s = line.strip()
         # Summary line: "X passed, Y failed" or "X passed"
-        if "passed" in s.lower() and ("failed" in s.lower() or "passed" not in s.lower()):
+        if "passed" in s.lower() and (
+            "failed" in s.lower() or "passed" not in s.lower()
+        ):
             kept_indices.append(idx)
         # FAILED test marker
         elif s.startswith("FAILED") or s.startswith("ERRORS") or s.startswith("==="):
@@ -503,7 +522,9 @@ def _compress_run_tests(lines: list[str]) -> str:
         parts.append(lines[k])
         last = k
     if last < len(lines) - 1:
-        parts.append(f"... ({len(lines) - last - 1} lines skipped -- {len(lines)} total)")
+        parts.append(
+            f"... ({len(lines) - last - 1} lines skipped -- {len(lines)} total)"
+        )
     return "\n".join(parts)
 
 
@@ -516,7 +537,10 @@ def _compress_default(lines: list[str]) -> str:
     if len(kept) > _COMPRESSION_MAX_FIRST_LINE:
         kept = kept[:_COMPRESSION_MAX_FIRST_LINE] + "..."
 
-    return kept + f"\n... (truncated at {_COMPRESSION_MAX_LINES} lines -- {len(lines)} total)"
+    return (
+        kept
+        + f"\n... (truncated at {_COMPRESSION_MAX_LINES} lines -- {len(lines)} total)"
+    )
 
 
 def _build_compressed(
@@ -540,7 +564,9 @@ def _build_compressed(
         last_kept = idx
 
     if last_kept < len(lines) - 1:
-        parts.append(f"... ({len(lines) - last_kept - 1} lines skipped -- {len(lines)} total {tag})")
+        parts.append(
+            f"... ({len(lines) - last_kept - 1} lines skipped -- {len(lines)} total {tag})"
+        )
 
     return "\n".join(parts)
 
@@ -548,6 +574,7 @@ def _build_compressed(
 # ---------------------------------------------------------------------------
 # Conversation summarization
 # ---------------------------------------------------------------------------
+
 
 # TODO: _summarize_pruned is ~80 lines -- consider splitting into helpers for
 #       each message role (user, tool, assistant) and file/command categorization.
@@ -584,10 +611,12 @@ def _summarize_pruned_rules(pruned: list[dict]) -> str:
             # re-summarizing them creates recursive "Earlier in this
             # conversation: - User: Earlier in this conversation: ..."
             # nesting that degrades context quality.
-            if content.startswith("Earlier in this conversation:") or \
-              content.startswith("[SESSION SUMMARY") or \
-              content.startswith("[CORE MEMORY") or \
-              m.get("_transient"):
+            if (
+                content.startswith("Earlier in this conversation:")
+                or content.startswith("[SESSION SUMMARY")
+                or content.startswith("[CORE MEMORY")
+                or m.get("_transient")
+            ):
                 continue
             preview = content[:_SUMMARY_PREVIEW_LENGTH].replace("\n", " ")
             if len(content) > _SUMMARY_PREVIEW_LENGTH:
@@ -643,7 +672,9 @@ def _summarize_pruned_rules(pruned: list[dict]) -> str:
         unique = list(dict.fromkeys(files_edited))
         parts.append(f"- Files edited: {', '.join(unique[:_SUMMARY_MAX_FILES])}")
     if commands_run:
-        parts.append(f"- Commands run: {', '.join(commands_run[:_SUMMARY_MAX_COMMANDS])}")
+        parts.append(
+            f"- Commands run: {', '.join(commands_run[:_SUMMARY_MAX_COMMANDS])}"
+        )
 
     return "\n".join(parts)
 
@@ -657,6 +688,7 @@ def _summarize_pruned_rules(pruned: list[dict]) -> str:
 # ---------------------------------------------------------------------------
 # Orphaned-tool cleanup
 # ---------------------------------------------------------------------------
+
 
 def _strip_orphaned_tool_messages(
     messages: list[dict],
@@ -739,6 +771,7 @@ _strip_orphaned_tool_results = _strip_orphaned_tool_messages
 # ---------------------------------------------------------------------------
 # Middle-truncation helpers
 # ---------------------------------------------------------------------------
+
 
 def _find_user_boundaries(messages: list[dict]) -> list[int]:
     """Return indices of user-role messages (safe cut points)."""
@@ -857,7 +890,9 @@ def _prune_by_tokens(
 
     # Head block: everything up to and including the first assistant response
     # (which may contain tool_calls).  We keep this for task framing.
-    head_end = (first_asst_idx + 1) if first_asst_idx is not None else (first_user_idx + 1)
+    head_end = (
+        (first_asst_idx + 1) if first_asst_idx is not None else (first_user_idx + 1)
+    )
     head_block = body[:head_end]
     head_tokens = sum(token_counts[:head_end])
 
@@ -932,4 +967,3 @@ def _prune_by_tokens(
     body = head_block + body[tail_start:]
 
     return sys_prompt + body, pruned
-

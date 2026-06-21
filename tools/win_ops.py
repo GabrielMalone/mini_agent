@@ -41,8 +41,11 @@ def _run_ps(script: str, timeout: float = 10.0) -> tuple[bool, str]:
     try:
         result = subprocess.run(
             ["powershell.exe", "-NoProfile", "-Command", script],
-            capture_output=True, text=True, timeout=timeout,
-            encoding="utf-8", errors="replace",
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            encoding="utf-8",
+            errors="replace",
             creationflags=subprocess.CREATE_NO_WINDOW,
         )
         stdout = result.stdout or ""
@@ -62,8 +65,12 @@ def _run_cmd(cmd: list[str], timeout: float = 10.0) -> tuple[bool, str, str]:
     """Run a command, return (ok, stdout, stderr)."""
     try:
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=timeout,
-            encoding="utf-8", errors="replace",
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            encoding="utf-8",
+            errors="replace",
             creationflags=subprocess.CREATE_NO_WINDOW,
         )
         stdout = result.stdout or ""
@@ -89,6 +96,7 @@ def _win_clipboard(action: str, text: str = "") -> ToolResult:
     """
     try:
         import pyperclip
+
         if action == "read":
             content = pyperclip.paste()
             return ToolResult(success=True, content=f"Clipboard content:\n{content}")
@@ -141,7 +149,8 @@ def _win_open(target: str) -> ToolResult:
         try:
             subprocess.run(
                 ["cmd.exe", "/C", "start", "", target],
-                capture_output=True, timeout=10,
+                capture_output=True,
+                timeout=10,
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
             return ToolResult(success=True, content=f"Opened: {target}")
@@ -167,7 +176,8 @@ def _win_reveal(path: str) -> ToolResult:
     try:
         subprocess.run(
             ["explorer", "/select,", abs_path],
-            capture_output=True, timeout=5,
+            capture_output=True,
+            timeout=5,
             creationflags=subprocess.CREATE_NO_WINDOW,
         )
         return ToolResult(success=True, content=f"Revealed in Explorer: {abs_path}")
@@ -188,6 +198,7 @@ def _win_list_apps() -> ToolResult:
     """
     # Try PowerShell first (best filtering) via temp script to avoid escaping issues
     import tempfile
+
     ps_script = """Get-Process | Where-Object { $_.MainWindowTitle -ne '' } |
     ForEach-Object {
         '{0}|{1}|{2}' -f $_.Id, $_.ProcessName, $_.MainWindowTitle
@@ -198,9 +209,19 @@ def _win_list_apps() -> ToolResult:
             f.write(ps_script)
             tmp_path = f.name
         result = subprocess.run(
-            ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", tmp_path],
-            capture_output=True, text=True, timeout=15.0,
-            encoding="utf-8", errors="replace",
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                tmp_path,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15.0,
+            encoding="utf-8",
+            errors="replace",
             creationflags=subprocess.CREATE_NO_WINDOW,
         )
         os.unlink(tmp_path)
@@ -216,20 +237,20 @@ def _win_list_apps() -> ToolResult:
                     if title:
                         apps.append(f'  PID={pid:>6s}  {name[:35]:35s}  "{title[:60]}"')
                     else:
-                        apps.append(f'  PID={pid:>6s}  {name[:35]:35s}')
+                        apps.append(f"  PID={pid:>6s}  {name[:35]:35s}")
 
             if apps:
                 return ToolResult(
                     success=True,
-                    content=f"Running applications ({len(apps)} with windows):\n" + "\n".join(apps[:80]),
+                    content=f"Running applications ({len(apps)} with windows):\n"
+                    + "\n".join(apps[:80]),
                 )
     except Exception:
         pass
 
     # Fallback: tasklist with window titles
     ok, stdout, stderr = _run_cmd(
-        ["tasklist", "/FO", "CSV", "/NH", "/V",
-         "/FI", "STATUS eq RUNNING"],
+        ["tasklist", "/FO", "CSV", "/NH", "/V", "/FI", "STATUS eq RUNNING"],
         timeout=10.0,
     )
     if not ok:
@@ -272,7 +293,8 @@ def _win_list_apps() -> ToolResult:
 
     return ToolResult(
         success=True,
-        content=f"Running applications ({len(unique)} with windows):\n" + "\n".join(unique[:80]),
+        content=f"Running applications ({len(unique)} with windows):\n"
+        + "\n".join(unique[:80]),
     )
 
 
@@ -301,7 +323,8 @@ def _win_launch_app(name: str) -> ToolResult:
     if name.lower().endswith(".exe"):
         try:
             subprocess.Popen(
-                [name], close_fds=True,
+                [name],
+                close_fds=True,
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
             time.sleep(0.5)
@@ -357,7 +380,11 @@ def _win_quit_app(name_or_pid: str) -> ToolResult:
         )
     else:
         # Try exact name match first
-        exe_name = name_or_pid if name_or_pid.lower().endswith(".exe") else f"{name_or_pid}.exe"
+        exe_name = (
+            name_or_pid
+            if name_or_pid.lower().endswith(".exe")
+            else f"{name_or_pid}.exe"
+        )
         ok, stdout, stderr = _run_cmd(
             ["taskkill", "/IM", exe_name],
             timeout=10.0,
@@ -379,7 +406,11 @@ def _win_quit_app(name_or_pid: str) -> ToolResult:
             timeout=10.0,
         )
     else:
-        exe_name = name_or_pid if name_or_pid.lower().endswith(".exe") else f"{name_or_pid}.exe"
+        exe_name = (
+            name_or_pid
+            if name_or_pid.lower().endswith(".exe")
+            else f"{name_or_pid}.exe"
+        )
         ok2, stdout2, stderr2 = _run_cmd(
             ["taskkill", "/F", "/IM", exe_name],
             timeout=10.0,
@@ -437,6 +468,7 @@ def _win_focus_app(name: str) -> ToolResult:
 
     # Fallback: PowerShell via temp script
     import tempfile
+
     ps_script = f"""Add-Type @'
 using System;
 using System.Runtime.InteropServices;
@@ -463,9 +495,19 @@ if ($proc -and $proc.MainWindowHandle -ne 0) {{
             f.write(ps_script)
             tmp_path = f.name
         result = subprocess.run(
-            ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", tmp_path],
-            capture_output=True, text=True, timeout=10.0,
-            encoding="utf-8", errors="replace",
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                tmp_path,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10.0,
+            encoding="utf-8",
+            errors="replace",
             creationflags=subprocess.CREATE_NO_WINDOW,
         )
         os.unlink(tmp_path)
@@ -520,6 +562,7 @@ def _win_list_windows() -> ToolResult:
 
     # Fallback: PowerShell script via temp file (avoids escaping issues)
     import tempfile
+
     ps_script = """Get-Process | Where-Object { $_.MainWindowTitle -ne '' } |
     ForEach-Object {
         $title = if ($_.MainWindowTitle.Length -gt 60) { $_.MainWindowTitle.Substring(0,60) + '...' } else { $_.MainWindowTitle }
@@ -531,9 +574,19 @@ def _win_list_windows() -> ToolResult:
             f.write(ps_script)
             tmp_path = f.name
         result = subprocess.run(
-            ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", tmp_path],
-            capture_output=True, text=True, timeout=15.0,
-            encoding="utf-8", errors="replace",
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                tmp_path,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15.0,
+            encoding="utf-8",
+            errors="replace",
             creationflags=subprocess.CREATE_NO_WINDOW,
         )
         os.unlink(tmp_path)
@@ -541,9 +594,13 @@ def _win_list_windows() -> ToolResult:
             lines = result.stdout.strip().splitlines()
             return ToolResult(
                 success=True,
-                content=f"Visible windows ({len(lines)}):\n" + "\n".join(f"  {l}" for l in lines[:100]),
+                content=f"Visible windows ({len(lines)}):\n"
+                + "\n".join(f"  {l}" for l in lines[:100]),
             )
-        return ToolResult(success=False, content=f"Could not list windows: {(result.stderr or '').strip()}")
+        return ToolResult(
+            success=False,
+            content=f"Could not list windows: {(result.stderr or '').strip()}",
+        )
     except Exception as exc:
         return ToolResult(success=False, content=f"Could not list windows: {exc}")
 
@@ -572,14 +629,18 @@ def _win_system_info() -> ToolResult:
 
         # Memory
         mem = psutil.virtual_memory()
-        lines.append(f"Memory:           {mem.used // (1024**3)}.{mem.used % (1024**3) // (100*1024*1024):01d} GB / {mem.total // (1024**3)} GB ({mem.percent}%)")
+        lines.append(
+            f"Memory:           {mem.used // (1024**3)}.{mem.used % (1024**3) // (100 * 1024 * 1024):01d} GB / {mem.total // (1024**3)} GB ({mem.percent}%)"
+        )
 
         # Disk
         for part in psutil.disk_partitions():
             try:
                 usage = psutil.disk_usage(part.mountpoint)
                 if part.mountpoint == "C:\\" or usage.total > 50 * 1024**3:
-                    lines.append(f"Disk ({part.mountpoint}):       {usage.used // (1024**3)} GB / {usage.total // (1024**3)} GB ({usage.percent}%)")
+                    lines.append(
+                        f"Disk ({part.mountpoint}):       {usage.used // (1024**3)} GB / {usage.total // (1024**3)} GB ({usage.percent}%)"
+                    )
             except Exception:
                 pass
 
@@ -589,7 +650,7 @@ def _win_system_info() -> ToolResult:
         lines.append(f"Uptime:           {_fmt_uptime(uptime_seconds)}")
 
         # Battery
-        if hasattr(psutil, 'sensors_battery'):
+        if hasattr(psutil, "sensors_battery"):
             battery = psutil.sensors_battery()
             if battery:
                 status = "charging" if battery.power_plugged else "discharging"
@@ -602,7 +663,13 @@ def _win_system_info() -> ToolResult:
     if not lines:
         # wmic os: columns are Node,FreePhysicalMemory,LastBootUpTime,NumberOfProcesses,TotalVisibleMemorySize
         ok, stdout, _ = _run_cmd(
-            ["wmic", "os", "get", "TotalVisibleMemorySize,FreePhysicalMemory,NumberOfProcesses,LastBootUpTime", "/format:csv"],
+            [
+                "wmic",
+                "os",
+                "get",
+                "TotalVisibleMemorySize,FreePhysicalMemory,NumberOfProcesses,LastBootUpTime",
+                "/format:csv",
+            ],
             timeout=15.0,
         )
         if ok:
@@ -612,19 +679,29 @@ def _win_system_info() -> ToolResult:
                 parts = line.split(",")
                 if len(parts) >= 5:
                     try:
-                        total_kb = int(parts[4].strip() or 0)   # TotalVisibleMemorySize
-                        free_kb = int(parts[1].strip() or 0)     # FreePhysicalMemory
+                        total_kb = int(parts[4].strip() or 0)  # TotalVisibleMemorySize
+                        free_kb = int(parts[1].strip() or 0)  # FreePhysicalMemory
                         used_gb = (total_kb - free_kb) // (1024 * 1024)
                         total_gb = total_kb // (1024 * 1024)
                         lines.append(f"Memory:           {used_gb} GB / {total_gb} GB")
                     except ValueError:
                         pass
-                    lines.append(f"Processes:        {parts[3].strip()}")   # NumberOfProcesses
-                    lines.append(f"Last Boot:        {parts[2].strip()[:14]}")  # LastBootUpTime
+                    lines.append(
+                        f"Processes:        {parts[3].strip()}"
+                    )  # NumberOfProcesses
+                    lines.append(
+                        f"Last Boot:        {parts[2].strip()[:14]}"
+                    )  # LastBootUpTime
 
         # CPU info: columns are Node,Name,NumberOfCores,NumberOfLogicalProcessors
         ok, stdout, _ = _run_cmd(
-            ["wmic", "cpu", "get", "Name,NumberOfCores,NumberOfLogicalProcessors", "/format:csv"],
+            [
+                "wmic",
+                "cpu",
+                "get",
+                "Name,NumberOfCores,NumberOfLogicalProcessors",
+                "/format:csv",
+            ],
             timeout=10.0,
         )
         if ok:
@@ -633,11 +710,21 @@ def _win_system_info() -> ToolResult:
                     continue
                 parts = line.split(",")
                 if len(parts) >= 4:
-                    lines.append(f"CPU:              {parts[1].strip()[:50]} ({parts[2].strip()}C/{parts[3].strip()}T)")
+                    lines.append(
+                        f"CPU:              {parts[1].strip()[:50]} ({parts[2].strip()}C/{parts[3].strip()}T)"
+                    )
 
         # Disk: columns are Node,DeviceID,FreeSpace,Size
         ok, stdout, _ = _run_cmd(
-            ["wmic", "logicaldisk", "where", "DriveType=3", "get", "DeviceID,Size,FreeSpace", "/format:csv"],
+            [
+                "wmic",
+                "logicaldisk",
+                "where",
+                "DriveType=3",
+                "get",
+                "DeviceID,Size,FreeSpace",
+                "/format:csv",
+            ],
             timeout=10.0,
         )
         if ok:
@@ -648,15 +735,19 @@ def _win_system_info() -> ToolResult:
                 if len(parts) >= 4:
                     try:
                         device = parts[1].strip()
-                        size = int(parts[3].strip()) // (1024**3)   # Size
-                        free = int(parts[2].strip()) // (1024**3)   # FreeSpace
-                        lines.append(f"Disk ({device}):       {size - free} GB / {size} GB")
+                        size = int(parts[3].strip()) // (1024**3)  # Size
+                        free = int(parts[2].strip()) // (1024**3)  # FreeSpace
+                        lines.append(
+                            f"Disk ({device}):       {size - free} GB / {size} GB"
+                        )
                     except ValueError:
                         pass
 
     return ToolResult(
         success=True,
-        content="System Info:\n" + "\n".join(f"  {l}" for l in lines) if lines else "Could not gather system info.",
+        content="System Info:\n" + "\n".join(f"  {l}" for l in lines)
+        if lines
+        else "Could not gather system info.",
     )
 
 
@@ -680,34 +771,61 @@ def _fmt_uptime(seconds: float) -> str:
 
 # Windows virtual key codes for common special keys
 _WIN_VK_MAP: dict[str, int] = {
-    "return": 0x0D, "enter": 0x0D,
+    "return": 0x0D,
+    "enter": 0x0D,
     "tab": 0x09,
     "space": 0x20,
-    "delete": 0x2E, "backspace": 0x08,
-    "escape": 0x1B, "esc": 0x1B,
-    "right": 0x27, "left": 0x25,
-    "down": 0x28, "up": 0x26,
-    "home": 0x24, "end": 0x23,
-    "pageup": 0x21, "pagedown": 0x22,
+    "delete": 0x2E,
+    "backspace": 0x08,
+    "escape": 0x1B,
+    "esc": 0x1B,
+    "right": 0x27,
+    "left": 0x25,
+    "down": 0x28,
+    "up": 0x26,
+    "home": 0x24,
+    "end": 0x23,
+    "pageup": 0x21,
+    "pagedown": 0x22,
     "insert": 0x2D,
-    "f1": 0x70, "f2": 0x71, "f3": 0x72, "f4": 0x73,
-    "f5": 0x74, "f6": 0x75, "f7": 0x76, "f8": 0x77,
-    "f9": 0x78, "f10": 0x79, "f11": 0x7A, "f12": 0x7B,
-    "printscreen": 0x2C, "scrolllock": 0x91,
+    "f1": 0x70,
+    "f2": 0x71,
+    "f3": 0x72,
+    "f4": 0x73,
+    "f5": 0x74,
+    "f6": 0x75,
+    "f7": 0x76,
+    "f8": 0x77,
+    "f9": 0x78,
+    "f10": 0x79,
+    "f11": 0x7A,
+    "f12": 0x7B,
+    "printscreen": 0x2C,
+    "scrolllock": 0x91,
     "pause": 0x13,
     "numlock": 0x90,
     "capslock": 0x14,
-    "apps": 0x5D, "menu": 0x5D,
-    "volume_mute": 0xAD, "volume_down": 0xAE, "volume_up": 0xAF,
-    "media_next": 0xB0, "media_prev": 0xB1, "media_stop": 0xB2, "media_play": 0xB3,
+    "apps": 0x5D,
+    "menu": 0x5D,
+    "volume_mute": 0xAD,
+    "volume_down": 0xAE,
+    "volume_up": 0xAF,
+    "media_next": 0xB0,
+    "media_prev": 0xB1,
+    "media_stop": 0xB2,
+    "media_play": 0xB3,
 }
 
 # Windows modifier key mapping
 _WIN_MOD_MAP: dict[str, str] = {
-    "ctrl": "^", "control": "^",
+    "ctrl": "^",
+    "control": "^",
     "alt": "%",
     "shift": "+",
-    "win": "#", "windows": "#", "cmd": "#", "command": "#",
+    "win": "#",
+    "windows": "#",
+    "cmd": "#",
+    "command": "#",
 }
 
 
@@ -756,14 +874,22 @@ def _win_press_keys(combo: str) -> ToolResult:
         elif p in _WIN_VK_MAP:
             # Map common keys to SendKeys format
             sk_map = {
-                "enter": "{ENTER}", "return": "{ENTER}",
-                "tab": "{TAB}", "space": " ",
-                "backspace": "{BS}", "delete": "{DEL}",
-                "escape": "{ESC}", "esc": "{ESC}",
-                "right": "{RIGHT}", "left": "{LEFT}",
-                "down": "{DOWN}", "up": "{UP}",
-                "home": "{HOME}", "end": "{END}",
-                "pageup": "{PGUP}", "pagedown": "{PGDN}",
+                "enter": "{ENTER}",
+                "return": "{ENTER}",
+                "tab": "{TAB}",
+                "space": " ",
+                "backspace": "{BS}",
+                "delete": "{DEL}",
+                "escape": "{ESC}",
+                "esc": "{ESC}",
+                "right": "{RIGHT}",
+                "left": "{LEFT}",
+                "down": "{DOWN}",
+                "up": "{UP}",
+                "home": "{HOME}",
+                "end": "{END}",
+                "pageup": "{PGUP}",
+                "pagedown": "{PGDN}",
                 "insert": "{INSERT}",
             }
             for i in range(1, 13):
@@ -776,21 +902,34 @@ def _win_press_keys(combo: str) -> ToolResult:
 
     sendkeys_str = "".join(sendkeys_parts)
     import tempfile
+
     ps_script = f"Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('{sendkeys_str}')"
     try:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".ps1", delete=False) as f:
             f.write(ps_script)
             tmp_path = f.name
         result = subprocess.run(
-            ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", tmp_path],
-            capture_output=True, text=True, timeout=5.0,
-            encoding="utf-8", errors="replace",
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                tmp_path,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5.0,
+            encoding="utf-8",
+            errors="replace",
             creationflags=subprocess.CREATE_NO_WINDOW,
         )
         os.unlink(tmp_path)
         if result.returncode == 0:
             return ToolResult(success=True, content=f"Pressed: {combo}")
-        return ToolResult(success=False, content=f"Key press failed: {(result.stderr or '').strip()}")
+        return ToolResult(
+            success=False, content=f"Key press failed: {(result.stderr or '').strip()}"
+        )
     except Exception as exc:
         return ToolResult(success=False, content=f"Key press failed: {exc}")
 
@@ -832,14 +971,27 @@ $toast = New-Object Windows.UI.Notifications.ToastNotification $xml
             f.write(ps_script)
             tmp_path = f.name
         result = subprocess.run(
-            ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", tmp_path],
-            capture_output=True, text=True, timeout=10.0,
-            encoding="utf-8", errors="replace",
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                tmp_path,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10.0,
+            encoding="utf-8",
+            errors="replace",
             creationflags=subprocess.CREATE_NO_WINDOW,
         )
         os.unlink(tmp_path)
         if result.returncode == 0:
             return ToolResult(success=True, content=f"Notification posted: {title}")
-        return ToolResult(success=False, content=f"Notification failed: {(result.stderr or '').strip()}")
+        return ToolResult(
+            success=False,
+            content=f"Notification failed: {(result.stderr or '').strip()}",
+        )
     except Exception as exc:
         return ToolResult(success=False, content=f"Notification failed: {exc}")

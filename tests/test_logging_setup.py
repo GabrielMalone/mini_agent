@@ -31,6 +31,7 @@ from logging_setup import (
 # Helper: capture logger output via a temporary StreamHandler
 # ---------------------------------------------------------------------------
 
+
 def _capture_log_output(logger: logging.Logger) -> io.StringIO:
     """Add a StringIO stream handler to *logger* and return the buffer."""
     buf = io.StringIO()
@@ -61,11 +62,14 @@ def _get_log_entries(buf: io.StringIO) -> list[dict]:
 # 1. _fingerprint_from_content
 # ---------------------------------------------------------------------------
 
+
 class TestFingerprintFromContent(unittest.TestCase):
     """Verify error fingerprint extraction for all tool-specific patterns."""
 
     def test_edit_file_not_found(self):
-        fp = _fingerprint_from_content("edit_file", "Error: old_string not found in file")
+        fp = _fingerprint_from_content(
+            "edit_file", "Error: old_string not found in file"
+        )
         self.assertEqual(fp, "not_found")
 
     def test_edit_file_does_not_exist(self):
@@ -81,12 +85,16 @@ class TestFingerprintFromContent(unittest.TestCase):
         self.assertEqual(fp, "whitespace")
 
     def test_edit_file_ambiguous(self):
-        fp = _fingerprint_from_content("edit_file", "ambiguous match: multiple occurrences")
+        fp = _fingerprint_from_content(
+            "edit_file", "ambiguous match: multiple occurrences"
+        )
         self.assertEqual(fp, "ambiguous")
 
     def test_edit_file_generic_fallback(self):
         fp = _fingerprint_from_content("edit_file", "some unknown error")
-        self.assertTrue(fp.startswith("generic:"), f"Expected 'generic:' prefix, got: {fp}")
+        self.assertTrue(
+            fp.startswith("generic:"), f"Expected 'generic:' prefix, got: {fp}"
+        )
         self.assertEqual(len(fp), 8 + 12)  # "generic:" + 12 hex chars
 
     def test_write_file_blocked(self):
@@ -94,7 +102,9 @@ class TestFingerprintFromContent(unittest.TestCase):
         self.assertEqual(fp, "blocked")
 
     def test_read_file_not_found(self):
-        fp = _fingerprint_from_content("read_file", "no such file or directory: foo.txt")
+        fp = _fingerprint_from_content(
+            "read_file", "no such file or directory: foo.txt"
+        )
         self.assertEqual(fp, "not_found")
 
     def test_search_files_no_matches(self):
@@ -126,7 +136,9 @@ class TestFingerprintFromContent(unittest.TestCase):
         self.assertEqual(fp, "timed_out")
 
     def test_find_symbol_no_match(self):
-        fp = _fingerprint_from_content("find_symbol", "No match found for 'does_not_exist'")
+        fp = _fingerprint_from_content(
+            "find_symbol", "No match found for 'does_not_exist'"
+        )
         self.assertEqual(fp, "not_found")
 
     def test_find_usages_no_match(self):
@@ -161,6 +173,7 @@ class TestFingerprintFromContent(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # 2. _increment_error_counter + get_error_summary
 # ---------------------------------------------------------------------------
+
 
 class TestErrorCounters(unittest.TestCase):
     """Verify thread-safe error counter tracking and summary generation."""
@@ -256,6 +269,7 @@ class TestErrorCounters(unittest.TestCase):
 # 3. _JsonLinesFormatter
 # ---------------------------------------------------------------------------
 
+
 class TestJsonLinesFormatter(unittest.TestCase):
     """Verify JSON-lines log formatter output."""
 
@@ -264,8 +278,12 @@ class TestJsonLinesFormatter(unittest.TestCase):
 
     def test_basic_format(self):
         record = logging.LogRecord(
-            name="mini_agent.test", level=logging.INFO,
-            pathname="test.py", lineno=1, msg="hello %s", args=("world",),
+            name="mini_agent.test",
+            level=logging.INFO,
+            pathname="test.py",
+            lineno=1,
+            msg="hello %s",
+            args=("world",),
             exc_info=None,
         )
         output = self.formatter.format(record)
@@ -280,8 +298,12 @@ class TestJsonLinesFormatter(unittest.TestCase):
             raise ValueError("test error")
         except ValueError:
             record = logging.LogRecord(
-                name="mini_agent.test", level=logging.ERROR,
-                pathname="test.py", lineno=1, msg="crash", args=(),
+                name="mini_agent.test",
+                level=logging.ERROR,
+                pathname="test.py",
+                lineno=1,
+                msg="crash",
+                args=(),
                 exc_info=logging.sys.exc_info(),
             )
         output = self.formatter.format(record)
@@ -292,8 +314,12 @@ class TestJsonLinesFormatter(unittest.TestCase):
 
     def test_format_with_extra_fields(self):
         record = logging.LogRecord(
-            name="mini_agent.api", level=logging.WARNING,
-            pathname="test.py", lineno=1, msg="api error", args=(),
+            name="mini_agent.api",
+            level=logging.WARNING,
+            pathname="test.py",
+            lineno=1,
+            msg="api error",
+            args=(),
             exc_info=None,
         )
         record.tool_name = "run_shell"
@@ -307,8 +333,12 @@ class TestJsonLinesFormatter(unittest.TestCase):
 
     def test_warning_level_preserved(self):
         record = logging.LogRecord(
-            name="mini_agent.tools", level=logging.WARNING,
-            pathname="test.py", lineno=1, msg="warning msg", args=(),
+            name="mini_agent.tools",
+            level=logging.WARNING,
+            pathname="test.py",
+            lineno=1,
+            msg="warning msg",
+            args=(),
             exc_info=None,
         )
         output = self.formatter.format(record)
@@ -317,8 +347,12 @@ class TestJsonLinesFormatter(unittest.TestCase):
 
     def test_debug_level_preserved(self):
         record = logging.LogRecord(
-            name="mini_agent.tools", level=logging.DEBUG,
-            pathname="test.py", lineno=1, msg="debug msg", args=(),
+            name="mini_agent.tools",
+            level=logging.DEBUG,
+            pathname="test.py",
+            lineno=1,
+            msg="debug msg",
+            args=(),
             exc_info=None,
         )
         output = self.formatter.format(record)
@@ -328,8 +362,12 @@ class TestJsonLinesFormatter(unittest.TestCase):
     def test_no_extra_none_fields(self):
         """Fields that are None should not appear in the JSON."""
         record = logging.LogRecord(
-            name="mini_agent.test", level=logging.INFO,
-            pathname="test.py", lineno=1, msg="clean message", args=(),
+            name="mini_agent.test",
+            level=logging.INFO,
+            pathname="test.py",
+            lineno=1,
+            msg="clean message",
+            args=(),
             exc_info=None,
         )
         output = self.formatter.format(record)
@@ -344,6 +382,7 @@ class TestJsonLinesFormatter(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # 4. log_tool_failure
 # ---------------------------------------------------------------------------
+
 
 class TestLogToolFailure(unittest.TestCase):
     """Verify log_tool_failure writes to log and increments counters."""
@@ -374,8 +413,7 @@ class TestLogToolFailure(unittest.TestCase):
             self.assertEqual(_ERROR_COUNTERS["edit_file"]["whitespace"], 1)
 
     def test_explicit_fingerprint(self):
-        log_tool_failure("custom_tool", "some error",
-                         fingerprint="custom_fingerprint")
+        log_tool_failure("custom_tool", "some error", fingerprint="custom_fingerprint")
         with _ERROR_COUNTERS_LOCK:
             self.assertEqual(_ERROR_COUNTERS["custom_tool"]["custom_fingerprint"], 1)
 
@@ -416,6 +454,7 @@ class TestLogToolFailure(unittest.TestCase):
 # 5. log_tool_success
 # ---------------------------------------------------------------------------
 
+
 class TestLogToolSuccess(unittest.TestCase):
     """Verify log_tool_success writes debug-level log entries."""
 
@@ -452,6 +491,7 @@ class TestLogToolSuccess(unittest.TestCase):
 # 6. log_api_error
 # ---------------------------------------------------------------------------
 
+
 class TestLogApiError(unittest.TestCase):
     """Verify log_api_error writes structured entries to api_error.log."""
 
@@ -462,13 +502,20 @@ class TestLogApiError(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     def test_writes_to_api_error_log(self):
         with patch("logging_setup.API_ERROR_LOG", self.api_error_path):
             with patch("logging_setup.AGENT_LOG", self.agent_log_path):
-                log_api_error("deepseek", "deepseek-chat", 429,
-                              "Too Many Requests", turn=5, session="s1")
+                log_api_error(
+                    "deepseek",
+                    "deepseek-chat",
+                    429,
+                    "Too Many Requests",
+                    turn=5,
+                    session="s1",
+                )
 
         self.assertTrue(os.path.exists(self.api_error_path))
         with open(self.api_error_path, encoding="utf-8") as fh:
@@ -531,6 +578,7 @@ class TestLogApiError(unittest.TestCase):
 # 7. log_error_trace
 # ---------------------------------------------------------------------------
 
+
 class TestLogErrorTrace(unittest.TestCase):
     """Verify log_error_trace writes structured entries to error_traces.log."""
 
@@ -541,14 +589,17 @@ class TestLogErrorTrace(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     def test_writes_to_error_traces_log(self):
         with patch("logging_setup.ERROR_TRACES_LOG", self.error_traces_path):
             with patch("logging_setup.AGENT_LOG", self.agent_log_path):
-                log_error_trace("tool_execution_crash",
-                                "KeyError: 'missing'",
-                                extra={"tool_name": "edit_file"})
+                log_error_trace(
+                    "tool_execution_crash",
+                    "KeyError: 'missing'",
+                    extra={"tool_name": "edit_file"},
+                )
 
         self.assertTrue(os.path.exists(self.error_traces_path))
         with open(self.error_traces_path, encoding="utf-8") as fh:
@@ -592,8 +643,11 @@ class TestLogErrorTrace(unittest.TestCase):
     def test_extra_fields_merged(self):
         with patch("logging_setup.ERROR_TRACES_LOG", self.error_traces_path):
             with patch("logging_setup.AGENT_LOG", self.agent_log_path):
-                log_error_trace("user_error", "invalid input",
-                                extra={"user_id": "42", "action": "click"})
+                log_error_trace(
+                    "user_error",
+                    "invalid input",
+                    extra={"user_id": "42", "action": "click"},
+                )
 
         with open(self.error_traces_path, encoding="utf-8") as fh:
             entry = json.loads(fh.readline())
@@ -604,6 +658,7 @@ class TestLogErrorTrace(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # 8. get_logger
 # ---------------------------------------------------------------------------
+
 
 class TestGetLogger(unittest.TestCase):
     """Verify logger factory creates proper hierarchy."""
@@ -641,6 +696,7 @@ class TestGetLogger(unittest.TestCase):
 # 9. End-to-end: full error -> log pipeline
 # ---------------------------------------------------------------------------
 
+
 class TestEndToEndErrorPipeline(unittest.TestCase):
     """Integration-style test: tool failure -> counter + log entry."""
 
@@ -659,11 +715,13 @@ class TestEndToEndErrorPipeline(unittest.TestCase):
         logger = get_logger("tools")
         buf = _capture_log_output(logger)
         try:
-            log_tool_failure("edit_file",
-                             "Error: old_string not found in '/path/to/file.py'\n"
-                             "Hint: The string must match exactly.",
-                             fingerprint="not_found",
-                             turn=1)
+            log_tool_failure(
+                "edit_file",
+                "Error: old_string not found in '/path/to/file.py'\n"
+                "Hint: The string must match exactly.",
+                fingerprint="not_found",
+                turn=1,
+            )
             entries = _get_log_entries(buf)
         finally:
             _remove_test_handler(logger, buf)
@@ -712,7 +770,7 @@ class TestEndToEndErrorPipeline(unittest.TestCase):
         warnings = [e for e in entries if e["level"] == "WARNING"]
         debugs = [e for e in entries if e["level"] == "DEBUG"]
         self.assertEqual(len(warnings), 4)  # 4 failures
-        self.assertEqual(len(debugs), 1)    # 1 success
+        self.assertEqual(len(debugs), 1)  # 1 success
 
         # Summary
         summary = get_error_summary()

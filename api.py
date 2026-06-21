@@ -46,6 +46,7 @@ _LLM_SEMAPHORE = threading.Semaphore(_MAX_CONCURRENT_LLM_CALLS)
 # APIError exception class
 # ---------------------------------------------------------------------------
 
+
 class APIError(Exception):
     """Raised when the LLM API returns a non-OK HTTP status."""
 
@@ -61,6 +62,7 @@ class APIError(Exception):
 # ---------------------------------------------------------------------------
 # Shared truncation / utility functions
 # ---------------------------------------------------------------------------
+
 
 def truncate_content(content: str, max_len: int = 300) -> str:
     """Truncate a string to *max_len* chars, appending '...' if truncated."""
@@ -101,12 +103,10 @@ def _clean_message(msg: dict, index: int, provider: str = "deepseek") -> dict | 
     for prompt caching (not supported by Claude's OpenAI-compatible
     endpoint).
     """
-    m2 = {k: v for k, v in msg.items()
-          if not k.startswith("_")}
+    m2 = {k: v for k, v in msg.items() if not k.startswith("_")}
     if "tool_calls" in m2:
         m2["tool_calls"] = [
-            {k: v for k, v in tc.items() if k != "index"}
-            for tc in m2["tool_calls"]
+            {k: v for k, v in tc.items() if k != "index"} for tc in m2["tool_calls"]
         ]
     if index == 0 and m2.get("role") == "system" and provider == "deepseek":
         m2["cache_control"] = {"type": "ephemeral"}
@@ -311,7 +311,9 @@ def call_llm(
         _cache = get_semantic_cache()
         _cached_response, _cache_sim = _cache.lookup(_last_user_text)
         if _cached_response is not None:
-            _log = __import__("logging_setup", fromlist=["get_logger"]).get_logger("api")
+            _log = __import__("logging_setup", fromlist=["get_logger"]).get_logger(
+                "api"
+            )
             _log.info(
                 "semantic_cache_hit similarity=%.3f model=%s text=%s",
                 _cache_sim,
@@ -321,10 +323,13 @@ def call_llm(
             # Track semantic cache stats on _TOOL_CONTEXT
             try:
                 from tools import _TOOL_CONTEXT
+
                 if _TOOL_CONTEXT is not None:
                     if not hasattr(_TOOL_CONTEXT, "_semantic_cache_stats"):
                         _TOOL_CONTEXT._semantic_cache_stats = {
-                            "hits": 0, "misses": 0, "estimated_usd_saved": 0.0,
+                            "hits": 0,
+                            "misses": 0,
+                            "estimated_usd_saved": 0.0,
                         }
                     _TOOL_CONTEXT._semantic_cache_stats["hits"] += 1
             except Exception:
@@ -339,12 +344,15 @@ def call_llm(
         raise APIError(
             status_code=429,
             body="API rate limiter: timed out waiting for a free call slot (120s). "
-                 "Too many concurrent LLM calls. Reduce sub-agent count or increase "
-                 "SUB_AGENT_MAX_CONCURRENT_CALLS env var."
+            "Too many concurrent LLM calls. Reduce sub-agent count or increase "
+            "SUB_AGENT_MAX_CONCURRENT_CALLS env var.",
         )
     # --- log prompt to ~/.mini_agent/logs/prompts.log ---
     try:
-        import os as _os, json as _json, datetime as _dt
+        import os as _os
+        import json as _json
+        import datetime as _dt
+
         _log_dir = _os.path.join(_os.path.expanduser("~"), ".mini_agent", "logs")
         _os.makedirs(_log_dir, exist_ok=True)
         _prompt_log = _os.path.join(_log_dir, "prompts.log")
@@ -354,7 +362,9 @@ def call_llm(
             "model": payload.get("model", "?"),
             "turn": getattr(config, "turn_count", 0),
             "message_count": len(safe_messages),
-            "estimated_tokens": sum(len(str(m.get("content", ""))) // 3 for m in safe_messages),
+            "estimated_tokens": sum(
+                len(str(m.get("content", ""))) // 3 for m in safe_messages
+            ),
             "session": config.workspace if hasattr(config, "workspace") else "",
             "messages": safe_messages,
         }
@@ -387,6 +397,7 @@ def call_llm(
     _fallback_providers: tuple[str, ...] = ()
     try:
         from core.config import PROVIDER_DEFAULTS
+
         pd = PROVIDER_DEFAULTS.get(config.api_provider)
         if pd:
             _fallback_providers = pd.fallback_providers
@@ -400,8 +411,10 @@ def call_llm(
         except (ValueError, AttributeError):
             err_body = r.text
         log_api_error(
-            provider=config.api_provider, model=payload.get("model", "?"),
-            status_code=r.status_code, error_body=str(err_body),
+            provider=config.api_provider,
+            model=payload.get("model", "?"),
+            status_code=r.status_code,
+            error_body=str(err_body),
             turn=getattr(config, "turn_count", 0),
         )
         _last_error = APIError(status_code=r.status_code, body=str(err_body))
@@ -427,13 +440,15 @@ def call_llm(
                 continue
             try:
                 r2 = _request_with_retry(
-                    session, fb.api_url,
+                    session,
+                    fb.api_url,
                     headers={
                         "Authorization": f"Bearer {fb_key}",
                         "Content-Type": "application/json",
                         "User-Agent": "mini_agent/1.0",
                     },
-                    json=fb_payload, stream=False,
+                    json=fb_payload,
+                    stream=False,
                     cancel_event=cancel_event,
                 )
             finally:
@@ -462,8 +477,10 @@ def call_llm(
         except (ValueError, AttributeError):
             err = r.text
         log_api_error(
-            provider=config.api_provider, model=payload.get("model", "?"),
-            status_code=r.status_code, error_body=str(err),
+            provider=config.api_provider,
+            model=payload.get("model", "?"),
+            status_code=r.status_code,
+            error_body=str(err),
             turn=getattr(config, "turn_count", 0),
         )
         raise APIError(status_code=r.status_code, body=str(err))
@@ -507,23 +524,32 @@ def _report_cache_hit(usage: dict, config: "AgentConfig") -> None:
     _log = __import__("logging_setup", fromlist=["get_logger"]).get_logger("api")
     _log.info(
         "cache_hit=%.1f%% hit_tokens=%d miss_tokens=%d prompt=%d completion=%d",
-        hit_rate, hit, miss,
-        usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0),
+        hit_rate,
+        hit,
+        miss,
+        usage.get("prompt_tokens", 0),
+        usage.get("completion_tokens", 0),
     )
     # Store for session_stats visibility
     try:
         from tools import _TOOL_CONTEXT
+
         if _TOOL_CONTEXT is not None:
             if not hasattr(_TOOL_CONTEXT, "_cache_stats"):
                 _TOOL_CONTEXT._cache_stats = {
-                    "hits": 0, "misses": 0, "calls": 0,
-                    "input_tokens": 0, "output_tokens": 0,
+                    "hits": 0,
+                    "misses": 0,
+                    "calls": 0,
+                    "input_tokens": 0,
+                    "output_tokens": 0,
                 }
             _TOOL_CONTEXT._cache_stats["hits"] += hit
             _TOOL_CONTEXT._cache_stats["misses"] += miss
             _TOOL_CONTEXT._cache_stats["calls"] += 1
             _TOOL_CONTEXT._cache_stats["input_tokens"] += usage.get("prompt_tokens", 0)
-            _TOOL_CONTEXT._cache_stats["output_tokens"] += usage.get("completion_tokens", 0)
+            _TOOL_CONTEXT._cache_stats["output_tokens"] += usage.get(
+                "completion_tokens", 0
+            )
             # --- Per-turn tracking for degradation detection ---
             turn = int(getattr(_TOOL_CONTEXT, "_turn_count", 0) or 0)
             if not hasattr(_TOOL_CONTEXT, "_cache_turn_history"):
@@ -550,11 +576,11 @@ def _report_cache_hit(usage: dict, config: "AgentConfig") -> None:
 # ---------------------------------------------------------------------------
 
 # Thresholds for anomaly alerting
-_DEGRADE_MIN_CALLS = 3           # need at least 3 turns with cache data
+_DEGRADE_MIN_CALLS = 3  # need at least 3 turns with cache data
 _DEGRADE_MIN_BASELINE_CALLS = 2  # baseline needs at least 2 turns
 _DEGRADE_RATIO_THRESHOLD = 0.50  # alert if hit rate < 50% of baseline
 _DEGRADE_ABSOLUTE_THRESHOLD = 25.0  # alert if hit rate < 25% (absolute)
-_DEGRADE_ALERT_COOLDOWN = 8      # turns before re-alerting
+_DEGRADE_ALERT_COOLDOWN = 8  # turns before re-alerting
 
 
 def _check_cache_degradation() -> str | None:
@@ -568,6 +594,7 @@ def _check_cache_degradation() -> str | None:
     """
     try:
         from tools import _TOOL_CONTEXT
+
         if _TOOL_CONTEXT is None:
             return None
         history = getattr(_TOOL_CONTEXT, "_cache_turn_history", None)
@@ -577,7 +604,10 @@ def _check_cache_degradation() -> str | None:
         # Enforce cooldown (only if an alert has actually fired before)
         last_alert_turn = getattr(_TOOL_CONTEXT, "_cache_alert_last_turn", 0)
         current_turn = int(getattr(_TOOL_CONTEXT, "_turn_count", 0) or 0)
-        if last_alert_turn > 0 and (current_turn - last_alert_turn) < _DEGRADE_ALERT_COOLDOWN:
+        if (
+            last_alert_turn > 0
+            and (current_turn - last_alert_turn) < _DEGRADE_ALERT_COOLDOWN
+        ):
             return None
 
         # Split: last 3 turns vs all earlier
@@ -600,7 +630,10 @@ def _check_cache_degradation() -> str | None:
             return None
         ratio = recent_rate / baseline_rate
 
-        if ratio < _DEGRADE_RATIO_THRESHOLD or recent_rate < _DEGRADE_ABSOLUTE_THRESHOLD:
+        if (
+            ratio < _DEGRADE_RATIO_THRESHOLD
+            or recent_rate < _DEGRADE_ABSOLUTE_THRESHOLD
+        ):
             _TOOL_CONTEXT._cache_alert_last_turn = current_turn
             return (
                 f"WARNING: Cache hit rate dropped to {recent_rate:.0f}% "
@@ -631,6 +664,7 @@ def _get_fallback_api_key(provider: str) -> str:
     if not env_var:
         return ""
     import os
+
     return os.environ.get(env_var, "")
 
 
@@ -640,6 +674,7 @@ def clear_api_cache() -> None:
 
     # Also clear semantic cache at session end / reset
     from tools.semantic_cache import clear_semantic_cache
+
     clear_semantic_cache()
 
 
@@ -669,6 +704,7 @@ def _store_semantic_cache(
 
     # Get pricing for savings estimate
     from core.config import PROVIDER_DEFAULTS
+
     provider = config.api_provider
     pd_defaults = PROVIDER_DEFAULTS.get(provider)
     input_price = pd_defaults.input_price if pd_defaults else 0.0

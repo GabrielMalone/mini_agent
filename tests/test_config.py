@@ -9,18 +9,34 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from core.config import AgentConfig, CONFIG_FILENAME, DEFAULT_API_KEY, OLLAMA_DEFAULT_MODEL, OLLAMA_DEFAULT_API_URL
+from core.config import (
+    AgentConfig,
+    CONFIG_FILENAME,
+    DEFAULT_API_KEY,
+    OLLAMA_DEFAULT_MODEL,
+    OLLAMA_DEFAULT_API_URL,
+)
 
 
 # Env vars that override AgentConfig defaults / TOML values. Tests must clear
 # these so behavior is deterministic regardless of the developer's shell.
 _OVERRIDING_ENV_VARS = (
-    "DEEPSEEK_API_KEY", "DEEPSEEK_API_URL",
-    "CLAUDE_API_KEY", "CLAUDE_API_URL", "CLAUDE_MODEL",
-    "XAI_API_KEY", "XAI_API_URL", "XAI_MODEL",
-    "OLLAMA_API_URL", "OLLAMA_API_KEY", "OLLAMA_MODEL",
-    "SUB_AGENT_API_KEY", "API_PROVIDER",
-    "AGENT_WORKSPACE", "EXA_API_KEY", "OPENAI_API_KEY",
+    "DEEPSEEK_API_KEY",
+    "DEEPSEEK_API_URL",
+    "CLAUDE_API_KEY",
+    "CLAUDE_API_URL",
+    "CLAUDE_MODEL",
+    "XAI_API_KEY",
+    "XAI_API_URL",
+    "XAI_MODEL",
+    "OLLAMA_API_URL",
+    "OLLAMA_API_KEY",
+    "OLLAMA_MODEL",
+    "SUB_AGENT_API_KEY",
+    "API_PROVIDER",
+    "AGENT_WORKSPACE",
+    "EXA_API_KEY",
+    "OPENAI_API_KEY",
 )
 
 
@@ -49,6 +65,7 @@ class TestAgentConfigDefaults(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.workspace, ignore_errors=True)
         _restore_env(self._saved_env)
 
@@ -85,6 +102,7 @@ class TestAgentConfigTOML(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.workspace, ignore_errors=True)
         _restore_env(self._saved_env)
 
@@ -94,7 +112,9 @@ class TestAgentConfigTOML(unittest.TestCase):
             f.write(content)
 
     def test_toml_overrides_defaults(self):
-        self._write_toml("""[agent]\nmodel = "custom-model"\nallow_overwrites = true\n""")
+        self._write_toml(
+            """[agent]\nmodel = "custom-model"\nallow_overwrites = true\n"""
+        )
         config = AgentConfig.load(self.workspace)
         self.assertEqual(config.model, "custom-model")
         self.assertTrue(config.allow_overwrites)
@@ -116,7 +136,9 @@ class TestAgentConfigTOML(unittest.TestCase):
         self.assertTrue(mock_stderr.write.called)
 
     def test_unknown_keys_are_ignored(self):
-        self._write_toml("""[agent]\nunknown_key = "should be ignored"\nmodel = "ok"\n""")
+        self._write_toml(
+            """[agent]\nunknown_key = "should be ignored"\nmodel = "ok"\n"""
+        )
         config = AgentConfig.load(self.workspace)
         self.assertEqual(config.model, "ok")
         self.assertFalse(hasattr(config, "unknown_key"))
@@ -167,6 +189,7 @@ class TestAgentConfigEnvVars(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.workspace, ignore_errors=True)
 
     @patch.dict(os.environ, {"DEEPSEEK_API_KEY": "env-key"}, clear=True)
@@ -210,6 +233,7 @@ class TestAgentConfigCLIFlags(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.workspace, ignore_errors=True)
 
     def test_stream_flag(self):

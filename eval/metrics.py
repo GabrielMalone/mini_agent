@@ -45,7 +45,9 @@ class MetricsCollector:
 
         # Per-tool wall time
         self._tool_start_times: dict[str, float] = {}  # tool_name -> perf_counter
-        self.tool_wall_ms: dict[str, list[float]] = defaultdict(list)  # tool_name -> [ms, ...]
+        self.tool_wall_ms: dict[str, list[float]] = defaultdict(
+            list
+        )  # tool_name -> [ms, ...]
 
         # Latency histogram
         self._latency_histogram: Counter[str] = Counter()
@@ -94,7 +96,13 @@ class MetricsCollector:
         self._call_index += 1
         self._start_times[idx] = time.perf_counter()
 
-    def on_tool_end(self, success: bool, detail: str, diff_preview: str | None = None, content: str = "") -> None:
+    def on_tool_end(
+        self,
+        success: bool,
+        detail: str,
+        diff_preview: str | None = None,
+        content: str = "",
+    ) -> None:
         """Called after each tool completes.
 
         Records success/failure, computes wall time from start timestamp.
@@ -112,7 +120,7 @@ class MetricsCollector:
             elapsed_ms = (time.perf_counter() - t0) * 1000.0
 
             # Fallback -- use summary to extract tool name
-            name = getattr(self, '_last_tool_name', None)
+            name = getattr(self, "_last_tool_name", None)
             if name:
                 self.tool_wall_ms[name].append(elapsed_ms)
                 self._bucket_latency(elapsed_ms)
@@ -175,8 +183,12 @@ class MetricsCollector:
         # Latency histogram
         if self._latency_histogram:
             result["latency_histogram"] = dict(
-                sorted(self._latency_histogram.items(),
-                       key=lambda x: int(x[0].lstrip("<=").rstrip("ms").replace(">", "99999")))
+                sorted(
+                    self._latency_histogram.items(),
+                    key=lambda x: int(
+                        x[0].lstrip("<=").rstrip("ms").replace(">", "99999")
+                    ),
+                )
             )
 
         # Memory

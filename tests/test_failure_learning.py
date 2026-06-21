@@ -21,25 +21,38 @@ from tools.failure_learning import (
 
 class TestFingerprintError:
     def test_edit_file_not_found(self):
-        assert _fingerprint_error("edit_file", "String not found in file") == "not found"
+        assert (
+            _fingerprint_error("edit_file", "String not found in file") == "not found"
+        )
 
     def test_edit_file_whitespace(self):
-        assert _fingerprint_error("edit_file", "Whitespace mismatch detected") == "whitespace"
+        assert (
+            _fingerprint_error("edit_file", "Whitespace mismatch detected")
+            == "whitespace"
+        )
 
     def test_edit_file_ambiguous(self):
-        assert _fingerprint_error("edit_file", "Multiple matches appear in file") == "ambiguous"
+        assert (
+            _fingerprint_error("edit_file", "Multiple matches appear in file")
+            == "ambiguous"
+        )
 
     def test_read_file_not_found(self):
         assert _fingerprint_error("read_file", "No such file: foo.py") == "not found"
 
     def test_run_shell_timed_out(self):
-        assert _fingerprint_error("run_shell", "Command timed out after 60s") == "timed out"
+        assert (
+            _fingerprint_error("run_shell", "Command timed out after 60s")
+            == "timed out"
+        )
 
     def test_search_files_not_found(self):
         assert _fingerprint_error("search_files", "No matches found") == "not found"
 
     def test_find_symbol_not_found(self):
-        assert _fingerprint_error("find_symbol", "No match found for 'foo'") == "not found"
+        assert (
+            _fingerprint_error("find_symbol", "No match found for 'foo'") == "not found"
+        )
 
     def test_run_tests_failures(self):
         assert _fingerprint_error("run_tests", "FAILED test_something") == "failures"
@@ -54,14 +67,18 @@ class TestNormalizeArgs:
         assert _normalize_args("read_file", {}) == ""
 
     def test_skip_keys(self):
-        sig = _normalize_args("run_shell", {"command": "ls", "timeout": 60, "force": True})
+        sig = _normalize_args(
+            "run_shell", {"command": "ls", "timeout": 60, "force": True}
+        )
         d = json.loads(sig)
         assert "command" in d
         assert "timeout" not in d
         assert "force" not in d
 
     def test_truncate_long_values(self):
-        sig = _normalize_args("edit_file", {"path": "/very/long/path" * 30, "old_string": "short"})
+        sig = _normalize_args(
+            "edit_file", {"path": "/very/long/path" * 30, "old_string": "short"}
+        )
         d = json.loads(sig)
         assert len(d["path"]) <= 80
 
@@ -84,13 +101,22 @@ class TestSuggestCategory:
         assert suggest_category("edit_file whitespace mismatch") == "tool_usage"
 
     def test_error_pattern(self):
-        assert suggest_category("repeated crash on null pointer", "error: segmentation fault when calling function") == "error_pattern"
+        assert (
+            suggest_category(
+                "repeated crash on null pointer",
+                "error: segmentation fault when calling function",
+            )
+            == "error_pattern"
+        )
 
     def test_convention(self):
         assert suggest_category("naming convention for test files") == "convention"
 
     def test_dependency(self):
-        assert suggest_category("install playwright", "requires pip install") == "dependency"
+        assert (
+            suggest_category("install playwright", "requires pip install")
+            == "dependency"
+        )
 
     def test_general_fallback(self):
         assert suggest_category("random thought") == "general"
@@ -116,6 +142,7 @@ class TestFailurePatternStore:
         with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
             db_path = f.name
         from memory.memory import _close_shared_conn
+
         fps = FailurePatternStore(db_path)
         fps.init_schema()
         yield fps
@@ -133,12 +160,17 @@ class TestFailurePatternStore:
         assert pid1 == pid2
 
     def test_record_success_boosts_confidence(self, store):
-        store.record_failure("edit_file", "String not found in file",
-                             fix_strategy="Use read_file first")
-        store.record_failure("edit_file", "String not found in file",
-                             fix_strategy="Use read_file first")
+        store.record_failure(
+            "edit_file", "String not found in file", fix_strategy="Use read_file first"
+        )
+        store.record_failure(
+            "edit_file", "String not found in file", fix_strategy="Use read_file first"
+        )
         # Record success with matching args pattern so similarity is high
-        store.record_success("edit_file", {"path": "test.py", "old_string": "hello", "new_string": "world"})
+        store.record_success(
+            "edit_file",
+            {"path": "test.py", "old_string": "hello", "new_string": "world"},
+        )
         # At this point, confidence may still be low; get_relevant_patterns
         # requires confidence >= 0.3 AND failure_count >= 2.
         # With 2 failures + 1 success: (1.5)/(3+1) = 0.375. Above threshold!
@@ -157,23 +189,28 @@ class TestFailurePatternStore:
 
     def test_get_fix_strategy(self, store):
         store.record_failure(
-            "edit_file", "Whitespace mismatch detected",
-            fix_strategy="Copy exact text from read_file output"
+            "edit_file",
+            "Whitespace mismatch detected",
+            fix_strategy="Copy exact text from read_file output",
         )
         store.record_failure(
-            "edit_file", "Whitespace mismatch detected",
-            fix_strategy="Copy exact text from read_file output"
+            "edit_file",
+            "Whitespace mismatch detected",
+            fix_strategy="Copy exact text from read_file output",
         )
         store.record_failure(
-            "edit_file", "Whitespace mismatch detected",
-            fix_strategy="Copy exact text from read_file output"
+            "edit_file",
+            "Whitespace mismatch detected",
+            fix_strategy="Copy exact text from read_file output",
         )
         # With 3 failures, confidence = (0.5)/(3+1) = 0.125 -- still low
         # get_fix_strategy needs >= 0.3 threshold. Try with successes too.
         store.record_success("edit_file", {"path": "test.py"})
         store.record_success("edit_file", {"path": "test.py"})
         # Now: (2.5)/(3+2+1) = 0.417 -- above 0.3 threshold
-        fix = store.get_fix_strategy("edit_file", "Whitespace mismatch in file at line 5")
+        fix = store.get_fix_strategy(
+            "edit_file", "Whitespace mismatch in file at line 5"
+        )
         if fix is not None:
             assert "Copy" in fix or "read_file" in fix
 
@@ -189,8 +226,12 @@ class TestSelfCritique:
     def test_no_failures_no_critique(self):
         sc = SelfCritique()
         from tools import ToolResult
+
         results = [
-            ({"function": {"name": "read_file"}}, ToolResult(success=True, content="ok")),
+            (
+                {"function": {"name": "read_file"}},
+                ToolResult(success=True, content="ok"),
+            ),
         ]
         msg = sc.assess_turn_results(results, 5)
         assert msg is None
@@ -198,10 +239,20 @@ class TestSelfCritique:
     def test_cluster_critique(self):
         sc = SelfCritique()
         from tools import ToolResult
+
         results = [
-            ({"function": {"name": "edit_file"}}, ToolResult(success=False, content="not found")),
-            ({"function": {"name": "edit_file"}}, ToolResult(success=False, content="not found")),
-            ({"function": {"name": "write_file"}}, ToolResult(success=False, content="blocked")),
+            (
+                {"function": {"name": "edit_file"}},
+                ToolResult(success=False, content="not found"),
+            ),
+            (
+                {"function": {"name": "edit_file"}},
+                ToolResult(success=False, content="not found"),
+            ),
+            (
+                {"function": {"name": "write_file"}},
+                ToolResult(success=False, content="blocked"),
+            ),
         ]
         msg = sc.assess_turn_results(results, 5)
         assert msg is not None
@@ -211,10 +262,20 @@ class TestSelfCritique:
         if sc is None:
             sc = SelfCritique()
         from tools import ToolResult
+
         failures = [
-            ({"function": {"name": "edit_file"}}, ToolResult(success=False, content="not found")),
-            ({"function": {"name": "edit_file"}}, ToolResult(success=False, content="not found")),
-            ({"function": {"name": "write_file"}}, ToolResult(success=False, content="blocked")),
+            (
+                {"function": {"name": "edit_file"}},
+                ToolResult(success=False, content="not found"),
+            ),
+            (
+                {"function": {"name": "edit_file"}},
+                ToolResult(success=False, content="not found"),
+            ),
+            (
+                {"function": {"name": "write_file"}},
+                ToolResult(success=False, content="blocked"),
+            ),
         ]
         msg1 = sc.assess_turn_results(failures, 5)
         assert msg1 is not None
@@ -232,14 +293,23 @@ class TestBuildSelfLearningContext:
         fps = FailurePatternStore(db_path)
         fps.init_schema()
         fps.record_failure(
-            "edit_file", "String not found in file",
-            fix_strategy="Use read_file first to see exact text"
+            "edit_file",
+            "String not found in file",
+            fix_strategy="Use read_file first to see exact text",
         )
         fps.record_failure(
-            "edit_file", "String not found in file",
-            fix_strategy="Use read_file first to see exact text"
+            "edit_file",
+            "String not found in file",
+            fix_strategy="Use read_file first to see exact text",
         )
-        pending = [{"function": {"name": "edit_file", "arguments": '{"path":"test.py","old_string":"hello"}'}}]
+        pending = [
+            {
+                "function": {
+                    "name": "edit_file",
+                    "arguments": '{"path":"test.py","old_string":"hello"}',
+                }
+            }
+        ]
         ctx = build_self_learning_context(fps, pending)
         # May or may not return depending on confidence thresholds
         # Just verify it doesn't crash

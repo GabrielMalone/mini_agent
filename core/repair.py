@@ -96,13 +96,17 @@ def _scavenge_from_thinking(msg: dict, tool_calls: list[dict]) -> list[dict]:
                 fn_args = parsed.get("arguments", {})
                 if isinstance(fn_args, dict):
                     fn_args = json.dumps(fn_args)
-                scavenged.append({
-                    "type": "function",
-                    "function": {
-                        "name": fn_name,
-                        "arguments": fn_args if isinstance(fn_args, str) else json.dumps(fn_args),
-                    },
-                })
+                scavenged.append(
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": fn_name,
+                            "arguments": fn_args
+                            if isinstance(fn_args, str)
+                            else json.dumps(fn_args),
+                        },
+                    }
+                )
                 # Scrub the scavenged JSON from the thinking content
                 # so the model doesn't see stale tool calls in future turns
                 msg["content"] = msg["content"].replace(match.group(0), "[scavenged]")
@@ -111,6 +115,7 @@ def _scavenge_from_thinking(msg: dict, tool_calls: list[dict]) -> list[dict]:
 
     if scavenged:
         import logging
+
         _log = logging.getLogger("repair")
         _log.info(
             "scavenged_tool_calls from thinking: count=%d names=%s",
@@ -193,6 +198,7 @@ def _repair_truncated_json(tool_calls: list[dict]) -> list[dict]:
         if repaired is not None:
             fn["arguments"] = repaired
             import logging
+
             _log = logging.getLogger("repair")
             _log.debug("repaired_truncated_json: %s → %s", args_str[:60], repaired[:60])
         else:
@@ -276,12 +282,16 @@ def _detect_storm(tool_calls: list[dict]) -> list[dict]:
         return tool_calls
 
     import logging
+
     _log = logging.getLogger("repair")
     _log.warning(
         "storm_detected: %d tool calls → capped at %d.  Dropped: %s",
         len(tool_calls),
         MAX_PARALLEL_TOOL_CALLS,
-        [tc.get("function", {}).get("name", "?") for tc in tool_calls[MAX_PARALLEL_TOOL_CALLS:]],
+        [
+            tc.get("function", {}).get("name", "?")
+            for tc in tool_calls[MAX_PARALLEL_TOOL_CALLS:]
+        ],
     )
 
     return tool_calls[:MAX_PARALLEL_TOOL_CALLS]

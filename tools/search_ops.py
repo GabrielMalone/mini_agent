@@ -4,6 +4,7 @@ search_ops.py -- semantic search and web search tools for mini_agent.
 
 Tools: find_symbol, find_usages, semantic_search, web_search
 """
+
 from __future__ import annotations
 
 import json
@@ -30,27 +31,86 @@ from core.constants import SKIP_DIRS as _SKIP_DIRS
 # symbol_index -- fast workspace symbol lookup
 # ---------------------------------------------------------------------------
 
-_SYMBOL_INDEX: dict[str, list[dict]] | None = None  # name -> [{"path","line","kind"}, ...]
+_SYMBOL_INDEX: dict[str, list[dict]] | None = (
+    None  # name -> [{"path","line","kind"}, ...]
+)
 _INDEX_MAX_MTIME: float = 0.0  # max mtime across all .py files from last build
 _INDEX_LAST_PERSIST: float = 0.0  # timestamp of last disk cache write (debounce)
 
 
 # Names we never track as references (builtins, common patterns, etc.)
-_SKIP_REF_NAMES: frozenset[str] = frozenset({
-    "self", "cls", "True", "False", "None", "int", "str", "list", "dict",
-    "set", "tuple", "bool", "float", "bytes", "type", "object", "super",
-    "range", "len", "print", "isinstance", "hasattr", "getattr", "setattr",
-    "enumerate", "zip", "map", "filter", "iter", "next", "any", "all",
-    "sorted", "reversed", "min", "max", "sum", "abs", "round", "ord", "chr",
-    "open", "Exception", "ValueError", "TypeError", "KeyError", "OSError",
-    "RuntimeError", "ImportError", "AttributeError", "StopIteration",
-    "__init__", "__name__", "__main__", "__file__", "__doc__",
-    "unittest", "TestCase", "json", "os", "sys", "re", "time",
-})
+_SKIP_REF_NAMES: frozenset[str] = frozenset(
+    {
+        "self",
+        "cls",
+        "True",
+        "False",
+        "None",
+        "int",
+        "str",
+        "list",
+        "dict",
+        "set",
+        "tuple",
+        "bool",
+        "float",
+        "bytes",
+        "type",
+        "object",
+        "super",
+        "range",
+        "len",
+        "print",
+        "isinstance",
+        "hasattr",
+        "getattr",
+        "setattr",
+        "enumerate",
+        "zip",
+        "map",
+        "filter",
+        "iter",
+        "next",
+        "any",
+        "all",
+        "sorted",
+        "reversed",
+        "min",
+        "max",
+        "sum",
+        "abs",
+        "round",
+        "ord",
+        "chr",
+        "open",
+        "Exception",
+        "ValueError",
+        "TypeError",
+        "KeyError",
+        "OSError",
+        "RuntimeError",
+        "ImportError",
+        "AttributeError",
+        "StopIteration",
+        "__init__",
+        "__name__",
+        "__main__",
+        "__file__",
+        "__doc__",
+        "unittest",
+        "TestCase",
+        "json",
+        "os",
+        "sys",
+        "re",
+        "time",
+    }
+)
 
 # --- #8 Background indexing ---
 _background_index_thread: threading.Thread | None = None
 _background_index_ready: threading.Event = threading.Event()
+
 
 def _run_background_index(root: str) -> None:
     """Build symbol index in background thread, signal when ready."""
@@ -59,15 +119,16 @@ def _run_background_index(root: str) -> None:
     finally:
         _background_index_ready.set()
 
+
 def start_background_index(root: str) -> None:
     """Start background symbol indexing. Non-blocking."""
     global _background_index_thread, _background_index_ready
     _background_index_ready.clear()
     _background_index_thread = threading.Thread(
-        target=_run_background_index, args=(root,),
-        daemon=True, name="symbol-indexer"
+        target=_run_background_index, args=(root,), daemon=True, name="symbol-indexer"
     )
     _background_index_thread.start()
+
 
 def wait_background_index(timeout: float = 30.0) -> bool:
     """Wait for background index to complete. Returns True if ready."""
@@ -102,7 +163,9 @@ def build_symbol_index(root: str) -> dict[str, list[dict]]:
 
     if cache_mtime > 0.0 and _INDEX_MAX_MTIME > 0.0 and cache_mtime >= _INDEX_MAX_MTIME:
         try:
-            cached = _json.loads(open(cache_path, encoding="utf-8", errors="replace").read())
+            cached = _json.loads(
+                open(cache_path, encoding="utf-8", errors="replace").read()
+            )
             _SYMBOL_INDEX = {k: v for k, v in cached.get("symbols", {}).items()}
             _REF_INDEX = {k: v for k, v in cached.get("references", {}).items()}
             return _SYMBOL_INDEX
@@ -123,7 +186,9 @@ def build_symbol_index(root: str) -> dict[str, list[dict]]:
             if os.path.exists(cache_path):
                 cache_mtime = os.path.getmtime(cache_path)
                 if cache_mtime >= _INDEX_MAX_MTIME:
-                    cached = _json.loads(open(cache_path, encoding="utf-8", errors="replace").read())
+                    cached = _json.loads(
+                        open(cache_path, encoding="utf-8", errors="replace").read()
+                    )
                     _SYMBOL_INDEX = {k: v for k, v in cached.get("symbols", {}).items()}
                     _REF_INDEX = {k: v for k, v in cached.get("references", {}).items()}
                     return _SYMBOL_INDEX
@@ -140,7 +205,9 @@ def build_symbol_index(root: str) -> dict[str, list[dict]]:
     new_max_mtime = 0.0
 
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS and not d.startswith(".")]
+        dirnames[:] = [
+            d for d in dirnames if d not in _SKIP_DIRS and not d.startswith(".")
+        ]
         for fname in filenames:
             ext = os.path.splitext(fname)[1].lower()
             is_python = ext == ".py"
@@ -161,11 +228,13 @@ def build_symbol_index(root: str) -> dict[str, list[dict]]:
                         m = def_pat.match(line)
                         if m:
                             kind, name = m.group(1), m.group(2)
-                            symbol_idx.setdefault(name, []).append({
-                                "path": fpath,
-                                "line": lineno,
-                                "kind": kind,
-                            })
+                            symbol_idx.setdefault(name, []).append(
+                                {
+                                    "path": fpath,
+                                    "line": lineno,
+                                    "kind": kind,
+                                }
+                            )
                         # Collect all word occurrences for reference index
                         stripped = line.strip()
                         for match in word_pat.finditer(line):
@@ -186,11 +255,13 @@ def build_symbol_index(root: str) -> dict[str, list[dict]]:
     ref_idx: dict[str, list[dict]] = {}
     for word, fpath, lineno, context in _raw_refs:
         if word in known_names:
-            ref_idx.setdefault(word, []).append({
-                "path": fpath,
-                "line": lineno,
-                "context": context,
-            })
+            ref_idx.setdefault(word, []).append(
+                {
+                    "path": fpath,
+                    "line": lineno,
+                    "context": context,
+                }
+            )
 
     # Deduplicate references per file+line
     for name in ref_idx:
@@ -238,9 +309,13 @@ def _reindex_file(filepath: str, root: str) -> None:
                 m = def_pat.match(line)
                 if m:
                     kind, name = m.group(1), m.group(2)
-                    new_symbols.setdefault(name, []).append({
-                        "path": filepath, "line": lineno, "kind": kind,
-                    })
+                    new_symbols.setdefault(name, []).append(
+                        {
+                            "path": filepath,
+                            "line": lineno,
+                            "kind": kind,
+                        }
+                    )
     except (OSError, PermissionError):
         return
 
@@ -270,9 +345,13 @@ def _reindex_file(filepath: str, root: str) -> None:
                     for match in word_pat.finditer(line):
                         word = match.group(1)
                         if word in _SYMBOL_INDEX:
-                            _REF_INDEX.setdefault(word, []).append({
-                                "path": filepath, "line": lineno, "context": stripped[:120],
-                            })
+                            _REF_INDEX.setdefault(word, []).append(
+                                {
+                                    "path": filepath,
+                                    "line": lineno,
+                                    "context": stripped[:120],
+                                }
+                            )
         except (OSError, PermissionError):
             pass
 
@@ -282,6 +361,7 @@ def _reindex_file(filepath: str, root: str) -> None:
     global _INDEX_LAST_PERSIST
     _DEBOUNCE_S = 2.0
     import time as _time
+
     now = _time.time()
     if now - _INDEX_LAST_PERSIST < _DEBOUNCE_S:
         return
@@ -321,29 +401,34 @@ def _try_knowledge_graph_lookup(name: str, workspace_root: str) -> list[dict] | 
 
     # Access the internal graph dict via the module
     import core.knowledge_graph as _kg
+
     graph = _kg._GRAPH
 
     # Exact match
     if name in graph:
         entity = graph[name]
-        return [{
-            "name": entity.name,
-            "kind": entity.kind,
-            "path": entity.filepath or "",
-            "line": entity.line or 0,
-        }]
+        return [
+            {
+                "name": entity.name,
+                "kind": entity.kind,
+                "path": entity.filepath or "",
+                "line": entity.line or 0,
+            }
+        ]
 
     # Substring match (case-insensitive)
     results: list[dict] = []
     name_lower = name.lower()
     for key, entity in graph.items():
         if name_lower in key.lower():
-            results.append({
-                "name": entity.name,
-                "kind": entity.kind,
-                "path": entity.filepath or "",
-                "line": entity.line or 0,
-            })
+            results.append(
+                {
+                    "name": entity.name,
+                    "kind": entity.kind,
+                    "path": entity.filepath or "",
+                    "line": entity.line or 0,
+                }
+            )
 
     return results
 
@@ -372,7 +457,9 @@ def _find_symbol(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolRe
             )
         lines: list[str] = []
         for entry in kg_matches[:20]:
-            lines.append(f"  {entry['kind']:5s}  {entry['name']}  ->  {entry['path']}:{entry['line']}")
+            lines.append(
+                f"  {entry['kind']:5s}  {entry['name']}  ->  {entry['path']}:{entry['line']}"
+            )
         prefix = f"Found {len(kg_matches)} location(s) for '{name}':"
         return ToolResult(success=True, content=prefix + "\n" + "\n".join(lines))
 
@@ -401,7 +488,9 @@ def _find_symbol(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolRe
         for e in entries[:5]:
             lines.append(f"  {e['kind']:5s}  {sym_name}  ->  {e['path']}:{e['line']}")
 
-    prefix = f"Found {sum(len(entries) for _, entries in matches)} location(s) for '{name}':"
+    prefix = (
+        f"Found {sum(len(entries) for _, entries in matches)} location(s) for '{name}':"
+    )
     return ToolResult(success=True, content=prefix + "\n" + "\n".join(lines))
 
 
@@ -416,8 +505,10 @@ def _find_symbol_summary(args: dict) -> str:
 
 _SEMANTIC_STORE: dict[str, tuple[float, list[tuple[int, int, str, Any]]]] = {}
 _SEMANTIC_LRU: list[str] = []  # tracks access order for eviction
-_SEMANTIC_MAX_ENTRIES = 500    # per-file entries before eviction kicks in
-_SEMANTIC_MAX_MTIME: float = 0.0  # max mtime across all indexed files (separate from store)
+_SEMANTIC_MAX_ENTRIES = 500  # per-file entries before eviction kicks in
+_SEMANTIC_MAX_MTIME: float = (
+    0.0  # max mtime across all indexed files (separate from store)
+)
 _SEM_MODEL = None
 _SEM_PRELOAD_EVENT = None  # threading.Event: set when model is ready
 _SEM_PRELOAD_THREAD = None  # daemon thread reference
@@ -439,6 +530,7 @@ def _sem_save_cache(root: str) -> None:
     """
     global _SEM_CACHE_DIRTY
     import numpy as np
+
     try:
         meta: dict[str, dict] = {}
         emb_arrays: dict[str, np.ndarray] = {}
@@ -481,6 +573,7 @@ def _sem_load_cache(root: str) -> bool:
     """Try to load semantic store from disk cache. Returns True if loaded."""
     global _SEMANTIC_STORE, _SEMANTIC_MAX_MTIME, _SEMANTIC_LRU
     import numpy as np
+
     meta_path = os.path.join(root, _SEM_META_FILE)
     npz_path = os.path.join(root, _SEM_CACHE_FILE)
 
@@ -618,6 +711,7 @@ def _sem_preload() -> None:
         global _SEM_MODEL
         try:
             from sentence_transformers import SentenceTransformer
+
             _SEM_MODEL = SentenceTransformer(_SEM_MODEL_NAME)
         except Exception:
             pass  # model load failed -- _sem_get_model() will retry on demand
@@ -645,8 +739,12 @@ def _sem_get_model():
     # If a background preload is in progress, wait for it (with timeout)
     if _SEM_PRELOAD_EVENT is not None:
         import sys
-        print('  [WAIT] Embedding model still loading (preloaded at startup)...',
-              file=sys.stderr, flush=True)
+
+        print(
+            "  [WAIT] Embedding model still loading (preloaded at startup)...",
+            file=sys.stderr,
+            flush=True,
+        )
         if not _SEM_PRELOAD_EVENT.wait(timeout=_SEM_MODEL_TIMEOUT):
             raise TimeoutError(
                 f"Embedding model preload timed out after {_SEM_MODEL_TIMEOUT}s. "
@@ -658,17 +756,18 @@ def _sem_get_model():
         # Fall through to synchronous load below.
     # Fallback: synchronous load (preload was never called or failed)
     import sys
-    print('  [WAIT] Loading embedding model...',
-          file=sys.stderr, end='', flush=True)
+
+    print("  [WAIT] Loading embedding model...", file=sys.stderr, end="", flush=True)
     try:
         from sentence_transformers import SentenceTransformer
+
         _SEM_MODEL = SentenceTransformer(_SEM_MODEL_NAME)
     except Exception as e:
         raise TimeoutError(
             f"Failed to load embedding model: {e}. "
             "Check network connectivity and retry, or avoid semantic_search."
         ) from e
-    print(' done.', file=sys.stderr)
+    print(" done.", file=sys.stderr)
     return _SEM_MODEL
 
 
@@ -680,7 +779,9 @@ def _sem_chunk_py(filepath: str) -> list[tuple[int, int, str]]:
     except (OSError, PermissionError):
         return []
 
-    boundaries = [i for i, ln in enumerate(lines) if ln.strip().startswith(("def ", "class "))]
+    boundaries = [
+        i for i, ln in enumerate(lines) if ln.strip().startswith(("def ", "class "))
+    ]
     if not boundaries:
         text = "".join(lines).strip()
         return [(1, len(lines), text)] if text else []
@@ -717,7 +818,8 @@ def _sem_chunk_ts(filepath: str) -> list[tuple[int, int, str]]:
     except (OSError, PermissionError):
         return []
     boundaries = [
-        i for i, ln in enumerate(lines)
+        i
+        for i, ln in enumerate(lines)
         if _TS_FUNCTION_BOUNDARY.match(ln) or _TS_ARROW_BOUNDARY.match(ln)
     ]
     if not boundaries:
@@ -834,8 +936,7 @@ def _merge_symbol_data(
     if _SYMBOL_INDEX is not None:
         for name in list(_SYMBOL_INDEX.keys()):
             _SYMBOL_INDEX[name] = [
-                e for e in _SYMBOL_INDEX[name]
-                if e["path"] not in reindexed_files
+                e for e in _SYMBOL_INDEX[name] if e["path"] not in reindexed_files
             ]
             if not _SYMBOL_INDEX[name]:
                 del _SYMBOL_INDEX[name]
@@ -845,8 +946,7 @@ def _merge_symbol_data(
     if _REF_INDEX is not None:
         for name in list(_REF_INDEX.keys()):
             _REF_INDEX[name] = [
-                r for r in _REF_INDEX[name]
-                if r["path"] not in reindexed_files
+                r for r in _REF_INDEX[name] if r["path"] not in reindexed_files
             ]
             if not _REF_INDEX[name]:
                 del _REF_INDEX[name]
@@ -861,9 +961,13 @@ def _merge_symbol_data(
     known_names = set(_SYMBOL_INDEX.keys())
     for word, fpath, lineno, context in raw_refs:
         if word in known_names:
-            _REF_INDEX.setdefault(word, []).append({
-                "path": fpath, "line": lineno, "context": context,
-            })
+            _REF_INDEX.setdefault(word, []).append(
+                {
+                    "path": fpath,
+                    "line": lineno,
+                    "context": context,
+                }
+            )
 
     # Deduplicate references per file+line
     for name in _REF_INDEX:
@@ -886,7 +990,12 @@ def _sem_index(root: str) -> None:
     since the last build (fast no-op on repeated calls).
     """
 
-    global _SEMANTIC_MAX_MTIME, _SYMBOL_INDEX, _REF_INDEX, _SEMANTIC_LRU, _SEM_CACHE_DIRTY
+    global \
+        _SEMANTIC_MAX_MTIME, \
+        _SYMBOL_INDEX, \
+        _REF_INDEX, \
+        _SEMANTIC_LRU, \
+        _SEM_CACHE_DIRTY
     global _BM25_INDEX, _BM25_DOCUMENTS
 
     # --- Try loading from disk cache first ---
@@ -895,6 +1004,7 @@ def _sem_index(root: str) -> None:
             return  # loaded from cache, nothing to index
 
     import re as _sem_re
+
     def_pat = _sem_re.compile(r"^\s*(def|class)\s+(\w+)")
     word_pat = _sem_re.compile(r"\b(\w+)\b")
 
@@ -909,7 +1019,9 @@ def _sem_index(root: str) -> None:
     _reindexed_files: set[str] = set()  # which files were (re-)read this pass
 
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS and not d.startswith(".")]
+        dirnames[:] = [
+            d for d in dirnames if d not in _SKIP_DIRS and not d.startswith(".")
+        ]
         for fname in filenames:
             ext = os.path.splitext(fname)[1].lower()
             is_python = ext == ".py"
@@ -944,9 +1056,13 @@ def _sem_index(root: str) -> None:
                     m = def_pat.match(line)
                     if m:
                         kind, name = m.group(1), m.group(2)
-                        _symbol_entries.setdefault(name, []).append({
-                            "path": fpath, "line": lineno, "kind": kind,
-                        })
+                        _symbol_entries.setdefault(name, []).append(
+                            {
+                                "path": fpath,
+                                "line": lineno,
+                                "kind": kind,
+                            }
+                        )
                     stripped = line.strip()
                     for match in word_pat.finditer(line):
                         word = match.group(1)
@@ -968,12 +1084,17 @@ def _sem_index(root: str) -> None:
             texts = [t for _, _, t in chunks]
             # Lazy encoding: store None for embeddings; they'll be
             # encoded on-demand during search (BM25 pre-filtered).
-            _SEMANTIC_STORE[fpath] = (mtime, list(zip(
-                [s for s, e, _ in chunks],
-                [e for s, e, _ in chunks],
-                texts,
-                [None] * len(chunks),  # lazy: encode at search time
-            )))
+            _SEMANTIC_STORE[fpath] = (
+                mtime,
+                list(
+                    zip(
+                        [s for s, e, _ in chunks],
+                        [e for s, e, _ in chunks],
+                        texts,
+                        [None] * len(chunks),  # lazy: encode at search time
+                    )
+                ),
+            )
 
             # LRU eviction: if we exceed the cap, drop the oldest entry
             if fpath not in _SEMANTIC_LRU:
@@ -1015,7 +1136,9 @@ def _sem_index(root: str) -> None:
 
 
 @_register("semantic_search")
-def _semantic_search(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
+def _semantic_search(
+    args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate
+) -> ToolResult:
     """Hybrid semantic + keyword search with Weighted Reciprocal Rank Fusion.
 
     Combines vector similarity (isuruwijesiri/all-MiniLM-L6-v2-code-search-512,
@@ -1029,7 +1152,10 @@ def _semantic_search(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> To
     path = args.get("path", ".")
     safety_result = rg.check(path)
     if not safety_result.allowed:
-        return ToolResult(success=False, content=f"Search blocked by safety layer: {safety_result.reason}")
+        return ToolResult(
+            success=False,
+            content=f"Search blocked by safety layer: {safety_result.reason}",
+        )
 
     import numpy as np
 
@@ -1046,7 +1172,9 @@ def _semantic_search(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> To
             chunk_ids.append(f"{fpath}::{i}")
 
     if not metas:
-        return ToolResult(success=True, content="No indexed files found. Try search_files instead.")
+        return ToolResult(
+            success=True, content="No indexed files found. Try search_files instead."
+        )
 
     N = len(chunk_ids)
 
@@ -1120,12 +1248,9 @@ def _semantic_search(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> To
 
     # Adaptive weighting (same as before)
     _is_identifier = bool(
-        query and not any(c in query for c in " \t\n")
-        and not query[0].isupper()
+        query and not any(c in query for c in " \t\n") and not query[0].isupper()
     )
-    _has_nl_markers = bool(
-        query and (" " in query or len(query.split()) >= 2)
-    )
+    _has_nl_markers = bool(query and (" " in query or len(query.split()) >= 2))
     if _is_identifier and not _has_nl_markers:
         w_sem, w_bm25 = 0.3, 0.7
     elif _has_nl_markers:
@@ -1143,8 +1268,17 @@ def _semantic_search(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> To
         if fscore <= 0:
             continue
         fpath, start, end, text, _ = metas[idx]
-        top.append((float(fscore), fpath, start, end, text,
-                    float(vec_scores[idx]), float(bm25_scores[idx])))
+        top.append(
+            (
+                float(fscore),
+                fpath,
+                start,
+                end,
+                text,
+                float(vec_scores[idx]),
+                float(bm25_scores[idx]),
+            )
+        )
 
     if not top:
         return ToolResult(success=True, content="No matches found.")
@@ -1174,7 +1308,7 @@ def _semantic_search_bm25_only(query: str) -> ToolResult:
         return ToolResult(
             success=False,
             content="Semantic search unavailable and no BM25 index built. "
-                    "Use search_files or find_symbol instead.",
+            "Use search_files or find_symbol instead.",
         )
     results = []
     for cid in _BM25_DOCUMENTS:
@@ -1218,6 +1352,7 @@ except Exception:
 # web_search (Exa)
 # ---------------------------------------------------------------------------
 
+
 @_register("web_search")
 def _web_search(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
     query = args.get("query", "")
@@ -1233,6 +1368,7 @@ def _web_search(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolRe
 
     try:
         from exa_py import Exa
+
         exa = Exa(api_key=api_key)
         response = exa.search(
             query,
@@ -1293,14 +1429,18 @@ def _web_search_ddg(query: str, num: int = 5) -> ToolResult:
             if i < len(snippets):
                 snippet = _re.sub(r"<[^>]*>", "", snippets[i]).strip()
                 snippet = _html.unescape(snippet)
-            results.append({
-                "title": title_clean,
-                "url": href,
-                "snippet": snippet,
-            })
+            results.append(
+                {
+                    "title": title_clean,
+                    "url": href,
+                    "snippet": snippet,
+                }
+            )
 
         if not results:
-            return ToolResult(success=True, content="No results found (DuckDuckGo fallback).")
+            return ToolResult(
+                success=True, content="No results found (DuckDuckGo fallback)."
+            )
 
         lines: list[str] = ["(via DuckDuckGo fallback -- no Exa key configured)\n"]
         for i, r in enumerate(results, 1):
@@ -1311,7 +1451,9 @@ def _web_search_ddg(query: str, num: int = 5) -> ToolResult:
             lines.append("")
         return ToolResult(success=True, content="\n".join(lines).rstrip())
     except Exception as e:
-        return ToolResult(success=False, content=f"DuckDuckGo fallback search error: {e}")
+        return ToolResult(
+            success=False, content=f"DuckDuckGo fallback search error: {e}"
+        )
 
 
 @_summarize("web_search")
@@ -1364,8 +1506,11 @@ def _build_call_graph(root: str) -> None:
         _SKIP_DIRS_LIST = _SKIP_DIRS
 
         for dirpath, dirnames, filenames in os.walk(root):
-            dirnames[:] = [d for d in dirnames
-                          if d not in _SKIP_DIRS_LIST and not d.startswith(".")]
+            dirnames[:] = [
+                d
+                for d in dirnames
+                if d not in _SKIP_DIRS_LIST and not d.startswith(".")
+            ]
             for fname in filenames:
                 if not fname.endswith(".py"):
                     continue
@@ -1500,10 +1645,9 @@ def _find_callees_summary(args: dict) -> str:
     return f"find_callees({args.get('name', '?')})"
 
 
-
 def _get_ref_index(root: str) -> dict[str, list[dict]]:
     """Return the reference index, building it lazily.
-    
+
     Delegates to _get_symbol_index which builds both the symbol and
     reference indices in a single workspace walk -- no duplicate I/O.
     """
@@ -1531,6 +1675,7 @@ def _try_knowledge_graph_usages(name: str, workspace_root: str) -> list[dict] | 
         return None
 
     import core.knowledge_graph as _kg
+
     graph = _kg._GRAPH
 
     results: list[dict] = []
@@ -1541,13 +1686,15 @@ def _try_knowledge_graph_usages(name: str, workspace_root: str) -> list[dict] | 
             return
         for edge in entity.edges_in:
             if edge.kind in ("calls", "imports", "inherits"):
-                results.append({
-                    "source": edge.source,
-                    "target": edge.target,
-                    "kind": edge.kind,
-                    "file": edge.filepath or "",
-                    "line": edge.line or 0,
-                })
+                results.append(
+                    {
+                        "source": edge.source,
+                        "target": edge.target,
+                        "kind": edge.kind,
+                        "file": edge.filepath or "",
+                        "line": edge.line or 0,
+                    }
+                )
 
     # Exact match
     if name in graph:
@@ -1570,6 +1717,7 @@ def _find_usages(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolRe
     Fallback: grep-based reference index.
     """
     import re
+
     name = args.get("name", "")
     if not name:
         return ToolResult(success=False, content="Missing required parameter: 'name'.")
@@ -1587,7 +1735,9 @@ def _find_usages(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolRe
         shown = kg_usages[:30]
         lines: list[str] = [f"Found {len(kg_usages)} usage(s) of '{name}':"]
         for ref in shown:
-            lines.append(f"  {ref['kind']:8s}  {ref['source']}  ->  {ref['file']}:{ref['line']}")
+            lines.append(
+                f"  {ref['kind']:8s}  {ref['source']}  ->  {ref['file']}:{ref['line']}"
+            )
         if len(kg_usages) > 30:
             lines.append(f"  ... and {len(kg_usages) - 30} more")
         return ToolResult(success=True, content="\n".join(lines))
@@ -1616,6 +1766,7 @@ def _find_usages(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolRe
         # Fall back to grep-based search
         import subprocess
         from core.constants import SKIP_DIRS as _SKIP_DIRS
+
         try:
             cmd = ["grep", "-rn", "--include=*.py"]
             for d in _SKIP_DIRS:
@@ -1626,14 +1777,23 @@ def _find_usages(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolRe
                 lines_out = result.stdout.strip().split("\n")[:30]
                 return ToolResult(
                     success=True,
-                    content=f"Found usages of '{name}' (grep fallback):\n" + "\n".join(f"  {l}" for l in lines_out),
+                    content=f"Found usages of '{name}' (grep fallback):\n"
+                    + "\n".join(f"  {l}" for l in lines_out),
                 )
             if result.stderr.strip():
                 import sys
-                print(f"Warning: grep stderr for '{name}': {result.stderr.strip()[:200]}", file=sys.stderr)
+
+                print(
+                    f"Warning: grep stderr for '{name}': {result.stderr.strip()[:200]}",
+                    file=sys.stderr,
+                )
         except Exception as exc:
             import sys
-            print(f"Warning: find_usages grep fallback failed for '{name}': {exc}", file=sys.stderr)
+
+            print(
+                f"Warning: find_usages grep fallback failed for '{name}': {exc}",
+                file=sys.stderr,
+            )
         return ToolResult(
             success=True,
             content=f"No usages found for '{name}' in workspace.",
@@ -1644,8 +1804,8 @@ def _find_usages(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolRe
     shown = matches[:30]
     lines: list[str] = [f"Found {len(matches)} usage(s) of '{name}':"]
     for ref in shown:
-        ctx = ref.get('context', '')
-        ctx = ctx.strip().replace('\n', ' | ')[:60]
+        ctx = ref.get("context", "")
+        ctx = ctx.strip().replace("\n", " | ")[:60]
         lines.append(f"  {ref['path']}:{ref['line']}  {ctx}")
 
     if len(matches) > 30:
@@ -1663,6 +1823,7 @@ def _find_usages_summary(args: dict) -> str:
 # recall_turn -- retrieve a summary of a past turn
 # ---------------------------------------------------------------------------
 
+
 @_summarize("recall_turn")
 def _recall_turn_summary(args: dict) -> str:
     return f"recall_turn({args.get('turn', '?')})"
@@ -1672,9 +1833,11 @@ def _recall_turn_summary(args: dict) -> str:
 # Knowledge graph tools -- entity-relationship queries
 # ---------------------------------------------------------------------------
 
+
 def _ensure_knowledge_graph(root: str) -> None:
     """Build the knowledge graph lazily if not yet built."""
     from core.knowledge_graph import build_knowledge_graph
+
     build_knowledge_graph(root)
 
 
@@ -1692,13 +1855,14 @@ def _find_related(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolR
     _ensure_knowledge_graph(root)
 
     from core.knowledge_graph import find_related as _kg_find_related
+
     results = _kg_find_related(name)
 
     if not results:
         return ToolResult(
             success=True,
             content=f"No relationships found for '{name}' in the knowledge graph. "
-                    "Try find_symbol or find_callers first.",
+            "Try find_symbol or find_callers first.",
         )
 
     # Group by kind
@@ -1734,12 +1898,15 @@ def _trace_path(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolRes
     from_name = args.get("from", "")
     to_name = args.get("to", "")
     if not from_name or not to_name:
-        return ToolResult(success=False, content="Missing required parameters: 'from' and 'to'.")
+        return ToolResult(
+            success=False, content="Missing required parameters: 'from' and 'to'."
+        )
 
     root = rg.workspace_root
     _ensure_knowledge_graph(root)
 
     from core.knowledge_graph import trace_path as _kg_trace_path
+
     paths = _kg_trace_path(from_name, to_name)
 
     if not paths:
@@ -1750,7 +1917,7 @@ def _trace_path(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolRes
 
     lines: list[str] = [f"Paths from '{from_name}' to '{to_name}':"]
     for i, path in enumerate(paths[:5], 1):
-        lines.append(f"  Path {i} ({len(path)-1} hops): {' -> '.join(path)}")
+        lines.append(f"  Path {i} ({len(path) - 1} hops): {' -> '.join(path)}")
     if len(paths) > 5:
         lines.append(f"  ... and {len(paths) - 5} more paths")
 
@@ -1775,6 +1942,7 @@ def _get_subgraph(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolR
     _ensure_knowledge_graph(root)
 
     from core.knowledge_graph import get_subgraph as _kg_get_subgraph
+
     sub = _kg_get_subgraph(name, depth)
 
     if not sub["nodes"]:
@@ -1810,20 +1978,19 @@ def _get_subgraph_summary(args: dict) -> str:
 
 # ---------------------------------------------------------------------------\n# fetch_url -- fetch a web page and return its content\n# ---------------------------------------------------------------------------
 
+
 @_register("fetch_url")
 @_summarize("fetch_url")
 def _fetch_url(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
     """Fetch a URL and return its text content (truncated)."""
     import urllib.request
     import urllib.error
+
     url = args["url"]
     timeout = min(args.get("timeout", 15), 30)
     max_chars = args.get("max_chars", 10000)
     try:
-        req = urllib.request.Request(
-            url,
-            headers={"User-Agent": "mini_agent/1.0"}
-        )
+        req = urllib.request.Request(url, headers={"User-Agent": "mini_agent/1.0"})
         resp = urllib.request.urlopen(req, timeout=timeout)
         content_type = resp.headers.get("Content-Type", "")
         if "text/html" not in content_type and "text/plain" not in content_type:
@@ -1855,22 +2022,126 @@ def _fetch_url_summary(args: dict) -> str:
 # ---------------------------------------------------------------------------
 
 # Common English words that are unlikely to be code symbols
-_EXPLORE_STOP_WORDS: frozenset[str] = frozenset({
-    "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
-    "have", "has", "had", "do", "does", "did", "will", "would", "could",
-    "should", "may", "might", "shall", "can", "need", "dare", "ought",
-    "used", "to", "of", "in", "for", "on", "with", "at", "by", "from",
-    "as", "into", "through", "during", "before", "after", "above", "below",
-    "between", "under", "again", "further", "then", "once", "here",
-    "there", "when", "where", "why", "how", "all", "both", "each",
-    "every", "few", "more", "most", "other", "some", "such", "no",
-    "not", "only", "own", "same", "so", "than", "too", "very",
-    "just", "because", "but", "and", "or", "if", "while", "about",
-    "up", "out", "off", "over", "down", "its", "it", "this", "that",
-    "these", "those", "which", "what", "who", "whom", "doesnt",
-    "also", "now", "like", "get", "set", "use", "using", "make",
-    "one", "two", "see", "way", "part", "work", "find", "need",
-})
+_EXPLORE_STOP_WORDS: frozenset[str] = frozenset(
+    {
+        "the",
+        "a",
+        "an",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "being",
+        "have",
+        "has",
+        "had",
+        "do",
+        "does",
+        "did",
+        "will",
+        "would",
+        "could",
+        "should",
+        "may",
+        "might",
+        "shall",
+        "can",
+        "need",
+        "dare",
+        "ought",
+        "used",
+        "to",
+        "of",
+        "in",
+        "for",
+        "on",
+        "with",
+        "at",
+        "by",
+        "from",
+        "as",
+        "into",
+        "through",
+        "during",
+        "before",
+        "after",
+        "above",
+        "below",
+        "between",
+        "under",
+        "again",
+        "further",
+        "then",
+        "once",
+        "here",
+        "there",
+        "when",
+        "where",
+        "why",
+        "how",
+        "all",
+        "both",
+        "each",
+        "every",
+        "few",
+        "more",
+        "most",
+        "other",
+        "some",
+        "such",
+        "no",
+        "not",
+        "only",
+        "own",
+        "same",
+        "so",
+        "than",
+        "too",
+        "very",
+        "just",
+        "because",
+        "but",
+        "and",
+        "or",
+        "if",
+        "while",
+        "about",
+        "up",
+        "out",
+        "off",
+        "over",
+        "down",
+        "its",
+        "it",
+        "this",
+        "that",
+        "these",
+        "those",
+        "which",
+        "what",
+        "who",
+        "whom",
+        "doesnt",
+        "also",
+        "now",
+        "like",
+        "get",
+        "set",
+        "use",
+        "using",
+        "make",
+        "one",
+        "two",
+        "see",
+        "way",
+        "part",
+        "work",
+        "find",
+        "need",
+    }
+)
 
 
 def _explore_extract_terms(query: str) -> list[str]:
@@ -1882,13 +2153,15 @@ def _explore_extract_terms(query: str) -> list[str]:
     tokens: set[str] = set()
 
     # Preserve original compound identifiers (camelCase, PascalCase, snake_case)
-    compound = _re.compile(r'\b([a-zA-Z][a-zA-Z0-9]*(?:[A-Z][a-z]+)+|[A-Z][a-z]+(?:[A-Z][a-z]*)+)\b')
+    compound = _re.compile(
+        r"\b([a-zA-Z][a-zA-Z0-9]*(?:[A-Z][a-z]+)+|[A-Z][a-z]+(?:[A-Z][a-z]*)+)\b"
+    )
     for m in compound.finditer(query):
         t = m.group(1).lower()
         if len(t) >= 3:
             tokens.add(t)
 
-    snake = _re.compile(r'\b([a-zA-Z][a-zA-Z0-9]*(?:_[a-zA-Z0-9]+)+)\b')
+    snake = _re.compile(r"\b([a-zA-Z][a-zA-Z0-9]*(?:_[a-zA-Z0-9]+)+)\b")
     for m in snake.finditer(query):
         t = m.group(1).lower()
         if len(t) >= 3:
@@ -1896,14 +2169,14 @@ def _explore_extract_terms(query: str) -> list[str]:
 
     # Split on camelCase boundaries
     split = query
-    split = _re.sub(r'([a-z])([A-Z])', r'\1 \2', split)
-    split = _re.sub(r'([A-Z]+)([A-Z][a-z])', r'\1 \2', split)
-    split = split.replace('_', ' ').replace('.', ' ').replace('-', ' ')
+    split = _re.sub(r"([a-z])([A-Z])", r"\1 \2", split)
+    split = _re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1 \2", split)
+    split = split.replace("_", " ").replace(".", " ").replace("-", " ")
 
     for word in split.split():
         word = word.strip().lower()
         # Filter non-alpha, short words, stop words
-        word = _re.sub(r'[^a-z0-9]', '', word)
+        word = _re.sub(r"[^a-z0-9]", "", word)
         if len(word) < 3 or word in _EXPLORE_STOP_WORDS:
             continue
         tokens.add(word)
@@ -1929,7 +2202,7 @@ def _explore_extract_terms(query: str) -> list[str]:
 
     # Also keep original space-separated tokens
     for word in query.lower().split():
-        word = _re.sub(r'[^a-z0-9]', '', word)
+        word = _re.sub(r"[^a-z0-9]", "", word)
         if len(word) >= 3 and word not in _EXPLORE_STOP_WORDS:
             tokens.add(word)
 
@@ -1970,12 +2243,12 @@ def _explore_read_doc(filepath: str, line: int) -> str:
     if line < len(lines):  # line is 1-indexed def line, so lines[line] is next
         next_line = lines[line].strip()
         if next_line.startswith('"""') or next_line.startswith("'''"):
-            parts.append(next_line.strip('"\' \t'))
+            parts.append(next_line.strip("\"' \t"))
             if next_line.count('"""') < 2 and next_line.count("'''") < 2:
                 j = line + 1
                 while j < len(lines):
                     doc_line = lines[j].strip()
-                    parts.append(doc_line.strip('"\' \t'))
+                    parts.append(doc_line.strip("\"' \t"))
                     if '"""' in doc_line or "'''" in doc_line:
                         break
                     j += 1
@@ -1983,7 +2256,9 @@ def _explore_read_doc(filepath: str, line: int) -> str:
     return " ".join(p for p in parts if p)
 
 
-def _explore_score_symbol(name: str, kind: str, filepath: str, terms: list[str], line: int = 0) -> int:
+def _explore_score_symbol(
+    name: str, kind: str, filepath: str, terms: list[str], line: int = 0
+) -> int:
     """Score a symbol against search terms. Higher = more relevant."""
     name_lower = name.lower()
     score = 0
@@ -2037,7 +2312,9 @@ def _explore_rank_symbols(
             if key in seen:
                 continue
             seen.add(key)
-            score = _explore_score_symbol(name, entry.get("kind", ""), entry["path"], terms, entry.get("line", 0))
+            score = _explore_score_symbol(
+                name, entry.get("kind", ""), entry["path"], terms, entry.get("line", 0)
+            )
             if score > 0:
                 scored.append((score, name, entry))
 
@@ -2253,7 +2530,7 @@ def _explore_build_output(
 
             # If we're cutting between chunks, add a separator
             if source_chunks:
-                source_chunks.append(f"  ... (gap) ...")
+                source_chunks.append("  ... (gap) ...")
 
             chunk_lines: list[str] = []
             for i in range(ctx_start, ctx_end):
@@ -2293,7 +2570,9 @@ def _explore_build_output(
                 section = section[:remaining] + "\n... (output truncated)"
                 sections.append(section)
             else:
-                sections.append(f"\n### ... ({len(rest_files) + len(selected_files) - len(sections)} more files not shown)")
+                sections.append(
+                    f"\n### ... ({len(rest_files) + len(selected_files) - len(sections)} more files not shown)"
+                )
             break
 
         sections.append(section)
@@ -2385,7 +2664,7 @@ def _explore(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult
                 for term in terms:
                     # check if they share a 3-char substring
                     for i in range(len(term) - 2):
-                        if term[i:i+3] in name_lower:
+                        if term[i : i + 3] in name_lower:
                             for e in entries:
                                 ranked.append((name, e))
                             break

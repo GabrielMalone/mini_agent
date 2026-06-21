@@ -15,6 +15,7 @@ from core.context_inject import (
 # _tool_call_key tests
 # ---------------------------------------------------------------------------
 
+
 class TestToolCallKey:
     """Tests for the _tool_call_key function."""
 
@@ -54,6 +55,7 @@ class TestToolCallKey:
 # ---------------------------------------------------------------------------
 # _check_circuit tests
 # ---------------------------------------------------------------------------
+
 
 class TestCheckCircuit:
     """Tests for the _check_circuit function."""
@@ -96,14 +98,18 @@ class TestCheckCircuit:
 # _compress_stale_tool_results tests
 # ---------------------------------------------------------------------------
 
+
 class TestCompressStaleToolResults:
     """Tests for _compress_stale_tool_results."""
 
     def test_compresses_old_multi_line_tool_result(self):
         import json
+
         # Real tool results are JSON-wrapped: {"content": "...", "success": true}
         inner = "line1\nline2\nline3\nline4\nline5\nline6\nline7"
-        msgs = [{"role": "tool", "content": json.dumps({"content": inner, "success": True})}]
+        msgs = [
+            {"role": "tool", "content": json.dumps({"content": inner, "success": True})}
+        ]
         # Pad with enough messages to push tool result beyond keep_recent (12)
         padding = [{"role": "user", "content": f"msg {i}"} for i in range(14)]
         msgs = msgs + padding
@@ -114,6 +120,7 @@ class TestCompressStaleToolResults:
 
     def test_skips_recent_tool_results(self):
         import json
+
         inner = "line1\nline2\nline3\nline4\nline5\nline6\nline7"
         msgs = [{"role": "user", "content": "a"}] * 5 + [
             {"role": "tool", "content": json.dumps({"content": inner, "success": True})}
@@ -125,8 +132,14 @@ class TestCompressStaleToolResults:
 
     def test_skips_already_compressed(self):
         import json
+
         # Content that is already short enough -- won't be re-compressed
-        msgs = [{"role": "tool", "content": json.dumps({"content": "line1\nline2", "success": True})}]
+        msgs = [
+            {
+                "role": "tool",
+                "content": json.dumps({"content": "line1\nline2", "success": True}),
+            }
+        ]
         padding = [{"role": "user", "content": f"msg {i}"} for i in range(20)]
         msgs = msgs + padding
         original = msgs[0]["content"]
@@ -135,7 +148,13 @@ class TestCompressStaleToolResults:
 
     def test_skips_single_line_results(self):
         import json
-        msgs = [{"role": "tool", "content": json.dumps({"content": "single line only", "success": True})}]
+
+        msgs = [
+            {
+                "role": "tool",
+                "content": json.dumps({"content": "single line only", "success": True}),
+            }
+        ]
         padding = [{"role": "user", "content": f"msg {i}"} for i in range(20)]
         msgs = msgs + padding
         _compress_stale_tool_results(msgs)
@@ -152,7 +171,18 @@ class TestCompressStaleToolResults:
 
     def test_skips_non_tool_messages(self):
         import json
-        msgs = [{"role": "assistant", "content": json.dumps({"content": "hello\nworld\nfoo\nbar\nbaz\nqux\nquux", "success": True})}]
+
+        msgs = [
+            {
+                "role": "assistant",
+                "content": json.dumps(
+                    {
+                        "content": "hello\nworld\nfoo\nbar\nbaz\nqux\nquux",
+                        "success": True,
+                    }
+                ),
+            }
+        ]
         padding = [{"role": "user", "content": f"msg {i}"} for i in range(20)]
         msgs = msgs + padding
         _compress_stale_tool_results(msgs)
@@ -165,23 +195,31 @@ class TestCompressStaleToolResults:
 # _save_turn_summary tests
 # ---------------------------------------------------------------------------
 
+
 class TestSaveTurnSummary:
     """Tests for _save_turn_summary."""
 
     def test_basic_save(self):
         # We need _TOOL_CONTEXT to be available
         from tools import _TOOL_CONTEXT
+
         _TOOL_CONTEXT._turn_history = {}
-        if hasattr(_TOOL_CONTEXT, '_min_turn'):
+        if hasattr(_TOOL_CONTEXT, "_min_turn"):
             del _TOOL_CONTEXT._min_turn
 
         from tools import ToolResult
-        msg = {"content": "I will edit the file.", "tool_calls": [
-            {"function": {"name": "edit_file", "arguments": '{"path": "x"}'}}
-        ]}
+
+        msg = {
+            "content": "I will edit the file.",
+            "tool_calls": [
+                {"function": {"name": "edit_file", "arguments": '{"path": "x"}'}}
+            ],
+        }
         deferred = [
-            ({"function": {"name": "edit_file", "arguments": '{}'}},
-             ToolResult(success=True, content="File edited successfully."))
+            (
+                {"function": {"name": "edit_file", "arguments": "{}"}},
+                ToolResult(success=True, content="File edited successfully."),
+            )
         ]
         _save_turn_summary(turn=1, msg=msg, deferred_results=deferred, messages=[])
 
@@ -192,8 +230,9 @@ class TestSaveTurnSummary:
 
     def test_truncates_long_assistant_content(self):
         from tools import _TOOL_CONTEXT
+
         _TOOL_CONTEXT._turn_history = {}
-        if hasattr(_TOOL_CONTEXT, '_min_turn'):
+        if hasattr(_TOOL_CONTEXT, "_min_turn"):
             del _TOOL_CONTEXT._min_turn
 
         msg = {"content": "x" * 300, "tool_calls": []}
@@ -204,8 +243,9 @@ class TestSaveTurnSummary:
 
     def test_no_tool_calls_no_content(self):
         from tools import _TOOL_CONTEXT
+
         _TOOL_CONTEXT._turn_history = {}
-        if hasattr(_TOOL_CONTEXT, '_min_turn'):
+        if hasattr(_TOOL_CONTEXT, "_min_turn"):
             del _TOOL_CONTEXT._min_turn
 
         msg = {"content": "", "tool_calls": []}

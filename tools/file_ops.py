@@ -7,6 +7,7 @@ Heavy lifting delegated to:
     _file_utils.py  -- Unicode normalisation, backups, cache, read helpers
     _edit_ops.py    -- edit_file / edit_lines with fuzzy matching
 """
+
 from __future__ import annotations
 
 import os
@@ -19,10 +20,6 @@ from tools import _register, _summarize, clear_tool_cache
 
 # Shared utilities (triggers @_register for nothing; just helpers)
 from tools._file_utils import (
-    _BACKUPS,
-    _line_hash,
-    _compute_line_hashes,
-    _read_file_windows_worker,
     _read_file_direct,
     _validate_python_syntax,
     _auto_advance_plan,
@@ -32,7 +29,6 @@ from tools._file_utils import (
     _FILE_CACHE_MAX,
     _DEFAULT_READ_LINES,
     _ABSOLUTE_MAX_LINES,
-    _current_agent_id,
 )
 
 from core.anchor_manager import (
@@ -66,7 +62,10 @@ def _read_file(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResu
     paths = args.get("paths", None)
     if paths is not None:
         if not isinstance(paths, list) or len(paths) == 0:
-            return ToolResult(success=False, content="'paths' must be a non-empty array of file paths.")
+            return ToolResult(
+                success=False,
+                content="'paths' must be a non-empty array of file paths.",
+            )
         results: list[str] = []
         for p in paths:
             single_args = {**args, "path": p}
@@ -98,7 +97,13 @@ def _read_file(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResu
     include_anchors = args.get("include_anchors", False)
 
     # Cross-turn cache: if file mtime hasn't changed and no special formatting
-    if offset == 0 and limit == _DEFAULT_READ_LINES and not line_numbers and not hash_lines and not include_anchors:
+    if (
+        offset == 0
+        and limit == _DEFAULT_READ_LINES
+        and not line_numbers
+        and not hash_lines
+        and not include_anchors
+    ):
         try:
             current_mtime = os.path.getmtime(resolved)
             if resolved in _FILE_CACHE:
@@ -109,7 +114,10 @@ def _read_file(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResu
             pass  # fall through to normal read on stat error
 
     result = _read_file_direct(
-        resolved, offset, limit, line_numbers,
+        resolved,
+        offset,
+        limit,
+        line_numbers,
         hash_lines=hash_lines,
         include_anchors=include_anchors,
     )
@@ -135,7 +143,7 @@ def _read_file(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResu
                 sliced = raw_lines[start:end]
                 sliced_anchors = anchors[start:end]
                 formatted = format_lines_for_model(sliced, sliced_anchors, reveal=True)
-                full_content = f"[File Hash: {fhash}]\n[Lines {start+1}-{end} of {len(raw_lines)}]\n{formatted}"
+                full_content = f"[File Hash: {fhash}]\n[Lines {start + 1}-{end} of {len(raw_lines)}]\n{formatted}"
             else:
                 formatted = format_lines_for_model(raw_lines, anchors, reveal=True)
                 full_content = f"[File Hash: {fhash}]\n{formatted}"
@@ -147,7 +155,9 @@ def _read_file(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResu
         if not hash_lines and not line_numbers:
             try:
                 fhash = anchor_content_hash(full_content)
-                if not full_content.startswith("[File Hash:") and not full_content.startswith("[Lines"):
+                if not full_content.startswith(
+                    "[File Hash:"
+                ) and not full_content.startswith("[Lines"):
                     full_content = f"[File Hash: {fhash}]\n{full_content}"
             except Exception:
                 pass
@@ -192,7 +202,6 @@ def _read_file_summary(args: dict) -> str:
     return f"read_file({path})"
 
 
-
 # ---------------------------------------------------------------------------
 # write_file
 # ---------------------------------------------------------------------------
@@ -200,6 +209,7 @@ def _read_file_summary(args: dict) -> str:
 # ---------------------------------------------------------------------------
 # write_file
 # ---------------------------------------------------------------------------
+
 
 @_register("write_file")
 def _write_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
@@ -218,7 +228,11 @@ def _write_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolRes
     # .py files that haven't been read_file'd this session, unless
     # the file doesn't exist yet (new file creation is allowed).
     _resolved = safety_result.resolved_path
-    if _resolved.endswith(".py") and os.path.isfile(_resolved) and _resolved not in _READ_FILES:
+    if (
+        _resolved.endswith(".py")
+        and os.path.isfile(_resolved)
+        and _resolved not in _READ_FILES
+    ):
         return ToolResult(
             success=False,
             content=(
@@ -246,7 +260,9 @@ def _write_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolRes
             except (FileNotFoundError, SyntaxError):
                 pass  # No existing file, or existing content isn't valid Python
             else:
-                syntax_error = _validate_python_syntax(content, safety_result.resolved_path)
+                syntax_error = _validate_python_syntax(
+                    content, safety_result.resolved_path
+                )
         if syntax_error:
             return ToolResult(
                 success=False,
@@ -258,6 +274,7 @@ def _write_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolRes
         with open(safety_result.resolved_path, "w", encoding="utf-8") as f:
             f.write(content)
         from tools import add_modified_file
+
         add_modified_file(safety_result.resolved_path)
         clear_tool_cache()
         # Invalidate cross-turn file cache
@@ -268,10 +285,12 @@ def _write_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolRes
         # Keep symbol index fresh for newly written .py files
         if path.endswith(".py"):
             from tools.search_ops import _reindex_file
+
             _reindex_file(safety_result.resolved_path, wg.workspace_root)
         # Keep knowledge graph fresh
         try:
             from core.knowledge_graph import invalidate_file
+
             invalidate_file(safety_result.resolved_path, wg.workspace_root)
         except Exception:
             pass  # Non-critical: graph invalidation is best-effort
@@ -309,12 +328,13 @@ def _write_file_summary(args: dict) -> str:
         size = f"{line_count} lines, {byte_count}B"
     else:
         size = f"{byte_count}B"
-    return f"write_file({path}, {size}) \"{first_line}{truncated_first}{has_more_lines}\""
+    return f'write_file({path}, {size}) "{first_line}{truncated_first}{has_more_lines}"'
 
 
 # ---------------------------------------------------------------------------
 # list_directory
 # ---------------------------------------------------------------------------
+
 
 @_register("list_directory")
 def _list_directory(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
@@ -337,7 +357,9 @@ def _list_directory(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> Too
             content = f"{safety_result.resolved_path}\n" + "\n".join(rows)
         return ToolResult(success=True, content=content)
     except Exception as e:
-        return ToolResult(success=False, content=f"Error listing '{safety_result.resolved_path}': {e}")
+        return ToolResult(
+            success=False, content=f"Error listing '{safety_result.resolved_path}': {e}"
+        )
 
 
 @_summarize("list_directory")
@@ -348,6 +370,7 @@ def _list_directory_summary(args: dict) -> str:
 # ---------------------------------------------------------------------------
 # file_info
 # ---------------------------------------------------------------------------
+
 
 @_register("file_info")
 def _file_info(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
@@ -398,8 +421,6 @@ def _file_info_summary(args: dict) -> str:
     return f"file_info({args.get('path', '?')})"
 
 
-
-
 @_register("init")
 @_summarize("init")
 def _init_rules(args: dict, _wg, read_gate: ReadSafetyGate) -> ToolResult:
@@ -408,24 +429,40 @@ def _init_rules(args: dict, _wg, read_gate: ReadSafetyGate) -> ToolResult:
     try:
         import subprocess
         import time
+
         workspace = read_gate.workspace_root
         rules_path = os.path.join(workspace, ".mini_agent.rules")
         toml_path = os.path.join(workspace, ".mini_agent.toml")
         created: list[str] = []
-        knowledge: list[tuple[str, str, str, int]] = []  # (summary, category, detail, importance)
+        knowledge: list[
+            tuple[str, str, str, int]
+        ] = []  # (summary, category, detail, importance)
 
         # --- Recursive scan for Python files ---
         py_files_all: list[str] = []
         test_files: list[str] = []
         for root, dirs, files in os.walk(workspace):
             # Skip hidden dirs, venvs, node_modules, __pycache__
-            dirs[:] = [d for d in dirs if not d.startswith('.') and d not in
-                       ('node_modules', 'venv', '.venv', '__pycache__', 'dist', 'build', '.git')]
+            dirs[:] = [
+                d
+                for d in dirs
+                if not d.startswith(".")
+                and d
+                not in (
+                    "node_modules",
+                    "venv",
+                    ".venv",
+                    "__pycache__",
+                    "dist",
+                    "build",
+                    ".git",
+                )
+            ]
             for f in files:
-                if f.endswith('.py'):
+                if f.endswith(".py"):
                     full = os.path.join(root, f)
                     py_files_all.append(full)
-                    if f.startswith('test_') or f.endswith('_test.py'):
+                    if f.startswith("test_") or f.endswith("_test.py"):
                         test_files.append(full)
 
         py_files = sorted(py_files_all)
@@ -434,28 +471,33 @@ def _init_rules(args: dict, _wg, read_gate: ReadSafetyGate) -> ToolResult:
         rules = [
             f"# Auto-generated by /init on {time.strftime('%Y-%m-%d')}",
             f"# Workspace: {workspace}",
-            "", "## Code Style",
+            "",
+            "## Code Style",
             "- Use type hints on all public functions.",
             "- Prefer dataclasses for structured data.",
             "- No magic numbers; use named constants.",
             "- Keep modules small and single-purpose.",
-            "", "## Testing",
+            "",
+            "## Testing",
             "- Run tests with: python -m pytest -q",
-            "", "## Module Map",
+            "",
+            "## Module Map",
         ]
         for pf in py_files[:25]:
             rules.append(f"  {os.path.basename(pf)}  # auto-detected")
         with open(rules_path, "w", encoding="utf-8") as f:
             f.write("\n".join(rules))
-        created.append(f".mini_agent.rules ({len(rules)} lines, {len(py_files)} modules)")
+        created.append(
+            f".mini_agent.rules ({len(rules)} lines, {len(py_files)} modules)"
+        )
 
         # --- .mini_agent.toml (if missing) ---
         if not os.path.isfile(toml_path):
             toml = [
-                "# Auto-generated by /init on " + time.strftime('%Y-%m-%d'),
+                "# Auto-generated by /init on " + time.strftime("%Y-%m-%d"),
                 "",
                 "[agent]",
-                "# model = \"deepseek-v4-pro\"",
+                '# model = "deepseek-v4-pro"',
                 "# max_messages = 500",
                 "# max_tokens = 200000",
                 "# stream = false",
@@ -471,88 +513,138 @@ def _init_rules(args: dict, _wg, read_gate: ReadSafetyGate) -> ToolResult:
         # --- Auto-detect workspace learnings for project_knowledge ---
         # 1. Module count
         if py_files:
-            knowledge.append((
-                f"Workspace has {len(py_files)} Python module(s)",
-                "workspace", f"Total .py files: {len(py_files)}. Test files: {len(test_files)}.",
-                2,
-            ))
+            knowledge.append(
+                (
+                    f"Workspace has {len(py_files)} Python module(s)",
+                    "workspace",
+                    f"Total .py files: {len(py_files)}. Test files: {len(test_files)}.",
+                    2,
+                )
+            )
         if test_files:
-            knowledge.append((
-                f"{len(test_files)} test file(s) detected",
-                "testing", f"Test files: {', '.join(os.path.basename(t) for t in test_files[:10])}.",
-                3,
-            ))
+            knowledge.append(
+                (
+                    f"{len(test_files)} test file(s) detected",
+                    "testing",
+                    f"Test files: {', '.join(os.path.basename(t) for t in test_files[:10])}.",
+                    3,
+                )
+            )
 
         # 2. Import-based framework detection (sample first 20 files)
         frameworks: dict[str, str] = {}
         known_frameworks = {
-            'fastapi': 'web', 'flask': 'web', 'django': 'web', 'starlette': 'web',
-            'pytest': 'testing', 'unittest': 'testing',
-            'torch': 'ml', 'tensorflow': 'ml', 'jax': 'ml', 'transformers': 'ml',
-            'pandas': 'data', 'numpy': 'data', 'polars': 'data',
-            'click': 'cli', 'typer': 'cli', 'argparse': 'cli',
-            'sqlalchemy': 'database', 'sqlite3': 'database',
-            'pydantic': 'validation', 'dataclasses': 'data',
-            'rich': 'ui', 'textual': 'ui',
+            "fastapi": "web",
+            "flask": "web",
+            "django": "web",
+            "starlette": "web",
+            "pytest": "testing",
+            "unittest": "testing",
+            "torch": "ml",
+            "tensorflow": "ml",
+            "jax": "ml",
+            "transformers": "ml",
+            "pandas": "data",
+            "numpy": "data",
+            "polars": "data",
+            "click": "cli",
+            "typer": "cli",
+            "argparse": "cli",
+            "sqlalchemy": "database",
+            "sqlite3": "database",
+            "pydantic": "validation",
+            "dataclasses": "data",
+            "rich": "ui",
+            "textual": "ui",
         }
-        sample = py_files[:min(20, len(py_files))]
+        sample = py_files[: min(20, len(py_files))]
         for pf in sample:
             try:
                 with open(pf, encoding="utf-8", errors="replace") as f:
                     content = f.read(4096)
-                for line in content.split('\n')[:80]:
+                for line in content.split("\n")[:80]:
                     line_stripped = line.strip()
-                    if line_stripped.startswith(('import ', 'from ')):
+                    if line_stripped.startswith(("import ", "from ")):
                         for kw, cat in known_frameworks.items():
                             if kw in line_stripped and kw not in frameworks:
                                 frameworks[kw] = cat
             except Exception:
                 pass
         for framework, cat in sorted(frameworks.items()):
-            knowledge.append((
-                f"Uses {framework} ({cat})",
-                "dependencies", f"Detected import of {framework} in workspace source.",
-                2,
-            ))
+            knowledge.append(
+                (
+                    f"Uses {framework} ({cat})",
+                    "dependencies",
+                    f"Detected import of {framework} in workspace source.",
+                    2,
+                )
+            )
 
         # 3. Git repo detection
         if os.path.isdir(os.path.join(workspace, ".git")):
             try:
                 result = subprocess.run(
                     ["git", "branch", "--show-current"],
-                    cwd=workspace, capture_output=True, text=True, timeout=3,
+                    cwd=workspace,
+                    capture_output=True,
+                    text=True,
+                    timeout=3,
                 )
                 branch = result.stdout.strip()
                 git_info = f"branch: {branch}" if branch else "git repo detected"
             except Exception:
                 git_info = "git repo detected"
-            knowledge.append((
-                f"Git repository: {git_info}",
-                "workspace", "Project is version-controlled with git.",
-                2,
-            ))
+            knowledge.append(
+                (
+                    f"Git repository: {git_info}",
+                    "workspace",
+                    "Project is version-controlled with git.",
+                    2,
+                )
+            )
 
         # 4. Language detection (look for non-Python files)
         other_exts: set[str] = set()
         for root, dirs, files in os.walk(workspace):
-            dirs[:] = [d for d in dirs if not d.startswith('.') and d not in
-                       ('node_modules', 'venv', '.venv', '__pycache__', 'dist', 'build', '.git')]
+            dirs[:] = [
+                d
+                for d in dirs
+                if not d.startswith(".")
+                and d
+                not in (
+                    "node_modules",
+                    "venv",
+                    ".venv",
+                    "__pycache__",
+                    "dist",
+                    "build",
+                    ".git",
+                )
+            ]
             for f in files:
                 _, ext = os.path.splitext(f)
-                if ext and ext != '.py' and ext not in ('.pyc', '.pyo', '.pyd', '.so', '.dylib'):
+                if (
+                    ext
+                    and ext != ".py"
+                    and ext not in (".pyc", ".pyo", ".pyd", ".so", ".dylib")
+                ):
                     other_exts.add(ext)
             if len(other_exts) >= 10:
                 break
         if other_exts:
-            knowledge.append((
-                f"Multi-language: {', '.join(sorted(other_exts)[:10])}",
-                "workspace", f"Non-Python file types detected: {', '.join(sorted(other_exts))}.",
-                1,
-            ))
+            knowledge.append(
+                (
+                    f"Multi-language: {', '.join(sorted(other_exts)[:10])}",
+                    "workspace",
+                    f"Non-Python file types detected: {', '.join(sorted(other_exts))}.",
+                    1,
+                )
+            )
 
         # --- Store knowledge to project_knowledge table ---
         from tools import _TOOL_CONTEXT
-        memory_store = getattr(_TOOL_CONTEXT, '_memory_store', None)
+
+        memory_store = getattr(_TOOL_CONTEXT, "_memory_store", None)
         if memory_store and knowledge:
             stored = 0
             for summary, category, detail, importance in knowledge:
@@ -564,7 +656,8 @@ def _init_rules(args: dict, _wg, read_gate: ReadSafetyGate) -> ToolResult:
                 stored += 1
             created.append(f"{stored} project learnings")
 
-        return ToolResult(success=True,
-            content=f"Initialized workspace: {', '.join(created)}.")
+        return ToolResult(
+            success=True, content=f"Initialized workspace: {', '.join(created)}."
+        )
     except Exception as e:
         return ToolResult(success=False, content=f"/init failed: {e}")

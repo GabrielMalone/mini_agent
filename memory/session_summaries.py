@@ -28,7 +28,6 @@ import json
 import sqlite3
 import time
 import warnings
-from typing import Optional
 
 SESSION_SUMMARIES_DDL = """
 CREATE TABLE IF NOT EXISTS session_summaries (
@@ -56,11 +55,22 @@ CREATE INDEX IF NOT EXISTS idx_session_summaries_project  ON session_summaries(p
 
 class SessionSummary:
     """A single session summary."""
+
     __slots__ = (
-        "id", "session_id", "project", "prompt_number",
-        "request", "investigated", "learned", "completed", "next_steps",
-        "files_read", "files_edited", "notes",
-        "created_at", "created_at_epoch",
+        "id",
+        "session_id",
+        "project",
+        "prompt_number",
+        "request",
+        "investigated",
+        "learned",
+        "completed",
+        "next_steps",
+        "files_read",
+        "files_edited",
+        "notes",
+        "created_at",
+        "created_at_epoch",
     )
 
     def __init__(
@@ -117,10 +127,20 @@ class SessionSummary:
     @classmethod
     def from_row(cls, row: tuple) -> "SessionSummary":
         (
-            id_, session_id, project, prompt_number,
-            request, investigated, learned, completed, next_steps,
-            files_read_json, files_edited_json, notes,
-            created_at, created_at_epoch,
+            id_,
+            session_id,
+            project,
+            prompt_number,
+            request,
+            investigated,
+            learned,
+            completed,
+            next_steps,
+            files_read_json,
+            files_edited_json,
+            notes,
+            created_at,
+            created_at_epoch,
         ) = row
         return cls(
             id=id_,

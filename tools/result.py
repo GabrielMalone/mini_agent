@@ -103,9 +103,7 @@ class ToolResult:
         )
 
     @classmethod
-    def not_found_error(
-        cls, content: str, *, hint: str = ""
-    ) -> "ToolResult":
+    def not_found_error(cls, content: str, *, hint: str = "") -> "ToolResult":
         """Build a not-found result (file, symbol, resource missing)."""
         return cls(
             success=False,
@@ -144,9 +142,7 @@ class ToolResult:
         )
 
     @classmethod
-    def permanent_error(
-        cls, content: str, *, hint: str = ""
-    ) -> "ToolResult":
+    def permanent_error(cls, content: str, *, hint: str = "") -> "ToolResult":
         """Build a permanent-error result (unrecoverable)."""
         return cls(
             success=False,
@@ -157,9 +153,7 @@ class ToolResult:
         )
 
     @classmethod
-    def authorization_error(
-        cls, content: str, *, hint: str = ""
-    ) -> "ToolResult":
+    def authorization_error(cls, content: str, *, hint: str = "") -> "ToolResult":
         """Build an authorization-error result (permissions / safety gate)."""
         return cls(
             success=False,

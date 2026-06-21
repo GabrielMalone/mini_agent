@@ -13,7 +13,6 @@ import re
 import threading
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
-from typing import Any
 
 # ---------------------------------------------------------------------------
 # Data structures
@@ -23,9 +22,10 @@ from typing import Any
 @dataclass
 class Edge:
     """A typed directed edge between two entities."""
-    source: str       # source entity name
-    target: str       # target entity name
-    kind: str         # "calls", "imports", "inherits", "defines"
+
+    source: str  # source entity name
+    target: str  # target entity name
+    kind: str  # "calls", "imports", "inherits", "defines"
     filepath: str | None = None
     line: int | None = None
 
@@ -33,8 +33,9 @@ class Edge:
 @dataclass
 class Entity:
     """A code entity (function, class, module)."""
+
     name: str
-    kind: str         # "def", "class", "module"
+    kind: str  # "def", "class", "module"
     filepath: str | None = None
     line: int | None = None
     edges_out: list[Edge] = field(default_factory=list)
@@ -45,7 +46,7 @@ class Entity:
 # Graph store
 # ---------------------------------------------------------------------------
 
-_GRAPH: dict[str, Entity] = {}       # name -> Entity
+_GRAPH: dict[str, Entity] = {}  # name -> Entity
 _GRAPH_BUILT = False
 _GRAPH_LOCK = threading.Lock()
 _GRAPH_WORKSPACE: str = ""
@@ -53,20 +54,67 @@ _GRAPH_WORKSPACE: str = ""
 from .constants import SKIP_DIRS as _SKIP_DIRS  # noqa: E402  — canonical skip-dirs set
 
 # Names we skip in call edges
-_SKIP_CALL_NAMES: frozenset[str] = frozenset({
-    "self", "cls", "True", "False", "None", "print", "len", "range",
-    "int", "str", "list", "dict", "set", "tuple", "bool", "float",
-    "type", "isinstance", "hasattr", "getattr", "setattr", "enumerate",
-    "zip", "map", "filter", "sorted", "reversed", "min", "max", "sum",
-    "abs", "open", "super", "any", "all", "iter", "next", "ord", "chr",
-    "round", "Exception", "ValueError", "TypeError", "KeyError",
-    "__init__", "__name__", "__main__", "__file__", "__doc__",
-})
+_SKIP_CALL_NAMES: frozenset[str] = frozenset(
+    {
+        "self",
+        "cls",
+        "True",
+        "False",
+        "None",
+        "print",
+        "len",
+        "range",
+        "int",
+        "str",
+        "list",
+        "dict",
+        "set",
+        "tuple",
+        "bool",
+        "float",
+        "type",
+        "isinstance",
+        "hasattr",
+        "getattr",
+        "setattr",
+        "enumerate",
+        "zip",
+        "map",
+        "filter",
+        "sorted",
+        "reversed",
+        "min",
+        "max",
+        "sum",
+        "abs",
+        "open",
+        "super",
+        "any",
+        "all",
+        "iter",
+        "next",
+        "ord",
+        "chr",
+        "round",
+        "Exception",
+        "ValueError",
+        "TypeError",
+        "KeyError",
+        "__init__",
+        "__name__",
+        "__main__",
+        "__file__",
+        "__doc__",
+    }
+)
 
 
 def _add_edge(
-    source: str, target: str, kind: str,
-    filepath: str | None = None, line: int | None = None,
+    source: str,
+    target: str,
+    kind: str,
+    filepath: str | None = None,
+    line: int | None = None,
 ) -> None:
     """Add a typed edge between two entities, creating nodes as needed."""
     for name in (source, target):
@@ -93,11 +141,15 @@ def invalidate_file(filepath: str, root: str | None = None) -> bool:
 
     # Resolve absolute path
     if root:
-        abs_path = os.path.join(root, filepath) if not os.path.isabs(filepath) else filepath
+        abs_path = (
+            os.path.join(root, filepath) if not os.path.isabs(filepath) else filepath
+        )
     else:
         abs_path = os.path.abspath(filepath)
 
-    rel_path = os.path.relpath(abs_path, _GRAPH_WORKSPACE) if _GRAPH_WORKSPACE else filepath
+    rel_path = (
+        os.path.relpath(abs_path, _GRAPH_WORKSPACE) if _GRAPH_WORKSPACE else filepath
+    )
 
     ext = os.path.splitext(filepath)[1].lower()
     if ext not in (".py", ".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs"):
@@ -106,7 +158,7 @@ def invalidate_file(filepath: str, root: str | None = None) -> bool:
     # Build module name
     mod_name = rel_path.replace("/", ".").replace("\\\\", ".")
     if mod_name.endswith(ext):
-        mod_name = mod_name[:-len(ext)]
+        mod_name = mod_name[: -len(ext)]
 
     with _GRAPH_LOCK:
         # --- Remove entities belonging to this file ---
@@ -125,12 +177,10 @@ def invalidate_file(filepath: str, root: str | None = None) -> bool:
         # --- Clean up dangling edges in remaining entities ---
         for entity in _GRAPH.values():
             entity.edges_out = [
-                e for e in entity.edges_out
-                if e.target not in removed_names
+                e for e in entity.edges_out if e.target not in removed_names
             ]
             entity.edges_in = [
-                e for e in entity.edges_in
-                if e.source not in removed_names
+                e for e in entity.edges_in if e.source not in removed_names
             ]
 
         # --- Re-parse the file ---
@@ -167,10 +217,10 @@ def build_knowledge_graph(root: str) -> None:
         _GRAPH = {}
         _GRAPH_WORKSPACE = root
 
-
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames
-                       if d not in _SKIP_DIRS and not d.startswith(".")]
+        dirnames[:] = [
+            d for d in dirnames if d not in _SKIP_DIRS and not d.startswith(".")
+        ]
         for fname in filenames:
             ext = os.path.splitext(fname)[1].lower()
             if ext not in (".py", ".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs"):
@@ -181,7 +231,7 @@ def build_knowledge_graph(root: str) -> None:
             # Module entity
             mod_name = rel.replace("/", ".").replace("\\", ".")
             if mod_name.endswith(ext):
-                mod_name = mod_name[:-len(ext)]
+                mod_name = mod_name[: -len(ext)]
             _add_module(mod_name, rel)
 
             try:
@@ -230,15 +280,19 @@ def _extract_python_graph(source: str, fpath: str, mod_name: str) -> None:
                 _GRAPH[full_name].line = node.lineno
             else:
                 _GRAPH[full_name] = Entity(
-                    name=full_name, kind="class",
-                    filepath=fpath, line=node.lineno,
+                    name=full_name,
+                    kind="class",
+                    filepath=fpath,
+                    line=node.lineno,
                 )
             # Module defines this class
             _add_edge(mod_name, full_name, "defines", fpath, node.lineno)
 
             # Inheritance edges
             for base in node.bases:
-                base_name = _ast.unparse(base) if hasattr(_ast, "unparse") else get_name(base)
+                base_name = (
+                    _ast.unparse(base) if hasattr(_ast, "unparse") else get_name(base)
+                )
                 if base_name and base_name not in _SKIP_CALL_NAMES:
                     _add_edge(full_name, base_name, "inherits", fpath, node.lineno)
 
@@ -247,15 +301,19 @@ def _extract_python_graph(source: str, fpath: str, mod_name: str) -> None:
             current_class.pop()
 
         def visit_FunctionDef(self, node):
-            full_name = f"{current_class[-1]}.{node.name}" if current_class else node.name
+            full_name = (
+                f"{current_class[-1]}.{node.name}" if current_class else node.name
+            )
             if full_name in _GRAPH:
                 _GRAPH[full_name].kind = "def"
                 _GRAPH[full_name].filepath = fpath
                 _GRAPH[full_name].line = node.lineno
             else:
                 _GRAPH[full_name] = Entity(
-                    name=full_name, kind="def",
-                    filepath=fpath, line=node.lineno,
+                    name=full_name,
+                    kind="def",
+                    filepath=fpath,
+                    line=node.lineno,
                 )
             _add_edge(mod_name, full_name, "defines", fpath, node.lineno)
 
@@ -303,7 +361,7 @@ def _extract_ts_graph(source: str, fpath: str, mod_name: str) -> None:
 
     for m in def_pat.finditer(source):
         name = m.group(2)
-        line = source[:m.start()].count("\n") + 1
+        line = source[: m.start()].count("\n") + 1
         kind = "class" if m.group(1) == "class" else "def"
         if name in _GRAPH:
             _GRAPH[name].kind = kind
@@ -315,14 +373,14 @@ def _extract_ts_graph(source: str, fpath: str, mod_name: str) -> None:
 
     for m in arrow_pat.finditer(source):
         name = m.group(1)
-        line = source[:m.start()].count("\n") + 1
+        line = source[: m.start()].count("\n") + 1
         if name not in _GRAPH:
             _GRAPH[name] = Entity(name=name, kind="def", filepath=fpath, line=line)
         _add_edge(mod_name, name, "defines", fpath, line)
 
     for m in import_pat.finditer(source):
         mod = m.group(1)
-        line = source[:m.start()].count("\n") + 1
+        line = source[: m.start()].count("\n") + 1
         _add_edge(mod_name, mod, "imports", fpath, line)
 
 
@@ -348,28 +406,34 @@ def find_related(name: str, depth: int = 1) -> list[dict]:
 
     # Outgoing
     for edge in entity.edges_out:
-        results.append({
-            "direction": "out",
-            "kind": edge.kind,
-            "target": edge.target,
-            "file": edge.filepath or "",
-            "line": edge.line or 0,
-        })
+        results.append(
+            {
+                "direction": "out",
+                "kind": edge.kind,
+                "target": edge.target,
+                "file": edge.filepath or "",
+                "line": edge.line or 0,
+            }
+        )
 
     # Incoming
     for edge in entity.edges_in:
-        results.append({
-            "direction": "in",
-            "kind": edge.kind,
-            "target": edge.source,
-            "file": edge.filepath or "",
-            "line": edge.line or 0,
-        })
+        results.append(
+            {
+                "direction": "in",
+                "kind": edge.kind,
+                "target": edge.source,
+                "file": edge.filepath or "",
+                "line": edge.line or 0,
+            }
+        )
 
     return results
 
 
-def trace_path(from_name: str, to_name: str, max_depth: int = 5) -> list[list[str]] | None:
+def trace_path(
+    from_name: str, to_name: str, max_depth: int = 5
+) -> list[list[str]] | None:
     """Find shortest paths between two entities in the graph (BFS).
 
     Returns a list of paths, each being a list of entity names.
@@ -437,25 +501,29 @@ def get_subgraph(name: str, depth: int = 2) -> dict:
             continue
 
         for edge in entity.edges_out:
-            edges.append({
-                "source": edge.source,
-                "target": edge.target,
-                "kind": edge.kind,
-                "file": edge.filepath or "",
-                "line": edge.line or 0,
-            })
+            edges.append(
+                {
+                    "source": edge.source,
+                    "target": edge.target,
+                    "kind": edge.kind,
+                    "file": edge.filepath or "",
+                    "line": edge.line or 0,
+                }
+            )
             if edge.target not in visited:
                 visited.add(edge.target)
                 queue.append((edge.target, d + 1))
 
         for edge in entity.edges_in:
-            edges.append({
-                "source": edge.source,
-                "target": edge.target,
-                "kind": edge.kind,
-                "file": edge.filepath or "",
-                "line": edge.line or 0,
-            })
+            edges.append(
+                {
+                    "source": edge.source,
+                    "target": edge.target,
+                    "kind": edge.kind,
+                    "file": edge.filepath or "",
+                    "line": edge.line or 0,
+                }
+            )
             if edge.source not in visited:
                 visited.add(edge.source)
                 queue.append((edge.source, d + 1))
@@ -504,11 +572,13 @@ def find_callers_of_file(filepath: str) -> list[dict]:
                     seen.add(key)
                     caller_ent = _GRAPH.get(edge.source)
                     caller_file = caller_ent.filepath if caller_ent else edge.filepath
-                    callers.append({
-                        "caller": edge.source,
-                        "callee": edge.target,
-                        "file": caller_file or "",
-                    })
+                    callers.append(
+                        {
+                            "caller": edge.source,
+                            "callee": edge.target,
+                            "file": caller_file or "",
+                        }
+                    )
 
     # Deduplicate by caller file
     caller_files: dict[str, list[str]] = {}
@@ -519,8 +589,7 @@ def find_callers_of_file(filepath: str) -> list[dict]:
         caller_files[f].append(c["caller"])
 
     return [
-        {"file": f, "callers": sorted(set(names))}
-        for f, names in caller_files.items()
+        {"file": f, "callers": sorted(set(names))} for f, names in caller_files.items()
     ]
 
 

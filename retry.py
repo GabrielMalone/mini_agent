@@ -5,6 +5,7 @@ retry.py -- HTTP retry logic for mini_agent.
 Provides ``_request_with_retry()`` with exponential backoff on transient
 failures (429, 5xx).  Used by ``api.py::call_deepseek()``.
 """
+
 from __future__ import annotations
 
 import os
@@ -30,7 +31,7 @@ _TESTING = "PYTEST_CURRENT_TEST" in os.environ
 
 def _jittered_delay(attempt: int) -> float:
     """Return jittered exponential backoff delay: ~0.5-1.5s, ~1-3s, ~2-6s."""
-    return (2 ** attempt) * (0.5 + random.random())
+    return (2**attempt) * (0.5 + random.random())
 
 
 def _request_with_retry(
@@ -51,7 +52,11 @@ def _request_with_retry(
     module itself (for testability -- tests patch requests.post).
     *timeout* is the (connect, read) timeout tuple passed to requests.post.
     """
-    post = session.post if hasattr(session, "post") and callable(session.post) else requests.post
+    post = (
+        session.post
+        if hasattr(session, "post") and callable(session.post)
+        else requests.post
+    )
     last_exc: Exception | None = None
     for attempt in range(_MAX_RETRIES + 1):
         # Check cancel before making a request (avoids wasted HTTP call on shutdown)
@@ -69,13 +74,21 @@ def _request_with_retry(
                     print(
                         f"  WARNING: API {r.status_code}, retrying in {delay:.1f}s "
                         f"(attempt {attempt + 1}/{_MAX_RETRIES})",
-                        file=sys.stderr, flush=True,
+                        file=sys.stderr,
+                        flush=True,
                     )
                 if cancel_event is not None and cancel_event.wait(delay):
                     return None  # cancelled during wait
             else:
-                _retry_log.warning("Retries exhausted (%d): %s %s", _MAX_RETRIES, r.status_code, r.text[:200])
-                return r  # exhausted retries -- return last response (caller checks r.ok)
+                _retry_log.warning(
+                    "Retries exhausted (%d): %s %s",
+                    _MAX_RETRIES,
+                    r.status_code,
+                    r.text[:200],
+                )
+                return (
+                    r  # exhausted retries -- return last response (caller checks r.ok)
+                )
         except requests.RequestException as exc:
             last_exc = exc
             if attempt < _MAX_RETRIES:
@@ -84,12 +97,15 @@ def _request_with_retry(
                     print(
                         f"  WARNING: network error ({exc}), retrying in {delay:.1f}s "
                         f"(attempt {attempt + 1}/{_MAX_RETRIES})",
-                        file=sys.stderr, flush=True,
+                        file=sys.stderr,
+                        flush=True,
                     )
                 if cancel_event is not None and cancel_event.wait(delay):
                     return None  # cancelled during wait
             else:
-                _retry_log.warning("Retries exhausted after network errors (%d): %s", _MAX_RETRIES, exc)
+                _retry_log.warning(
+                    "Retries exhausted after network errors (%d): %s", _MAX_RETRIES, exc
+                )
 
     if last_exc is not None:  # pragma: no cover
         raise last_exc  # pragma: no cover

@@ -16,6 +16,7 @@ Memory management (in order, applied on every save):
 
 Migrates existing ``.mini_agent_memory.json`` files automatically on first run.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -43,14 +44,20 @@ _conn_cache_lock = threading.Lock()
 _consecutive_sqlite_errors: int = 0
 _CONSECUTIVE_ERROR_THRESHOLD = 3
 
+
 def _on_sqlite_error(operation: str) -> None:
     """Track consecutive sqlite3 errors and log/escalate when threshold hit."""
     global _consecutive_sqlite_errors
     _consecutive_sqlite_errors += 1
-    _mem_log.warning("sqlite3 error in %s (consecutive=%d)", operation, _consecutive_sqlite_errors)
+    _mem_log.warning(
+        "sqlite3 error in %s (consecutive=%d)", operation, _consecutive_sqlite_errors
+    )
     if _consecutive_sqlite_errors >= _CONSECUTIVE_ERROR_THRESHOLD:
-        _mem_log.error("sqlite3 error escalation: %d consecutive errors -- memory persistence may be degraded", 
-                       _consecutive_sqlite_errors)
+        _mem_log.error(
+            "sqlite3 error escalation: %d consecutive errors -- memory persistence may be degraded",
+            _consecutive_sqlite_errors,
+        )
+
 
 def _reset_sqlite_errors() -> None:
     """Reset the consecutive sqlite3 error counter on successful operation."""
@@ -104,7 +111,8 @@ def get_shared_conn(db_path: str) -> sqlite3.Connection:
                 return conn
             except sqlite3.OperationalError:
                 _mem_log.warning(
-                    "WAL mode failed for %s -- trying DELETE journal mode", db_path,
+                    "WAL mode failed for %s -- trying DELETE journal mode",
+                    db_path,
                 )
                 try:
                     conn.close()
@@ -168,10 +176,10 @@ CREATE TABLE IF NOT EXISTS messages (
 )
 """
 
-_INSERT  = "INSERT INTO messages (role, content) VALUES (?, ?)"
-_SELECT  = "SELECT role, content FROM messages ORDER BY id ASC"
-_DELETE  = "DELETE FROM messages"
-_VACUUM  = "VACUUM"
+_INSERT = "INSERT INTO messages (role, content) VALUES (?, ?)"
+_SELECT = "SELECT role, content FROM messages ORDER BY id ASC"
+_DELETE = "DELETE FROM messages"
+_VACUUM = "VACUUM"
 
 # VACUUM threshold: only reclaim disk space when freelist exceeds this
 # page count.  Avoids running VACUUM on every full-rewrite save.
@@ -247,6 +255,7 @@ from .memory_prune import (  # noqa: F401 -- re-exported for backward compatibil
 # MemoryStore
 # ---------------------------------------------------------------------------
 
+
 class MemoryStore:
     """Persists conversation messages in a SQLite database.
 
@@ -264,7 +273,7 @@ class MemoryStore:
     """
 
     DEFAULT_MAX_MESSAGES = 50
-    DEFAULT_MAX_TOKENS   = 80_000
+    DEFAULT_MAX_TOKENS = 80_000
 
     def __init__(
         self,
@@ -283,14 +292,18 @@ class MemoryStore:
         self._skip_load: bool = False  # set True to skip loading knowledge/summaries (used by switch_session)
         self._save_count: int = 0  # monotonic save counter for periodic VACUUM
         self._prune_cooldown: int = 0  # saves remaining before next pruning allowed
-        self.last_prune_summary: str = ""  # surfaced to UI so the user sees what was pruned
+        self.last_prune_summary: str = (
+            ""  # surfaced to UI so the user sees what was pruned
+        )
 
         # Detect remote filesystems early -- if the workspace is on a network
         # mount, pre-emptively switch to a local path so that downstream
         # consumers (FailurePatternStore, etc.) also use the correct path.
         if _is_remote_fs(self._db_path):
             self._db_path = _local_db_path(self._db_path)
-            _mem_log.info("remote filesystem detected -- using local database: %s", self._db_path)
+            _mem_log.info(
+                "remote filesystem detected -- using local database: %s", self._db_path
+            )
 
         # Migrate from old paths if needed
         _migrate_old_paths(filepath, self._db_path)
@@ -310,7 +323,9 @@ class MemoryStore:
                 ")"
             )
             # Ensure a row always exists
-            conn.execute("INSERT OR IGNORE INTO scratchpad (id, content) VALUES (1, '')")
+            conn.execute(
+                "INSERT OR IGNORE INTO scratchpad (id, content) VALUES (1, '')"
+            )
             # Plan state table -- persists plan steps across sessions
             conn.execute(
                 "CREATE TABLE IF NOT EXISTS plan_state ("
@@ -319,7 +334,9 @@ class MemoryStore:
                 "done_json TEXT NOT NULL DEFAULT '[]'"
                 ")"
             )
-            conn.execute("INSERT OR IGNORE INTO plan_state (id, steps_json, done_json) VALUES (1, '[]', '[]')")
+            conn.execute(
+                "INSERT OR IGNORE INTO plan_state (id, steps_json, done_json) VALUES (1, '[]', '[]')"
+            )
             # Test output table -- persisted so agent can read failures without re-running
             conn.execute(
                 "CREATE TABLE IF NOT EXISTS test_output ("
@@ -327,7 +344,9 @@ class MemoryStore:
                 "output TEXT NOT NULL DEFAULT ''"
                 ")"
             )
-            conn.execute("INSERT OR IGNORE INTO test_output (id, output) VALUES (1, '')")
+            conn.execute(
+                "INSERT OR IGNORE INTO test_output (id, output) VALUES (1, '')"
+            )
             # Project knowledge table -- persists across sessions within a workspace
             conn.execute(
                 "CREATE TABLE IF NOT EXISTS project_knowledge ("
@@ -344,7 +363,9 @@ class MemoryStore:
             )
             # Migration: add embedding column if missing from older DBs
             try:
-                conn.execute("ALTER TABLE project_knowledge ADD COLUMN embedding BLOB DEFAULT NULL")
+                conn.execute(
+                    "ALTER TABLE project_knowledge ADD COLUMN embedding BLOB DEFAULT NULL"
+                )
             except sqlite3.OperationalError:
                 pass  # column already exists
             # Core memory -- bounded snapshot injected frozen at session start.
@@ -428,15 +449,16 @@ class MemoryStore:
             )
             # --- Structured observations (claude-mem inspired) ---
             from memory.observations import ensure_observations_table
+
             ensure_observations_table(conn)
             # --- Session summaries (claude-mem inspired) ---
             from memory.session_summaries import ensure_summaries_table
+
             ensure_summaries_table(conn)
             conn.commit()
         except sqlite3.Error as e:
             warnings.warn(
-                f"Failed to initialize memory tables: {e}. "
-                f"(path={self._db_path})",
+                f"Failed to initialize memory tables: {e}. (path={self._db_path})",
                 stacklevel=2,
             )
         finally:
@@ -521,14 +543,16 @@ class MemoryStore:
 
         return _clean_messages([_row_to_msg(r) for r in rows])
 
-
     # ------------------------------------------------------------------
     # Project knowledge (cross-session learning)
     # ------------------------------------------------------------------
 
     def add_knowledge(
-        self, summary: str, category: str = "general",
-        detail: str = "", importance: int = 1,
+        self,
+        summary: str,
+        category: str = "general",
+        detail: str = "",
+        importance: int = 1,
     ) -> int | None:
         """Store a project-level learning that persists across sessions.
 
@@ -559,8 +583,14 @@ class MemoryStore:
                 (limit,),
             ).fetchall()
             return [
-                {"id": r[0], "category": r[1], "summary": r[2],
-                 "detail": r[3], "importance": r[4], "hits": r[5]}
+                {
+                    "id": r[0],
+                    "category": r[1],
+                    "summary": r[2],
+                    "detail": r[3],
+                    "importance": r[4],
+                    "hits": r[5],
+                }
                 for r in rows
             ]
         except sqlite3.Error:
@@ -595,8 +625,12 @@ class MemoryStore:
             if rows:
                 r = rows[0]
                 return {
-                    "id": r[0], "category": r[1], "summary": r[2],
-                    "detail": r[3], "importance": r[4], "hits": r[5],
+                    "id": r[0],
+                    "category": r[1],
+                    "summary": r[2],
+                    "detail": r[3],
+                    "importance": r[4],
+                    "hits": r[5],
                 }
             return None
         except sqlite3.Error:
@@ -604,7 +638,10 @@ class MemoryStore:
             return None
 
     def list_knowledge(
-        self, category: str = "", importance_min: int = 0, limit: int = 200,
+        self,
+        category: str = "",
+        importance_min: int = 0,
+        limit: int = 200,
     ) -> list[dict]:
         """List project knowledge entries, optionally filtered.
 
@@ -637,8 +674,14 @@ class MemoryStore:
                     (importance_min, limit),
                 ).fetchall()
             return [
-                {"id": r[0], "category": r[1], "summary": r[2],
-                "detail": r[3], "importance": r[4], "hits": r[5]}
+                {
+                    "id": r[0],
+                    "category": r[1],
+                    "summary": r[2],
+                    "detail": r[3],
+                    "importance": r[4],
+                    "hits": r[5],
+                }
                 for r in rows
             ]
         except sqlite3.Error:
@@ -674,7 +717,9 @@ class MemoryStore:
             return []
 
     def query_semantic_knowledge(
-        self, query_embedding: bytes, k: int = 5,
+        self,
+        query_embedding: bytes,
+        k: int = 5,
     ) -> list[dict]:
         """Return top-k knowledge entries by cosine similarity to query_embedding.
 
@@ -683,6 +728,7 @@ class MemoryStore:
         Returns entries with 'similarity' score appended.
         """
         import numpy as np
+
         try:
             conn = self._get_conn()
             rows = conn.execute(
@@ -708,17 +754,23 @@ class MemoryStore:
                 if doc_norm == 0:
                     continue
                 sim = float(np.dot(query_vec, doc_vec) / (query_norm * doc_norm))
-                scored.append((sim, {
-                    "id": r[0], "category": r[1], "summary": r[2],
-                    "detail": r[3], "importance": r[4], "hits": r[5],
-                }))
+                scored.append(
+                    (
+                        sim,
+                        {
+                            "id": r[0],
+                            "category": r[1],
+                            "summary": r[2],
+                            "detail": r[3],
+                            "importance": r[4],
+                            "hits": r[5],
+                        },
+                    )
+                )
 
             scored.sort(key=lambda x: x[0], reverse=True)
             top = scored[:k]
-            return [
-                {**entry, "similarity": round(sim, 4)}
-                for sim, entry in top
-            ]
+            return [{**entry, "similarity": round(sim, 4)} for sim, entry in top]
         except (sqlite3.Error, ValueError):
             warnings.warn("Failed to query semantic knowledge", stacklevel=2)
             return []
@@ -744,6 +796,7 @@ class MemoryStore:
     ) -> int | None:
         """Store a structured observation. Returns id or None on dedup/error."""
         from memory.observations import store_observation
+
         conn = self._get_conn()
         return store_observation(
             conn,
@@ -771,6 +824,7 @@ class MemoryStore:
     ) -> list:
         """Query observations with optional filtering."""
         from memory.observations import query_observations
+
         conn = self._get_conn()
         return query_observations(
             conn,
@@ -784,6 +838,7 @@ class MemoryStore:
     def count_observations(self) -> int:
         """Return total observation count."""
         from memory.observations import count_observations
+
         conn = self._get_conn()
         return count_observations(conn)
 
@@ -808,6 +863,7 @@ class MemoryStore:
     ) -> int | None:
         """Store a session summary. Returns id or None on error."""
         from memory.session_summaries import store_summary
+
         conn = self._get_conn()
         return store_summary(
             conn,
@@ -827,17 +883,22 @@ class MemoryStore:
     def get_recent_summaries(self, limit: int = 5, project: str | None = None) -> list:
         """Get most recent session summaries."""
         from memory.session_summaries import get_recent_summaries
+
         conn = self._get_conn()
         return get_recent_summaries(conn, limit=limit, project=project)
 
     def get_most_recent_summary(self, project: str | None = None):
         """Get the single most recent session summary."""
         from memory.session_summaries import get_most_recent_summary
+
         conn = self._get_conn()
         return get_most_recent_summary(conn, project=project)
 
     def write_handoff(
-        self, changes: str, pending: str = "", modified_files: str = "",
+        self,
+        changes: str,
+        pending: str = "",
+        modified_files: str = "",
     ) -> None:
         """Write a HANDOFF.md file in the workspace root for session continuity.
 
@@ -851,7 +912,10 @@ class MemoryStore:
             modified_files: list of files touched this session
         """
         import datetime
-        date_str = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+        date_str = datetime.datetime.now(datetime.timezone.utc).strftime(
+            "%Y-%m-%d %H:%M UTC"
+        )
         workspace = os.path.dirname(self._db_path)
         # Walk up from db_path to find workspace root
         candidate = os.path.dirname(self._filepath)
@@ -924,7 +988,9 @@ class MemoryStore:
                 # Diff since session start
                 r = _sp.run(
                     ["git", "-C", workspace, "diff", "--stat", f"{start_head}.."],
-                    capture_output=True, text=True, timeout=10,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
                 )
                 if r.returncode == 0 and r.stdout.strip():
                     stat_out = r.stdout.strip()
@@ -939,24 +1005,36 @@ class MemoryStore:
                 # New commits since session start
                 r2 = _sp.run(
                     ["git", "-C", workspace, "log", "--oneline", f"{start_head}.."],
-                    capture_output=True, text=True, timeout=5,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
                 )
                 if r2.returncode == 0 and r2.stdout.strip():
-                    changes_lines.insert(0, f"### Commits\n```\n{r2.stdout.strip()}\n```")
+                    changes_lines.insert(
+                        0, f"### Commits\n```\n{r2.stdout.strip()}\n```"
+                    )
             else:
                 # Fallback: diff from last commit
                 r = _sp.run(
                     ["git", "-C", workspace, "diff", "--stat", "HEAD~1.."],
-                    capture_output=True, text=True, timeout=10,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
                 )
                 if r.returncode == 0 and r.stdout.strip():
                     changes_lines.append(f"```\n{r.stdout.strip()}\n```")
         except (OSError, _sp.TimeoutExpired):
             pass
 
-        changes_text = "\n".join(changes_lines) if changes_lines else "(no git changes detected)"
+        changes_text = (
+            "\n".join(changes_lines) if changes_lines else "(no git changes detected)"
+        )
         pending_text = pending or "(none recorded)"
-        files_text = "\n".join(f"- {f}" for f in modified_files) if modified_files else "(none tracked)"
+        files_text = (
+            "\n".join(f"- {f}" for f in modified_files)
+            if modified_files
+            else "(none tracked)"
+        )
 
         # Build plan progress section
         plan_text = ""
@@ -987,7 +1065,9 @@ class MemoryStore:
         return handoff_path
 
     def capture_session_summary(
-        self, summary: str, detail: str = "",
+        self,
+        summary: str,
+        detail: str = "",
     ) -> None:
         """Store a session summary for next startup injection."""
         try:
@@ -1053,10 +1133,18 @@ class MemoryStore:
             ).fetchone()
             if row:
                 return {"content": row[0], "char_limit": row[1], "length": len(row[0])}
-            return {"content": "", "char_limit": self.CORE_MEMORY_DEFAULT_CHAR_LIMIT, "length": 0}
+            return {
+                "content": "",
+                "char_limit": self.CORE_MEMORY_DEFAULT_CHAR_LIMIT,
+                "length": 0,
+            }
         except sqlite3.Error:
             warnings.warn("Failed to read core memory", stacklevel=2)
-            return {"content": "", "char_limit": self.CORE_MEMORY_DEFAULT_CHAR_LIMIT, "length": 0}
+            return {
+                "content": "",
+                "char_limit": self.CORE_MEMORY_DEFAULT_CHAR_LIMIT,
+                "length": 0,
+            }
 
     def write_core_memory(self, content: str) -> dict:
         """Write/update core memory content.
@@ -1103,14 +1191,21 @@ class MemoryStore:
             }
         except sqlite3.Error:
             warnings.warn("Failed to write core memory", stacklevel=2)
-            return {"ok": False, "message": "Database error writing core memory.", "remaining": 0, "char_limit": 0}
+            return {
+                "ok": False,
+                "message": "Database error writing core memory.",
+                "remaining": 0,
+                "char_limit": 0,
+            }
 
     # ------------------------------------------------------------------
     # Session search -- FTS5 full-text search across all saved messages
     # ------------------------------------------------------------------
 
     def search_messages(
-        self, query: str, limit: int = 10,
+        self,
+        query: str,
+        limit: int = 10,
     ) -> list[dict]:
         """Full-text search across all saved messages.
 
@@ -1129,10 +1224,7 @@ class MemoryStore:
                 " LIMIT ?",
                 (f'"{safe_query}"', limit),
             ).fetchall()
-            return [
-                {"rowid": r[0], "content": r[1], "rank": r[2]}
-                for r in rows
-            ]
+            return [{"rowid": r[0], "content": r[1], "rank": r[2]} for r in rows]
         except sqlite3.Error:
             warnings.warn("Failed to search messages", stacklevel=2)
             return []
@@ -1141,7 +1233,9 @@ class MemoryStore:
     # save() helpers -- split from the main method (was ~100 lines).
     # ------------------------------------------------------------------
 
-    def _prepare_messages(self, messages: list[dict]) -> tuple[list[dict], list[dict], bool]:
+    def _prepare_messages(
+        self, messages: list[dict]
+    ) -> tuple[list[dict], list[dict], bool]:
         """Clean, compress, prune, and summarise messages.  Does NOT write to DB.
 
         Returns (kept, pruned, compressed) where:
@@ -1152,7 +1246,8 @@ class MemoryStore:
         _clear_message_caches()
         cleaned = _clean_messages(messages)
         cleaned, compressed = _compress_tool_results(
-            cleaned, keep_recent=_COMPRESSION_KEEP_RECENT,
+            cleaned,
+            keep_recent=_COMPRESSION_KEEP_RECENT,
             gentle_recent=_COMPRESSION_GENTLE_RECENT,
         )
 
@@ -1163,15 +1258,18 @@ class MemoryStore:
 
         # Decide whether to prune: always prune when over the hard message-count
         # cap, or when token budget is significantly exceeded and cooldown expired.
-        overage_ratio = (self._token_count / self._max_tokens) if self._max_tokens > 0 else 0.0
+        overage_ratio = (
+            (self._token_count / self._max_tokens) if self._max_tokens > 0 else 0.0
+        )
         over_message_cap = len(cleaned) > self._max_messages
         should_prune = over_message_cap or (
-            self._prune_cooldown <= 0
-            and overage_ratio > _PRUNE_OVERAGE_BUFFER
+            self._prune_cooldown <= 0 and overage_ratio > _PRUNE_OVERAGE_BUFFER
         )
 
         if should_prune:
-            kept, pruned = _prune_by_tokens(cleaned, self._max_tokens, self._max_messages)
+            kept, pruned = _prune_by_tokens(
+                cleaned, self._max_tokens, self._max_messages
+            )
             if pruned:
                 self._token_count -= sum(_estimate_tokens(m) for m in pruned)
                 summary = _summarize_pruned(pruned)
@@ -1194,7 +1292,10 @@ class MemoryStore:
         return kept, pruned, compressed
 
     def _write_messages(
-        self, kept: list[dict], pruned: list[dict], compressed: bool,
+        self,
+        kept: list[dict],
+        pruned: list[dict],
+        compressed: bool,
     ) -> list[dict]:
         """Write *kept* to SQLite with retry logic.  Returns *kept* on success,
         or *messages* (untouched input) on failure so the caller never loses data.
@@ -1215,7 +1316,7 @@ class MemoryStore:
                         [(m["role"], json.dumps(m)) for m in kept],
                     )
                 else:
-                    new_msgs = kept[self._last_saved_count:]
+                    new_msgs = kept[self._last_saved_count :]
                     if new_msgs:
                         conn.executemany(
                             _INSERT,
@@ -1237,16 +1338,20 @@ class MemoryStore:
                     pass
                 if attempt < _SAVE_MAX_RETRIES - 1:
                     import time
+
                     time.sleep(_SAVE_RETRY_DELAY * (attempt + 1))
                     # Don't close -- it's shared.  Just release our local ref
                     # so _get_conn() will revalidate from the cache.
                     self._conn = None
 
         import sys
+
         print(f"Warning: memory save failed: {last_exc}", file=sys.stderr)
         return kept  # best-effort: return processed messages so caller can retry
 
-    def _maybe_vacuum(self, conn: sqlite3.Connection, *, after_full_rewrite: bool) -> None:
+    def _maybe_vacuum(
+        self, conn: sqlite3.Connection, *, after_full_rewrite: bool
+    ) -> None:
         """Trigger background VACUUM when freelist exceeds threshold or periodically."""
         should_check = after_full_rewrite or (self._save_count % _VACUUM_INTERVAL == 0)
         if not should_check:
@@ -1320,7 +1425,9 @@ class MemoryStore:
 
         try:
             cleaned = _clean_messages(messages)
-            cleaned, _ = _compress_tool_results(cleaned, keep_recent=_COMPRESSION_KEEP_RECENT)
+            cleaned, _ = _compress_tool_results(
+                cleaned, keep_recent=_COMPRESSION_KEEP_RECENT
+            )
             kept, pruned = _prune_by_tokens(cleaned, target, budget_messages)
 
             if pruned:
@@ -1335,13 +1442,14 @@ class MemoryStore:
             knowledge = self.get_top_knowledge(limit=10)
             if knowledge:
                 facts = "\n".join(
-                    f"- [{k['category']}] {k['summary']}"
-                    for k in knowledge
+                    f"- [{k['category']}] {k['summary']}" for k in knowledge
                 )
-                kept.append({
-                    "role": "user",
-                    "content": f"[Project learnings from past sessions:\n{facts}]",
-                })
+                kept.append(
+                    {
+                        "role": "user",
+                        "content": f"[Project learnings from past sessions:\n{facts}]",
+                    }
+                )
 
             self._token_count = sum(_estimate_tokens(m) for m in kept)
             self._last_saved_count = len(kept)
@@ -1382,10 +1490,10 @@ class MemoryStore:
                 "content TEXT NOT NULL DEFAULT ''"
                 ")"
             )
-            conn.execute("INSERT OR IGNORE INTO scratchpad (id, content) VALUES (1, '')")
-            row = conn.execute(
-                "SELECT content FROM scratchpad WHERE id = 1"
-            ).fetchone()
+            conn.execute(
+                "INSERT OR IGNORE INTO scratchpad (id, content) VALUES (1, '')"
+            )
+            row = conn.execute("SELECT content FROM scratchpad WHERE id = 1").fetchone()
             return row[0] if row else ""
         except sqlite3.Error:
             warnings.warn("Failed to query scratchpad or test output", stacklevel=2)
@@ -1401,7 +1509,9 @@ class MemoryStore:
                 "content TEXT NOT NULL DEFAULT ''"
                 ")"
             )
-            conn.execute("INSERT OR IGNORE INTO scratchpad (id, content) VALUES (1, '')")
+            conn.execute(
+                "INSERT OR IGNORE INTO scratchpad (id, content) VALUES (1, '')"
+            )
             conn.execute(
                 "INSERT OR REPLACE INTO scratchpad (id, content) VALUES (1, ?)",
                 (content,),
@@ -1409,6 +1519,7 @@ class MemoryStore:
             conn.commit()
         except sqlite3.Error as exc:
             import sys
+
             print(f"Warning: scratchpad write failed: {exc}", file=sys.stderr)
 
     def get_plan(self) -> tuple[list[str], list[int]]:
@@ -1422,7 +1533,9 @@ class MemoryStore:
                 "done_json TEXT NOT NULL DEFAULT '[]'"
                 ")"
             )
-            conn.execute("INSERT OR IGNORE INTO plan_state (id, steps_json, done_json) VALUES (1, '[]', '[]')")
+            conn.execute(
+                "INSERT OR IGNORE INTO plan_state (id, steps_json, done_json) VALUES (1, '[]', '[]')"
+            )
             row = conn.execute(
                 "SELECT steps_json, done_json FROM plan_state WHERE id = 1"
             ).fetchone()
@@ -1445,7 +1558,9 @@ class MemoryStore:
                 "done_json TEXT NOT NULL DEFAULT '[]'"
                 ")"
             )
-            conn.execute("INSERT OR IGNORE INTO plan_state (id, steps_json, done_json) VALUES (1, '[]', '[]')")
+            conn.execute(
+                "INSERT OR IGNORE INTO plan_state (id, steps_json, done_json) VALUES (1, '[]', '[]')"
+            )
             conn.execute(
                 "INSERT OR REPLACE INTO plan_state (id, steps_json, done_json) VALUES (1, ?, ?)",
                 (json.dumps(steps), json.dumps(sorted(done_indices))),
@@ -1453,15 +1568,14 @@ class MemoryStore:
             conn.commit()
         except sqlite3.Error as exc:
             import sys
+
             print(f"Warning: plan state write failed: {exc}", file=sys.stderr)
 
     def get_test_output(self) -> str:
         """Return the last saved test output (empty string if none)."""
         try:
             conn = self._get_conn()
-            row = conn.execute(
-                "SELECT output FROM test_output WHERE id = 1"
-            ).fetchone()
+            row = conn.execute("SELECT output FROM test_output WHERE id = 1").fetchone()
             return row[0] if row else ""
         except sqlite3.Error:
             warnings.warn("Failed to query scratchpad or test output", stacklevel=2)
@@ -1507,12 +1621,14 @@ class MemoryStore:
 
 # Filesystem type constants for remote-filesystem detection.
 # Network filesystems that don't support POSIX locks or WAL shared memory.
-_REMOTE_FS_TYPES: frozenset[int] = frozenset({
-    0x517B,   # SMB / CIFS
-    0x6969,   # NFS
-    0x01021997,  # AFP (Apple Filing Protocol)
-    0x2FC12FC1,  # AFS (Andrew File System)
-})
+_REMOTE_FS_TYPES: frozenset[int] = frozenset(
+    {
+        0x517B,  # SMB / CIFS
+        0x6969,  # NFS
+        0x01021997,  # AFP (Apple Filing Protocol)
+        0x2FC12FC1,  # AFS (Andrew File System)
+    }
+)
 
 
 def _is_remote_fs(path: str) -> bool:
@@ -1524,7 +1640,11 @@ def _is_remote_fs(path: str) -> bool:
     # Quick check: macOS network mounts are under /Volumes/ (but not the
     # root volume).  '/Volumes/Macintosh HD' is local; anything else is
     # typically a network mount or external drive.
-    if path.startswith("/Volumes/") and path != "/Volumes/Macintosh HD" and not path.startswith("/Volumes/Macintosh HD/"):
+    if (
+        path.startswith("/Volumes/")
+        and path != "/Volumes/Macintosh HD"
+        and not path.startswith("/Volumes/Macintosh HD/")
+    ):
         return True
     # UNC paths (SMB): //server/share/...
     if path.startswith("//"):
@@ -1580,8 +1700,7 @@ def _clean_messages(messages: list[dict]) -> list[dict]:
 
     # ---- strip system messages and transient messages ----
     cleaned: list[dict] = [
-        m for m in messages
-        if m.get("role") != "system" and not m.get("_transient")
+        m for m in messages if m.get("role") != "system" and not m.get("_transient")
     ]
 
     # ---- strip orphaned tool messages (canonical implementation from memory_prune) ----
@@ -1653,6 +1772,7 @@ def _migrate_json(json_path: str, db_path: str) -> None:
 # Shared export helper -- used by both terminal REPL and TUI
 # ---------------------------------------------------------------------------
 
+
 def export_conversation_markdown(messages: list[dict]) -> str:
     """Generate markdown text for a conversation export.
 
@@ -1682,5 +1802,7 @@ def export_conversation_markdown(messages: list[dict]) -> str:
                     args = fn.get("arguments", "{}")
                     blocks.append(f"```\n{name}({args})\n```\n")
         elif role == "tool":
-            blocks.append(f"> Tool result:\n>\n> {m.get('content', '')[:_MARKDOWN_TOOL_RESULT_PREVIEW]}\n")
+            blocks.append(
+                f"> Tool result:\n>\n> {m.get('content', '')[:_MARKDOWN_TOOL_RESULT_PREVIEW]}\n"
+            )
     return "\n".join(blocks)

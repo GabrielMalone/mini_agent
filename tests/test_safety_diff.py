@@ -25,6 +25,7 @@ class TestGenerateDiff(unittest.TestCase):
     def tearDown(self):
         """Clean up the temp workspace."""
         import shutil
+
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     def _write(self, filename: str, content: str) -> str:
@@ -128,35 +129,38 @@ class TestGenerateDiff(unittest.TestCase):
     def test_edit_identical_strings(self):
         """Edit with old==new: no change."""
         self._write("f.txt", "hello\nworld\n")
-        result = self._result("edit_file", {
-            "path": "f.txt", "old_string": "hello\n", "new_string": "hello\n"
-        })
+        result = self._result(
+            "edit_file",
+            {"path": "f.txt", "old_string": "hello\n", "new_string": "hello\n"},
+        )
         self.assertFalse(result.changed)
 
     def test_edit_add_line(self):
         """Edit replaces part, effectively adding a line."""
         self._write("f.txt", "hello\nworld\n")
-        result = self._result("edit_file", {
-            "path": "f.txt", "old_string": "hello\n", "new_string": "hello\nmid\n"
-        })
+        result = self._result(
+            "edit_file",
+            {"path": "f.txt", "old_string": "hello\n", "new_string": "hello\nmid\n"},
+        )
         self.assertTrue(result.changed)
         self.assertIn("+mid", result.preview_text)
 
     def test_edit_remove_line(self):
         """Edit removes a line."""
         self._write("f.txt", "hello\nmid\nworld\n")
-        result = self._result("edit_file", {
-            "path": "f.txt", "old_string": "hello\nmid\n", "new_string": "hello\n"
-        })
+        result = self._result(
+            "edit_file",
+            {"path": "f.txt", "old_string": "hello\nmid\n", "new_string": "hello\n"},
+        )
         self.assertTrue(result.changed)
         self.assertIn("-mid", result.preview_text)
 
     def test_edit_single_char_change(self):
         """Edit a single character."""
         self._write("f.txt", "abc\n")
-        result = self._result("edit_file", {
-            "path": "f.txt", "old_string": "a", "new_string": "X"
-        })
+        result = self._result(
+            "edit_file", {"path": "f.txt", "old_string": "a", "new_string": "X"}
+        )
         self.assertTrue(result.changed)
         preview = result.preview_text
         self.assertIn("-a", preview)
@@ -165,9 +169,9 @@ class TestGenerateDiff(unittest.TestCase):
     def test_edit_empty_old_string(self):
         """Edit with empty old_string (prepend)."""
         self._write("f.txt", "world\n")
-        result = self._result("edit_file", {
-            "path": "f.txt", "old_string": "", "new_string": "hello\n"
-        })
+        result = self._result(
+            "edit_file", {"path": "f.txt", "old_string": "", "new_string": "hello\n"}
+        )
         self.assertTrue(result.changed)
         preview = result.preview_text
         self.assertIn("+hello", preview)
@@ -175,18 +179,19 @@ class TestGenerateDiff(unittest.TestCase):
     def test_edit_empty_new_string(self):
         """Edit with empty new_string (deletion)."""
         self._write("f.txt", "hello\nworld\n")
-        result = self._result("edit_file", {
-            "path": "f.txt", "old_string": "hello\n", "new_string": ""
-        })
+        result = self._result(
+            "edit_file", {"path": "f.txt", "old_string": "hello\n", "new_string": ""}
+        )
         self.assertTrue(result.changed)
         self.assertIn("-hello", result.preview_text)
 
     def test_edit_count_all(self):
         """Edit with count=-1 replaces all occurrences."""
         self._write("f.txt", "x x x\n")
-        result = self._result("edit_file", {
-            "path": "f.txt", "old_string": "x", "new_string": "y", "count": -1
-        })
+        result = self._result(
+            "edit_file",
+            {"path": "f.txt", "old_string": "x", "new_string": "y", "count": -1},
+        )
         self.assertTrue(result.changed)
         preview = result.preview_text
         # unified diff shows the whole line: -x x x  ->  +y y y
@@ -199,18 +204,19 @@ class TestGenerateDiff(unittest.TestCase):
 
     def test_edit_new_file(self):
         """edit_file on a non-existent file: treated as new file with new_string."""
-        result = self._result("edit_file", {
-            "path": "new.txt", "old_string": "old", "new_string": "hello\n"
-        })
+        result = self._result(
+            "edit_file",
+            {"path": "new.txt", "old_string": "old", "new_string": "hello\n"},
+        )
         self.assertTrue(result.changed)
         self.assertIn("--- /dev/null", result.preview_text)
         self.assertIn("+hello", result.preview_text)
 
     def test_edit_new_file_empty(self):
         """edit_file on non-existent file with empty new_string."""
-        result = self._result("edit_file", {
-            "path": "new.txt", "old_string": "old", "new_string": ""
-        })
+        result = self._result(
+            "edit_file", {"path": "new.txt", "old_string": "old", "new_string": ""}
+        )
         self.assertFalse(result.changed)
         self.assertIn("--- /dev/null", result.preview_text)
 
@@ -242,9 +248,9 @@ class TestGenerateDiff(unittest.TestCase):
     def test_ansi_colors_present_in_diff(self):
         """verify colored diff output contains ANSI escape codes."""
         self._write("color.txt", "line1\nline2\n")
-        result = self._result("write_file", {
-            "path": "color.txt", "content": "lineA\nline2\nline3\n"
-        })
+        result = self._result(
+            "write_file", {"path": "color.txt", "content": "lineA\nline2\nline3\n"}
+        )
         self.assertTrue(result.changed)
         preview = result.preview_text
         self.assertIn("\033[", preview)  # ANSI codes present
@@ -265,8 +271,10 @@ class TestGenerateDiff(unittest.TestCase):
             (red in line and "---" in line) or (green in line and "+++" in line)
             for line in preview.split("\n")
         )
-        self.assertTrue(has_colored_header,
-                        f"Expected ---/+++ lines with ANSI color codes, got:\n{preview}")
+        self.assertTrue(
+            has_colored_header,
+            f"Expected ---/+++ lines with ANSI color codes, got:\n{preview}",
+        )
 
     # ------------------------------------------------------------------
     # OSError when reading existing file for write_file diff (lines 204-205)
@@ -298,11 +306,14 @@ class TestGenerateDiff(unittest.TestCase):
         """edit_file diff handles OSError when existing file can't be read."""
         d = os.path.join(self.tmpdir, "no_read.txt")
         os.mkdir(d)
-        result = self._result("edit_file", {
-            "path": "no_read.txt",
-            "old_string": "old",
-            "new_string": "new",
-        })
+        result = self._result(
+            "edit_file",
+            {
+                "path": "no_read.txt",
+                "old_string": "old",
+                "new_string": "new",
+            },
+        )
         # OSError causes original="" so content differs from new -> changed=True
         self.assertTrue(result.changed)
 
@@ -313,14 +324,18 @@ class TestGenerateDiff(unittest.TestCase):
     def test_approve_returns_preview_text(self):
         """approve() delegates to generate_diff and returns preview_text."""
         result = self._result("write_file", {"path": "new.txt", "content": "hello\n"})
-        approved = self.gate.approve("write_file", {"path": "new.txt", "content": "hello\n"})
+        approved = self.gate.approve(
+            "write_file", {"path": "new.txt", "content": "hello\n"}
+        )
         self.assertEqual(approved, result.preview_text)
         self.assertIsInstance(approved, str)
 
     def test_approve_empty_diff(self):
         """approve() on identical content returns empty string."""
         self._write("same.txt", "abc\n")
-        approved = self.gate.approve("write_file", {"path": "same.txt", "content": "abc\n"})
+        approved = self.gate.approve(
+            "write_file", {"path": "same.txt", "content": "abc\n"}
+        )
         self.assertEqual(approved, "")
 
 
@@ -332,6 +347,7 @@ class TestReadSafetyGate(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     # ------------------------------------------------------------------
@@ -374,6 +390,7 @@ class TestWriteSafetyGateCheck(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     # ------------------------------------------------------------------

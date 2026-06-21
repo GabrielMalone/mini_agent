@@ -25,6 +25,7 @@ class TestCoreMemory(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     # --- get_core_memory default ---
@@ -103,6 +104,7 @@ class TestSessionSearch(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def _save_msg(self, role: str, content: str) -> None:
@@ -148,7 +150,7 @@ class TestSessionSearch(unittest.TestCase):
     def test_search_handles_special_characters(self):
         """FTS5 query escaping prevents crashes on special chars."""
         self._save_msg("user", "path is C:\\Users\\test\\file.py")
-        results = self.store.search_messages('C:\\\\Users')
+        results = self.store.search_messages("C:\\\\Users")
         self.assertIsInstance(results, list)
 
 
@@ -162,6 +164,7 @@ class TestConsolidation(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     # --- rate limiting ---
@@ -191,6 +194,7 @@ class TestConsolidation(unittest.TestCase):
         from tools.memory_consolidation import _apply_facts_to_core
 
         from tools import _TOOL_CONTEXT
+
         old_store = getattr(_TOOL_CONTEXT, "_memory_store", None)
         _TOOL_CONTEXT._memory_store = self.store
         try:

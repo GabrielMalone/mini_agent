@@ -68,9 +68,7 @@ def _memory_core(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolR
             return ToolResult(success=True, content="Core memory: (empty)")
 
         elif action == "add":
-            new_content = (
-                (current + "\n" + content).strip() if current else content
-            )
+            new_content = (current + "\n" + content).strip() if current else content
             result = memory_store.write_core_memory(new_content)
             if result["ok"]:
                 return ToolResult(success=True, content=result["message"])
@@ -93,8 +91,7 @@ def _memory_core(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolR
                 return ToolResult(
                     success=False,
                     content=(
-                        f"Line {line_number} out of range. "
-                        f"Lines: 1-{len(lines)}."
+                        f"Line {line_number} out of range. Lines: 1-{len(lines)}."
                     ),
                 )
             removed = lines.pop(line_number - 1)
@@ -103,10 +100,7 @@ def _memory_core(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolR
             if result["ok"]:
                 return ToolResult(
                     success=True,
-                    content=(
-                        f"Removed line {line_number}: "
-                        f"\"{removed.strip()[:100]}\""
-                    ),
+                    content=(f'Removed line {line_number}: "{removed.strip()[:100]}"'),
                 )
             return ToolResult(success=False, content=result["message"])
 
@@ -114,8 +108,7 @@ def _memory_core(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolR
             return ToolResult(
                 success=False,
                 content=(
-                    f"Unknown action: '{action}'. "
-                    f"Use: add, replace, remove, read."
+                    f"Unknown action: '{action}'. Use: add, replace, remove, read."
                 ),
             )
     except Exception as e:
@@ -126,8 +119,11 @@ def _memory_core(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolR
 # Structured observation tool (claude-mem inspired)
 # ---------------------------------------------------------------------------
 
+
 @_register("record_observation")
-def _record_observation(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
+def _record_observation(
+    args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate
+) -> ToolResult:
     """Record a structured observation about a tool call, discovery, or decision.
 
     Observations are typed, tagged, file-linked entries that persist across
@@ -166,6 +162,7 @@ def _record_observation(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -
     session_id = getattr(_TOOL_CONTEXT, "scratchpad_path", None)
     if session_id:
         import os
+
         session_id = os.path.basename(session_id).replace(".db", "")
 
     obs_id = memory_store.record_observation(
@@ -197,15 +194,18 @@ def _record_observation(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -
 def _record_observation_summary(args: dict) -> str:
     obs_type = args.get("type", "other")
     title = args.get("title", "?")
-    return f"record_observation({obs_type}, \"{title[:50]}\")"
+    return f'record_observation({obs_type}, "{title[:50]}")'
 
 
 # ---------------------------------------------------------------------------
 # Session summary tool (claude-mem inspired)
 # ---------------------------------------------------------------------------
 
+
 @_register("write_session_summary")
-def _write_session_summary(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
+def _write_session_summary(
+    args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate
+) -> ToolResult:
     """Write a structured session summary for cross-session continuity.
 
     The summary is injected into future sessions so the agent picks up where
@@ -229,6 +229,7 @@ def _write_session_summary(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate
     session_id = getattr(_TOOL_CONTEXT, "scratchpad_path", None)
     if session_id:
         import os
+
         session_id = os.path.basename(session_id).replace(".db", "")
 
     workspace = getattr(_TOOL_CONTEXT, "workspace", None)
@@ -271,15 +272,18 @@ def _write_session_summary(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate
 @_summarize("write_session_summary")
 def _write_session_summary_summary(args: dict) -> str:
     request = args.get("request", "?")
-    return f"write_session_summary(\"{request[:50]}\")"
+    return f'write_session_summary("{request[:50]}")'
 
 
 # ---------------------------------------------------------------------------
 # Read observations tool
 # ---------------------------------------------------------------------------
 
+
 @_register("read_observations")
-def _read_observations(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
+def _read_observations(
+    args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate
+) -> ToolResult:
     """Query structured observations from the session database.
 
     Filter by type (bugfix, discovery, decision, refactor, other),
@@ -314,6 +318,7 @@ def _read_observations(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) ->
         )
 
     from memory.observations import estimate_observation_tokens
+
     economics = estimate_observation_tokens(observations)
 
     lines = [
@@ -351,15 +356,14 @@ def _read_observations_summary(args: dict) -> str:
 def _memory_core_summary(args: dict) -> str:
     action = args.get("action", "?")
     content = args.get("content", "")
-    preview = (
-        content[:50] + ("..." if len(content) > 50 else "")
-        if content else ""
-    )
-    return f"memory_core({action}, \"{preview}\")"
+    preview = content[:50] + ("..." if len(content) > 50 else "") if content else ""
+    return f'memory_core({action}, "{preview}")'
 
 
 @_register("session_search")
-def _session_search(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
+def _session_search(
+    args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate
+) -> ToolResult:
     """Search past session history using FTS5 full-text search.
 
     Use this when the user references something from a previous conversation
@@ -392,34 +396,33 @@ def _session_search(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> To
         if not results:
             return ToolResult(
                 success=True,
-                content=f"No results found for: \"{query[:200]}\"",
+                content=f'No results found for: "{query[:200]}"',
             )
-        lines = [f"Search results for \"{query[:200]}\":\n"]
+        lines = [f'Search results for "{query[:200]}":\n']
         for r in results:
             content = r["content"]
             if len(content) > 300:
                 content = content[:300] + "..."
-            lines.append(
-                f"  [{r['rowid']}] (rank={r['rank']:.2f}) {content}"
-            )
+            lines.append(f"  [{r['rowid']}] (rank={r['rank']:.2f}) {content}")
         return ToolResult(success=True, content="\n".join(lines))
     except Exception as e:
-        return ToolResult(
-            success=False, content=f"Session search error: {e}"
-        )
+        return ToolResult(success=False, content=f"Session search error: {e}")
 
 
 @_summarize("session_search")
 def _session_search_summary(args: dict) -> str:
     query = args.get("query", "?")
-    return f"session_search(\"{query[:60]}\")"
+    return f'session_search("{query[:60]}")'
 
 
 def _session_search_fallback(
-    db_path: str, query: str, limit: int,
+    db_path: str,
+    query: str,
+    limit: int,
 ) -> ToolResult:
     """Fallback FTS5 search without MemoryStore."""
     import sqlite3
+
     try:
         conn = sqlite3.connect(db_path)
         conn.execute("PRAGMA busy_timeout=5000")
@@ -436,26 +439,25 @@ def _session_search_fallback(
             conn.close()
             return ToolResult(
                 success=True,
-                content=f"No results found for: \"{query[:200]}\"",
+                content=f'No results found for: "{query[:200]}"',
             )
-        lines = [f"Search results for \"{query[:200]}\":\n"]
+        lines = [f'Search results for "{query[:200]}":\n']
         for r in rows:
             content = r[1]
             if len(content) > 300:
                 content = content[:300] + "..."
-            lines.append(
-                f"  [{r[0]}] (rank={r[2]:.2f}) {content}"
-            )
+            lines.append(f"  [{r[0]}] (rank={r[2]:.2f}) {content}")
         conn.close()
         return ToolResult(success=True, content="\n".join(lines))
     except Exception as e:
-        return ToolResult(
-            success=False, content=f"Session search error: {e}"
-        )
+        return ToolResult(success=False, content=f"Session search error: {e}")
 
 
 def _memory_core_fallback(
-    db_path: str, action: str, content: str, line_number: int,
+    db_path: str,
+    action: str,
+    content: str,
+    line_number: int,
 ) -> ToolResult:
     """Fallback implementation that uses SQLite directly (no MemoryStore)."""
     import sqlite3
@@ -493,13 +495,9 @@ def _memory_core_fallback(
             if row:
                 current = row[0]
                 char_limit = row[1]
-                new_content = (
-                    (current + "\n" + content).strip() if current else content
-                )
+                new_content = (current + "\n" + content).strip() if current else content
                 if len(new_content) > char_limit:
-                    remaining = (
-                        char_limit - len(current) if current else char_limit
-                    )
+                    remaining = char_limit - len(current) if current else char_limit
                     conn.close()
                     return ToolResult(
                         success=False,
@@ -541,9 +539,7 @@ def _memory_core_fallback(
                         f"limit of {char_limit} chars. Consolidate first."
                     ),
                 )
-            conn.execute(
-                "UPDATE core_memory SET content = ? WHERE id = 1", (content,)
-            )
+            conn.execute("UPDATE core_memory SET content = ? WHERE id = 1", (content,))
             conn.commit()
             rem = char_limit - len(content)
             conn.close()
@@ -571,8 +567,7 @@ def _memory_core_fallback(
                 return ToolResult(
                     success=False,
                     content=(
-                        f"Line {line_number} out of range. "
-                        f"Lines: 1-{len(lines)}."
+                        f"Line {line_number} out of range. Lines: 1-{len(lines)}."
                     ),
                 )
             removed = lines.pop(line_number - 1)
@@ -585,10 +580,7 @@ def _memory_core_fallback(
             conn.close()
             return ToolResult(
                 success=True,
-                content=(
-                    f"Removed line {line_number}: "
-                    f"\"{removed.strip()[:100]}\""
-                ),
+                content=(f'Removed line {line_number}: "{removed.strip()[:100]}"'),
             )
 
         else:
@@ -596,8 +588,7 @@ def _memory_core_fallback(
             return ToolResult(
                 success=False,
                 content=(
-                    f"Unknown action: '{action}'. "
-                    f"Use: add, replace, remove, read."
+                    f"Unknown action: '{action}'. Use: add, replace, remove, read."
                 ),
             )
     except Exception as e:

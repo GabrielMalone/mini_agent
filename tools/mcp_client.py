@@ -24,8 +24,10 @@ from tools._json_rpc_shared import drain_stderr
 # Error types
 # ---------------------------------------------------------------------------
 
+
 class McpError(Exception):
     """A JSON-RPC error returned by an MCP server."""
+
     def __init__(self, error: dict):
         self.code = error.get("code", -1)
         self.message = error.get("message", "unknown")
@@ -40,6 +42,7 @@ class McpConnectionError(Exception):
 # McpConnection -- one per server
 # ---------------------------------------------------------------------------
 
+
 class McpConnection:
     """Manages one MCP server over stdio JSON-RPC transport.
 
@@ -52,7 +55,9 @@ class McpConnection:
         3. Client sends ``initialized`` notification
     """
 
-    def __init__(self, name: str, command: list[str], env: dict[str, str] | None = None):
+    def __init__(
+        self, name: str, command: list[str], env: dict[str, str] | None = None
+    ):
         self.name = name
         self.command = command
         self.env = env
@@ -124,7 +129,7 @@ class McpConnection:
             merged_env.update(self.env)
 
         creationflags = 0
-        if os.name == 'nt':
+        if os.name == "nt":
             creationflags = subprocess.CREATE_NO_WINDOW
 
         self.process = subprocess.Popen(
@@ -141,9 +146,7 @@ class McpConnection:
     def _read_line(self, timeout: float = 15.0) -> bytes:
         """Read one line from stdout, with timeout."""
         if self.process is None or self.process.stdout is None:
-            raise McpConnectionError(
-                f"MCP server '{self.name}' is not connected"
-            )
+            raise McpConnectionError(f"MCP server '{self.name}' is not connected")
 
         # Use threading for timeout on readline
         result: list[bytes | None] = [None]
@@ -166,9 +169,7 @@ class McpConnection:
             )
         if exc[0] is not None:
             self._connected = False
-            raise McpConnectionError(
-                f"MCP server '{self.name}' read error: {exc[0]}"
-            )
+            raise McpConnectionError(f"MCP server '{self.name}' read error: {exc[0]}")
         raw = result[0]
         if not raw:
             self._connected = False
@@ -188,9 +189,7 @@ class McpConnection:
         Ignores notifications (messages without an id).
         """
         if self.process is None or self.process.stdin is None:
-            raise McpConnectionError(
-                f"MCP server '{self.name}' is not connected"
-            )
+            raise McpConnectionError(f"MCP server '{self.name}' is not connected")
 
         with self._lock:
             self._request_id += 1
@@ -335,6 +334,7 @@ class McpConnection:
 # McpClientManager -- orchestrates all MCP connections
 # ---------------------------------------------------------------------------
 
+
 class McpClientManager:
     """Manages multiple MCP server connections.
 
@@ -436,7 +436,7 @@ class McpClientManager:
                     success=False,
                     content=f"Unknown MCP server: '{server}'.",
                     hint=f"Available servers: {list(self._configs.keys())}. "
-                         f"Configure in .mini_agent.toml [agent.mcp_servers.{server}].",
+                    f"Configure in .mini_agent.toml [agent.mcp_servers.{server}].",
                 )
 
         if not conn.is_connected:
@@ -453,7 +453,7 @@ class McpClientManager:
                 success=False,
                 content=f"MCP server '{server}' has no tool '{tool}'.",
                 hint=f"Available tools on '{server}': {tool_names}. "
-                     f"Use mcp_discover to see all tools.",
+                f"Use mcp_discover to see all tools.",
             )
 
         return conn.call_tool(tool, arguments)

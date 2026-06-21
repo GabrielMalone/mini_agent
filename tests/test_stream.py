@@ -17,6 +17,7 @@ from stream import _parse_stream, THINKING_START, THINKING_END
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _sse_response(lines):
     """Mock response whose ``iter_lines`` yields *lines*."""
     resp = MagicMock()
@@ -48,6 +49,7 @@ def _data(chunk):
 # ---------------------------------------------------------------------------
 # Comments & non-data lines
 # ---------------------------------------------------------------------------
+
 
 def test_comment_lines_are_ignored():
     """SSE comment lines (starting with colon) must not affect output."""
@@ -92,6 +94,7 @@ def test_non_data_lines_are_skipped():
 # ---------------------------------------------------------------------------
 # Empty / nil / missing data
 # ---------------------------------------------------------------------------
+
 
 def test_data_empty_string_after_prefix():
     """A data line whose payload is empty after 'data: '."""
@@ -152,6 +155,7 @@ def test_content_field_is_null():
 # [DONE] termination
 # ---------------------------------------------------------------------------
 
+
 def test_done_not_included_in_content():
     """The [DONE] sentinel must not leak into content."""
     lines = [
@@ -201,6 +205,7 @@ def test_stream_without_done_marker():
 # ---------------------------------------------------------------------------
 # Partial / malformed input
 # ---------------------------------------------------------------------------
+
 
 def test_unclosed_json():
     """JSON that is truncated mid-string should not crash the parser."""
@@ -252,14 +257,13 @@ def test_choices_is_not_a_list():
 # Connection drops
 # ---------------------------------------------------------------------------
 
+
 def test_chunked_encoding_error():
     """ChunkedEncodingError mid-stream returns partial results."""
     lines = [
         _data({"choices": [{"delta": {"content": "partial"}}]}),
     ]
-    resp = _sse_response_that_breaks(
-        lines, requests.exceptions.ChunkedEncodingError
-    )
+    resp = _sse_response_that_breaks(lines, requests.exceptions.ChunkedEncodingError)
     msg = _parse_stream(resp)
     assert msg["content"] == "partial"
 
@@ -269,9 +273,7 @@ def test_connection_error_mid_stream():
     lines = [
         _data({"choices": [{"delta": {"content": "before-drop"}}]}),
     ]
-    resp = _sse_response_that_breaks(
-        lines, requests.exceptions.ConnectionError
-    )
+    resp = _sse_response_that_breaks(lines, requests.exceptions.ConnectionError)
     msg = _parse_stream(resp)
     assert msg["content"] == "before-drop"
 
@@ -281,9 +283,7 @@ def test_stream_consumed_error():
     lines = [
         _data({"choices": [{"delta": {"content": "consumed"}}]}),
     ]
-    resp = _sse_response_that_breaks(
-        lines, requests.exceptions.StreamConsumedError
-    )
+    resp = _sse_response_that_breaks(lines, requests.exceptions.StreamConsumedError)
     msg = _parse_stream(resp)
     assert msg["content"] == "consumed"
 
@@ -309,16 +309,29 @@ def test_connection_drop_before_any_data():
 def test_connection_drop_preserves_tool_call_fragments():
     """Drop mid-tool-call preserves what was received so far."""
     lines = [
-        _data({"choices": [{"delta": {
-            "tool_calls": [{
-                "index": 0, "id": "tc1", "type": "function",
-                "function": {"name": "read", "arguments": '{"path": "start'},
-            }]
-        }}]}),
+        _data(
+            {
+                "choices": [
+                    {
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "id": "tc1",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "read",
+                                        "arguments": '{"path": "start',
+                                    },
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        ),
     ]
-    resp = _sse_response_that_breaks(
-        lines, requests.exceptions.ChunkedEncodingError
-    )
+    resp = _sse_response_that_breaks(lines, requests.exceptions.ChunkedEncodingError)
     msg = _parse_stream(resp)
     assert "tool_calls" in msg
     assert msg["tool_calls"][0]["function"]["name"] == "read"
@@ -329,21 +342,42 @@ def test_connection_drop_preserves_tool_call_fragments():
 # on_tool_ready callback
 # ---------------------------------------------------------------------------
 
+
 def test_on_tool_ready_called_when_arguments_form_valid_json():
     """on_tool_ready fires once per tool index when args parse as JSON."""
     lines = [
-        _data({"choices": [{"delta": {
-            "tool_calls": [{
-                "index": 0,
-                "function": {"arguments": '{"path": "/f'},
-            }]
-        }}]}),
-        _data({"choices": [{"delta": {
-            "tool_calls": [{
-                "index": 0,
-                "function": {"arguments": 'oo.py"}'},
-            }]
-        }}]}),
+        _data(
+            {
+                "choices": [
+                    {
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "function": {"arguments": '{"path": "/f'},
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        ),
+        _data(
+            {
+                "choices": [
+                    {
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "function": {"arguments": 'oo.py"}'},
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        ),
         "data: [DONE]",
     ]
     fired = []
@@ -358,12 +392,22 @@ def test_on_tool_ready_called_when_arguments_form_valid_json():
 def test_on_tool_ready_not_called_for_incomplete_json():
     """Brace-imbalanced args should NOT trigger on_tool_ready."""
     lines = [
-        _data({"choices": [{"delta": {
-            "tool_calls": [{
-                "index": 0,
-                "function": {"arguments": '{"key": "val"'},
-            }]
-        }}]}),
+        _data(
+            {
+                "choices": [
+                    {
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "function": {"arguments": '{"key": "val"'},
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        ),
         "data: [DONE]",
     ]
     fired = []
@@ -374,12 +418,24 @@ def test_on_tool_ready_not_called_for_incomplete_json():
 def test_on_tool_ready_braces_balance_but_not_json():
     """Brace-balanced but invalid JSON (e.g. trailing comma) should NOT fire."""
     lines = [
-        _data({"choices": [{"delta": {
-            "tool_calls": [{
-                "index": 0,
-                "function": {"arguments": '{"a": 1,}'},  # trailing comma
-            }]
-        }}]}),
+        _data(
+            {
+                "choices": [
+                    {
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "function": {
+                                        "arguments": '{"a": 1,}'
+                                    },  # trailing comma
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        ),
         "data: [DONE]",
     ]
     fired = []
@@ -390,20 +446,40 @@ def test_on_tool_ready_braces_balance_but_not_json():
 def test_on_tool_ready_fires_only_once_per_index():
     """Once fired, the same index does not fire again."""
     lines = [
-        _data({"choices": [{"delta": {
-            "tool_calls": [{
-                "index": 0,
-                "function": {"arguments": '{"x": 1}'},
-            }]
-        }}]}),
+        _data(
+            {
+                "choices": [
+                    {
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "function": {"arguments": '{"x": 1}'},
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        ),
         # This chunk appends more arguments -- would create invalid JSON
         # but is ignored because the index already fired.
-        _data({"choices": [{"delta": {
-            "tool_calls": [{
-                "index": 0,
-                "function": {"arguments": 'extra'},
-            }]
-        }}]}),
+        _data(
+            {
+                "choices": [
+                    {
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "function": {"arguments": "extra"},
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        ),
         "data: [DONE]",
     ]
     fired = []
@@ -414,6 +490,7 @@ def test_on_tool_ready_fires_only_once_per_index():
 # ---------------------------------------------------------------------------
 # Reasoning edge cases
 # ---------------------------------------------------------------------------
+
 
 def test_reasoning_without_content():
     """Only reasoning, no content -- THINKING_END is now always emitted to close the block."""
@@ -461,14 +538,17 @@ def test_content_before_reasoning_skips_reasoning_header():
 # Usage
 # ---------------------------------------------------------------------------
 
+
 def test_usage_in_last_chunk():
     """Usage appearing only in the final chunk is still captured."""
     lines = [
         _data({"choices": [{"delta": {"content": "generated"}}]}),
-        _data({
-            "choices": [{"delta": {}}],
-            "usage": {"total_tokens": 100, "completion_tokens": 5},
-        }),
+        _data(
+            {
+                "choices": [{"delta": {}}],
+                "usage": {"total_tokens": 100, "completion_tokens": 5},
+            }
+        ),
         "data: [DONE]",
     ]
     msg = _parse_stream(_sse_response(lines))
@@ -478,14 +558,18 @@ def test_usage_in_last_chunk():
 def test_usage_overwrites_previous():
     """If usage appears in multiple chunks, last one wins."""
     lines = [
-        _data({
-            "choices": [{"delta": {"content": "a"}}],
-            "usage": {"total_tokens": 10},
-        }),
-        _data({
-            "choices": [{"delta": {"content": "b"}}],
-            "usage": {"total_tokens": 20},
-        }),
+        _data(
+            {
+                "choices": [{"delta": {"content": "a"}}],
+                "usage": {"total_tokens": 10},
+            }
+        ),
+        _data(
+            {
+                "choices": [{"delta": {"content": "b"}}],
+                "usage": {"total_tokens": 20},
+            }
+        ),
         "data: [DONE]",
     ]
     msg = _parse_stream(_sse_response(lines))
@@ -495,14 +579,18 @@ def test_usage_overwrites_previous():
 def test_usage_is_none_or_empty_ignored():
     """Usage that is None or empty dict should not overwrite."""
     lines = [
-        _data({
-            "choices": [{"delta": {"content": "x"}}],
-            "usage": {"total_tokens": 30},
-        }),
-        _data({
-            "choices": [{"delta": {"content": "y"}}],
-            "usage": None,
-        }),
+        _data(
+            {
+                "choices": [{"delta": {"content": "x"}}],
+                "usage": {"total_tokens": 30},
+            }
+        ),
+        _data(
+            {
+                "choices": [{"delta": {"content": "y"}}],
+                "usage": None,
+            }
+        ),
         "data: [DONE]",
     ]
     msg = _parse_stream(_sse_response(lines))
@@ -513,16 +601,32 @@ def test_usage_is_none_or_empty_ignored():
 # Mixed content + tool calls
 # ---------------------------------------------------------------------------
 
+
 def test_content_and_tool_calls_in_same_chunk():
     """Content and tool_calls arriving in the same delta."""
     lines = [
-        _data({"choices": [{"delta": {
-            "content": "Let me read that file",
-            "tool_calls": [{
-                "index": 0, "id": "call_x", "type": "function",
-                "function": {"name": "read_file", "arguments": '{"path": "f.py"}'},
-            }]
-        }}]}),
+        _data(
+            {
+                "choices": [
+                    {
+                        "delta": {
+                            "content": "Let me read that file",
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "id": "call_x",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "read_file",
+                                        "arguments": '{"path": "f.py"}',
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ]
+            }
+        ),
         "data: [DONE]",
     ]
     msg = _parse_stream(_sse_response(lines))
@@ -533,20 +637,42 @@ def test_content_and_tool_calls_in_same_chunk():
 def test_multiple_content_chunks_between_tool_call_fragments():
     """Text interleaved with tool call argument fragments."""
     lines = [
-        _data({"choices": [{"delta": {
-            "content": "Let me check...",
-            "tool_calls": [{
-                "index": 0, "id": "t0", "type": "function",
-                "function": {"name": "search", "arguments": ""},
-            }]
-        }}]}),
+        _data(
+            {
+                "choices": [
+                    {
+                        "delta": {
+                            "content": "Let me check...",
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "id": "t0",
+                                    "type": "function",
+                                    "function": {"name": "search", "arguments": ""},
+                                }
+                            ],
+                        }
+                    }
+                ]
+            }
+        ),
         _data({"choices": [{"delta": {"content": " searching now"}}]}),
-        _data({"choices": [{"delta": {
-            "tool_calls": [{
-                "index": 0,
-                "function": {"arguments": '{"query": "hello"}'},
-            }]
-        }}]}),
+        _data(
+            {
+                "choices": [
+                    {
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "function": {"arguments": '{"query": "hello"}'},
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        ),
         "data: [DONE]",
     ]
     msg = _parse_stream(_sse_response(lines))
@@ -557,6 +683,7 @@ def test_multiple_content_chunks_between_tool_call_fragments():
 # ---------------------------------------------------------------------------
 # Role & output shape
 # ---------------------------------------------------------------------------
+
 
 def test_return_role_is_always_assistant():
     """The returned message must always have role=assistant."""
@@ -580,16 +707,36 @@ def test_no_unexpected_keys_in_simple_response():
 def test_tool_calls_ordered_by_index():
     """Tool calls in the result are sorted by index."""
     lines = [
-        _data({"choices": [{"delta": {
-            "tool_calls": [
-                {"index": 2, "id": "c2", "type": "function",
-                 "function": {"name": "c", "arguments": "{}"}},
-                {"index": 0, "id": "c0", "type": "function",
-                 "function": {"name": "a", "arguments": "{}"}},
-                {"index": 1, "id": "c1", "type": "function",
-                 "function": {"name": "b", "arguments": "{}"}},
-            ]
-        }}]}),
+        _data(
+            {
+                "choices": [
+                    {
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 2,
+                                    "id": "c2",
+                                    "type": "function",
+                                    "function": {"name": "c", "arguments": "{}"},
+                                },
+                                {
+                                    "index": 0,
+                                    "id": "c0",
+                                    "type": "function",
+                                    "function": {"name": "a", "arguments": "{}"},
+                                },
+                                {
+                                    "index": 1,
+                                    "id": "c1",
+                                    "type": "function",
+                                    "function": {"name": "b", "arguments": "{}"},
+                                },
+                            ]
+                        }
+                    }
+                ]
+            }
+        ),
         "data: [DONE]",
     ]
     msg = _parse_stream(_sse_response(lines))
@@ -600,12 +747,24 @@ def test_tool_calls_ordered_by_index():
 def test_fired_indices_not_present_when_none_fired():
     """_fired_indices is absent when on_tool_ready was never called."""
     lines = [
-        _data({"choices": [{"delta": {
-            "tool_calls": [{
-                "index": 0, "id": "t0", "type": "function",
-                "function": {"name": "f", "arguments": '{"x": 1}'},
-            }]
-        }}]}),
+        _data(
+            {
+                "choices": [
+                    {
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "id": "t0",
+                                    "type": "function",
+                                    "function": {"name": "f", "arguments": '{"x": 1}'},
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        ),
         "data: [DONE]",
     ]
     msg = _parse_stream(_sse_response(lines))  # no on_tool_ready
@@ -615,6 +774,7 @@ def test_fired_indices_not_present_when_none_fired():
 # ---------------------------------------------------------------------------
 # on_token variations
 # ---------------------------------------------------------------------------
+
 
 def test_on_token_none_default_does_not_crash():
     """No on_token -- function uses print; must not crash."""

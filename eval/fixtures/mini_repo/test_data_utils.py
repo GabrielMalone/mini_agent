@@ -4,7 +4,11 @@
 def test_imports_still_work():
     """All functions should still be importable from data_utils after refactor."""
     from data_utils import load_csv, load_json, load_text
-    from data_utils import transform_normalize, transform_filter_positive, transform_scale
+    from data_utils import (
+        transform_normalize,
+        transform_filter_positive,
+        transform_scale,
+    )
 
     # Basic sanity
     assert callable(load_csv)

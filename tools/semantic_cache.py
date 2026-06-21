@@ -13,6 +13,7 @@ search_ops.py, so no additional memory footprint.
 Cache entries expire after TTL seconds (default: 1 hour) and the cache
 is bounded to MAX_ENTRIES to prevent unbounded memory growth.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -31,28 +32,36 @@ _log = get_logger("semantic_cache")
 # ---------------------------------------------------------------------------
 
 DEFAULT_SIMILARITY_THRESHOLD: float = 0.92  # cosine similarity >= this -> cache hit
-MAX_ENTRIES: int = 128                       # max cache entries (LRU eviction)
-DEFAULT_TTL_SECONDS: int = 3600              # 1 hour TTL
-MIN_QUERY_LENGTH: int = 10                   # don't cache queries shorter than this
+MAX_ENTRIES: int = 128  # max cache entries (LRU eviction)
+DEFAULT_TTL_SECONDS: int = 3600  # 1 hour TTL
+MIN_QUERY_LENGTH: int = 10  # don't cache queries shorter than this
 
 # Adaptive threshold tuning (per-entry, inspired by vCache)
-ADAPTIVE_THRESHOLD_MIN: float = 0.75          # floor — never go below this
-ADAPTIVE_THRESHOLD_DECAY: float = 0.005       # reduction per successful verified hit
-ADAPTIVE_THRESHOLD_PENALTY: float = 0.03      # increase on false positive feedback
+ADAPTIVE_THRESHOLD_MIN: float = 0.75  # floor — never go below this
+ADAPTIVE_THRESHOLD_DECAY: float = 0.005  # reduction per successful verified hit
+ADAPTIVE_THRESHOLD_PENALTY: float = 0.03  # increase on false positive feedback
 
 
 # ---------------------------------------------------------------------------
 # Cache entry
 # ---------------------------------------------------------------------------
 
+
 class CacheEntry:
     """A single cached LLM response with metadata and adaptive threshold."""
+
     __slots__ = (
-        "query_hash", "embedding", "response", "model", "created_at",
-        "input_tokens", "output_tokens", "cost_saved",
-        "hit_count",          # number of times this entry was served
-        "false_positives",    # number of times feedback said this was wrong
-        "adaptive_threshold", # per-entry threshold (starts at global default)
+        "query_hash",
+        "embedding",
+        "response",
+        "model",
+        "created_at",
+        "input_tokens",
+        "output_tokens",
+        "cost_saved",
+        "hit_count",  # number of times this entry was served
+        "false_positives",  # number of times feedback said this was wrong
+        "adaptive_threshold",  # per-entry threshold (starts at global default)
     )
 
     def __init__(
@@ -84,6 +93,7 @@ class CacheEntry:
 # Two-tier (exact + semantic) cache
 # ---------------------------------------------------------------------------
 
+
 class SemanticCache:
     """Thread-safe two-tier response cache.
 
@@ -114,8 +124,8 @@ class SemanticCache:
         self._misses: int = 0
         self._total_saved: float = 0.0  # estimated USD saved
         # Adaptive threshold tracking
-        self._feedback_positive: int = 0   # times feedback said "correct"
-        self._feedback_negative: int = 0   # times feedback said "wrong"
+        self._feedback_positive: int = 0  # times feedback said "correct"
+        self._feedback_negative: int = 0  # times feedback said "wrong"
 
     # ------------------------------------------------------------------
     # Public API
@@ -144,7 +154,8 @@ class SemanticCache:
                 self._total_saved += exact_entry.cost_saved
                 _log.info(
                     "cache_hit_exact query_hash=%s model=%s",
-                    query_hash[:16], exact_entry.model,
+                    query_hash[:16],
+                    exact_entry.model,
                 )
                 return exact_entry.response, 1.0
 
@@ -189,14 +200,18 @@ class SemanticCache:
                 self._entries.pop(best_idx)
                 self._entries.append(entry)
                 # Rebuild embedding matrix preserving order
-                self._embeddings = np.vstack([
-                    self._embeddings[:best_idx],
-                    self._embeddings[best_idx + 1:],
-                    entry.embedding.reshape(1, -1),
-                ])
+                self._embeddings = np.vstack(
+                    [
+                        self._embeddings[:best_idx],
+                        self._embeddings[best_idx + 1 :],
+                        entry.embedding.reshape(1, -1),
+                    ]
+                )
                 _log.info(
                     "cache_hit_semantic query_hash=%s similarity=%.3f model=%s",
-                    entry.query_hash[:16], best_sim, entry.model,
+                    entry.query_hash[:16],
+                    best_sim,
+                    entry.model,
                 )
                 return entry.response, best_sim
             else:
@@ -240,10 +255,9 @@ class SemanticCache:
             threshold=self._threshold,
         )
         # Estimated cost per API call: input + output tokens at provider rates
-        entry.cost_saved = (
-            (input_tokens / 1_000_000) * cost_per_million_input
-            + (output_tokens / 1_000_000) * cost_per_million_output
-        )
+        entry.cost_saved = (input_tokens / 1_000_000) * cost_per_million_input + (
+            output_tokens / 1_000_000
+        ) * cost_per_million_output
 
         with self._lock:
             # Tier 1: exact hash -> entry (deduplicates on same key)
@@ -276,7 +290,8 @@ class SemanticCache:
             if self._entries:
                 avg_adaptive = round(
                     sum(e.adaptive_threshold for e in self._entries)
-                    / len(self._entries), 3,
+                    / len(self._entries),
+                    3,
                 )
             return {
                 "hits": self._hits,
@@ -349,7 +364,8 @@ class SemanticCache:
                     _log.info(
                         "cache_feedback_false_positive query_hash=%s "
                         "new_threshold=%.3f fp_count=%d",
-                        query_hash[:16], entry.adaptive_threshold,
+                        query_hash[:16],
+                        entry.adaptive_threshold,
                         entry.false_positives,
                     )
 
@@ -364,6 +380,7 @@ class SemanticCache:
         """
         try:
             from tools.search_ops import _sem_get_model
+
             model = _sem_get_model()
             if model is None:
                 return None

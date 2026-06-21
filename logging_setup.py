@@ -43,6 +43,7 @@ def _ts() -> str:
     usec = int((t - sec) * 1_000_000)
     return time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(t)) + f".{usec:06d}Z"
 
+
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
@@ -62,11 +63,13 @@ _ERROR_COUNTERS: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int
 # Structure: {tool_name: {"total_failures": N, "not_found": N, "timeout": N, ...}}
 _ERROR_COUNTERS_LOCK = threading.Lock()
 
+
 def _increment_error_counter(tool_name: str, error_fingerprint: str) -> None:
     """Increment the error counter for a tool+error combination."""
     with _ERROR_COUNTERS_LOCK:
         _ERROR_COUNTERS[tool_name]["total_failures"] += 1
         _ERROR_COUNTERS[tool_name][error_fingerprint] += 1
+
 
 def get_error_summary() -> str:
     """Return a compact summary of all tracked tool errors this session.
@@ -88,7 +91,8 @@ def get_error_summary() -> str:
             # Top 3 error types
             top_errors = sorted(
                 [(k, v) for k, v in counts.items() if k != "total_failures"],
-                key=lambda x: x[1], reverse=True,
+                key=lambda x: x[1],
+                reverse=True,
             )[:3]
             error_detail = ", ".join(f"{k}:{v}" for k, v in top_errors)
             lines.append(f"- **{tool_name}**: {total_fail} failures ({error_detail})")
@@ -96,6 +100,7 @@ def get_error_summary() -> str:
             return ""
         lines.insert(0, f"## Session Error Summary ({total} total failures)")
         return "\n".join(lines)
+
 
 def has_elevated_errors(threshold: int = 5) -> bool:
     """Return True if any tool has exceeded the failure threshold."""
@@ -105,9 +110,11 @@ def has_elevated_errors(threshold: int = 5) -> bool:
                 return True
     return False
 
+
 # ---------------------------------------------------------------------------
 # JSON-lines formatter
 # ---------------------------------------------------------------------------
+
 
 class _JsonLinesFormatter(logging.Formatter):
     """Format log records as JSON lines for machine parsing."""
@@ -126,11 +133,20 @@ class _JsonLinesFormatter(logging.Formatter):
         if record.exc_info and record.exc_info[0] is not None:
             obj["traceback"] = traceback.format_exception(*record.exc_info)
         # Attach any extra fields passed via `extra=`
-        for key in ("event_type", "tool_name", "error_fingerprint", "turn", "provider", "status_code", "session"):
+        for key in (
+            "event_type",
+            "tool_name",
+            "error_fingerprint",
+            "turn",
+            "provider",
+            "status_code",
+            "session",
+        ):
             val = getattr(record, key, None)
             if val is not None:
                 obj[key] = val
         return json.dumps(obj, default=str)
+
 
 # ---------------------------------------------------------------------------
 # Logger factory
@@ -198,6 +214,7 @@ def _setup_root_logger() -> None:
 # Specialised writers for the two orphaned log files
 # ---------------------------------------------------------------------------
 
+
 def log_api_error(
     provider: str,
     model: str,
@@ -225,7 +242,10 @@ def log_api_error(
         pass  # Last-resort: don't crash on log write failure
     logger.warning(
         "API error | provider=%s model=%s status=%s body=%s",
-        provider, model, status_code, error_body[:200],
+        provider,
+        model,
+        status_code,
+        error_body[:200],
         extra={"provider": provider, "status_code": status_code},
     )
 
@@ -259,7 +279,9 @@ def log_error_trace(
     except OSError:
         pass  # Last-resort
     logger.error(
-        "%s: %s", error_type, message,
+        "%s: %s",
+        error_type,
+        message,
         exc_info=exc_info,
         extra=extra or {},
     )
@@ -268,6 +290,7 @@ def log_error_trace(
 # ---------------------------------------------------------------------------
 # Tool-level helpers
 # ---------------------------------------------------------------------------
+
 
 def log_tool_failure(
     tool_name: str,
@@ -288,9 +311,15 @@ def log_tool_failure(
     logger = get_logger("tools")
     logger.warning(
         "Tool failure | tool=%s fingerprint=%s content=%.200s",
-        tool_name, fingerprint, error_content,
-        extra={"event_type": "tool_failure", "tool_name": tool_name,
-               "error_fingerprint": fingerprint, "turn": turn},
+        tool_name,
+        fingerprint,
+        error_content,
+        extra={
+            "event_type": "tool_failure",
+            "tool_name": tool_name,
+            "error_fingerprint": fingerprint,
+            "turn": turn,
+        },
     )
 
 
@@ -298,7 +327,8 @@ def log_tool_success(tool_name: str, turn: int = 0) -> None:
     """Log a successful tool call (debug level -- not noisy in stderr)."""
     logger = get_logger("tools")
     logger.debug(
-        "Tool success | tool=%s", tool_name,
+        "Tool success | tool=%s",
+        tool_name,
         extra={"event_type": "tool_success", "tool_name": tool_name, "turn": turn},
     )
 

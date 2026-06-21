@@ -7,17 +7,22 @@ import os
 import tempfile
 import unittest
 
-from core.safety import ReadSafetyGate, ReadSafetyResult, WriteSafetyGate, WriteSafetyResult
+from core.safety import (
+    ReadSafetyGate,
+    ReadSafetyResult,
+    WriteSafetyGate,
+    WriteSafetyResult,
+)
 
 
 class TestReadSafetyGate(unittest.TestCase):
-
     def setUp(self):
         self.workspace = tempfile.mkdtemp()
         self.gate = ReadSafetyGate(self.workspace)
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.workspace, ignore_errors=True)
 
     # --- workspace boundary ---
@@ -119,7 +124,6 @@ class TestReadSafetyGate(unittest.TestCase):
 
 
 class TestWriteSafetyGate(unittest.TestCase):
-
     def setUp(self):
         # Create a temp workspace root
         self.workspace = tempfile.mkdtemp()
@@ -128,6 +132,7 @@ class TestWriteSafetyGate(unittest.TestCase):
     def tearDown(self):
         # Clean up any files created
         import shutil
+
         shutil.rmtree(self.workspace, ignore_errors=True)
 
     # --- helper ---
@@ -171,7 +176,9 @@ class TestWriteSafetyGate(unittest.TestCase):
             os.chdir(self.workspace)
             result = self.gate.check("relative_file.txt")
             self.assertTrue(result.allowed)
-            expected = os.path.realpath(os.path.join(self.workspace, "relative_file.txt"))
+            expected = os.path.realpath(
+                os.path.join(self.workspace, "relative_file.txt")
+            )
             self.assertEqual(result.resolved_path, expected)
         finally:
             os.chdir(orig_cwd)
@@ -258,16 +265,14 @@ class TestWriteSafetyGate(unittest.TestCase):
     # --- unrestricted mode ---
 
     def test_unrestricted_allows_write_anywhere(self):
-        gate = WriteSafetyGate(self.workspace, unrestricted=True,
-                               allow_overwrites=True)
+        gate = WriteSafetyGate(self.workspace, unrestricted=True, allow_overwrites=True)
         outside = os.path.join(tempfile.gettempdir(), "anywhere_write.txt")
         result = gate.check(outside)
         self.assertTrue(result.allowed)
         self.assertIn("OK", result.reason)
 
     def test_unrestricted_allows_path_traversal_write(self):
-        gate = WriteSafetyGate(self.workspace, unrestricted=True,
-                               allow_overwrites=True)
+        gate = WriteSafetyGate(self.workspace, unrestricted=True, allow_overwrites=True)
         path = os.path.join(self.workspace, "..", "..", "etc", "hack")
         result = gate.check(path)
         self.assertTrue(result.allowed)
@@ -289,8 +294,9 @@ class TestWriteSafetyGate(unittest.TestCase):
         with open(outside, "w") as f:
             f.write("existing")
         try:
-            gate = WriteSafetyGate(self.workspace, unrestricted=True,
-                                   allow_overwrites=True)
+            gate = WriteSafetyGate(
+                self.workspace, unrestricted=True, allow_overwrites=True
+            )
             result = gate.check(outside)
             self.assertTrue(result.allowed)
         finally:

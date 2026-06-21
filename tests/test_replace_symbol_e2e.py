@@ -1,4 +1,5 @@
 """End-to-end test for replace_symbol via execute_tool dispatch."""
+
 from __future__ import annotations
 
 import os
@@ -27,6 +28,7 @@ def subtract(a: int, b: int) -> int:
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.workspace, ignore_errors=True)
 
     def _call_tool(self, name, args):
@@ -39,15 +41,18 @@ def subtract(a: int, b: int) -> int:
         # Set up context minimally
         try:
             from core.config import load
+
             config = load(["-w", self.workspace])
         except Exception:
             config = None
         set_context(_agent_config=config, workspace=self.workspace)
 
         import json
+
         return execute_tool(
             {"function": {"name": name, "arguments": json.dumps(args)}},
-            wg, rg,
+            wg,
+            rg,
         )
 
     def test_get_file_skeleton_works(self):
@@ -64,11 +69,14 @@ def subtract(a: int, b: int) -> int:
 
     def test_replace_symbol_works(self):
         """replace_symbol should replace a function and write the result."""
-        result = self._call_tool("replace_symbol", {
-            "path": "test_lib.py",
-            "symbol": "add",
-            "text": 'def add(a: int, b: int) -> int:\n    """Add two numbers, now modified."""\n    return a + b + 1',
-        })
+        result = self._call_tool(
+            "replace_symbol",
+            {
+                "path": "test_lib.py",
+                "symbol": "add",
+                "text": 'def add(a: int, b: int) -> int:\n    """Add two numbers, now modified."""\n    return a + b + 1',
+            },
+        )
         self.assertTrue(result.success, f"replace_symbol failed: {result.content}")
 
         # Verify file was actually modified

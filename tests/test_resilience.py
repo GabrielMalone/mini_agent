@@ -15,6 +15,7 @@ from core.context_inject import _tool_call_key, _check_circuit
 # 1. Backward orphan detection in _clean_messages
 # ---------------------------------------------------------------------------
 
+
 class TestBackwardOrphanDetection(unittest.TestCase):
     """Verify that tool messages with no preceding assistant are removed."""
 
@@ -22,11 +23,22 @@ class TestBackwardOrphanDetection(unittest.TestCase):
         """Tool result with id=X before assistant with tool_calls=[X] -> removed."""
         messages = [
             {"role": "user", "content": "hi"},
-            {"role": "tool", "tool_call_id": "call_1",
-             "content": '{"success":true,"content":"ok"}'},
-            {"role": "assistant", "content": "",
-             "tool_calls": [{"id": "call_1", "type": "function",
-                             "function": {"name": "f", "arguments": "{}"}}]},
+            {
+                "role": "tool",
+                "tool_call_id": "call_1",
+                "content": '{"success":true,"content":"ok"}',
+            },
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {"name": "f", "arguments": "{}"},
+                    }
+                ],
+            },
         ]
         cleaned = _clean_messages(messages)
         roles = [m["role"] for m in cleaned]
@@ -38,11 +50,22 @@ class TestBackwardOrphanDetection(unittest.TestCase):
         """Tool result after its assistant is kept."""
         messages = [
             {"role": "user", "content": "hi"},
-            {"role": "assistant", "content": "",
-             "tool_calls": [{"id": "call_1", "type": "function",
-                             "function": {"name": "f", "arguments": "{}"}}]},
-            {"role": "tool", "tool_call_id": "call_1",
-             "content": '{"success":true,"content":"ok"}'},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {"name": "f", "arguments": "{}"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "tool_call_id": "call_1",
+                "content": '{"success":true,"content":"ok"}',
+            },
         ]
         cleaned = _clean_messages(messages)
         self.assertEqual(len(cleaned), 3)
@@ -54,13 +77,23 @@ class TestBackwardOrphanDetection(unittest.TestCase):
         """Tool result with id not matching any assistant -> removed."""
         messages = [
             {"role": "user", "content": "hi"},
-            {"role": "tool", "tool_call_id": "ghost_id",
-             "content": '{"success":true}'},
-            {"role": "assistant", "content": "",
-             "tool_calls": [{"id": "call_1", "type": "function",
-                             "function": {"name": "f", "arguments": "{}"}}]},
-            {"role": "tool", "tool_call_id": "call_1",
-             "content": '{"success":true,"content":"ok"}'},
+            {"role": "tool", "tool_call_id": "ghost_id", "content": '{"success":true}'},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {"name": "f", "arguments": "{}"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "tool_call_id": "call_1",
+                "content": '{"success":true,"content":"ok"}',
+            },
         ]
         cleaned = _clean_messages(messages)
         # ghost_id tool removed, assistant+tool preserved
@@ -74,21 +107,34 @@ class TestBackwardOrphanDetection(unittest.TestCase):
         """Mixed orphans and valid tool results -- only orphans removed."""
         messages = [
             {"role": "user", "content": "hi"},
-            {"role": "tool", "tool_call_id": "orphan_1",
-             "content": '{"success":false}'},
-            {"role": "assistant", "content": "",
-             "tool_calls": [
-                 {"id": "call_1", "type": "function",
-                  "function": {"name": "a", "arguments": "{}"}},
-                 {"id": "call_2", "type": "function",
-                  "function": {"name": "b", "arguments": "{}"}},
-             ]},
-            {"role": "tool", "tool_call_id": "orphan_2",
-             "content": '{"success":false}'},
-            {"role": "tool", "tool_call_id": "call_1",
-             "content": '{"success":true}'},
-            {"role": "tool", "tool_call_id": "call_2",
-             "content": '{"success":true}'},
+            {
+                "role": "tool",
+                "tool_call_id": "orphan_1",
+                "content": '{"success":false}',
+            },
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {"name": "a", "arguments": "{}"},
+                    },
+                    {
+                        "id": "call_2",
+                        "type": "function",
+                        "function": {"name": "b", "arguments": "{}"},
+                    },
+                ],
+            },
+            {
+                "role": "tool",
+                "tool_call_id": "orphan_2",
+                "content": '{"success":false}',
+            },
+            {"role": "tool", "tool_call_id": "call_1", "content": '{"success":true}'},
+            {"role": "tool", "tool_call_id": "call_2", "content": '{"success":true}'},
         ]
         cleaned = _clean_messages(messages)
         # orphan_1 (before assistant) removed, orphan_2 (wrong order / no
@@ -113,6 +159,7 @@ class TestBackwardOrphanDetection(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # 2. JSON repair
 # ---------------------------------------------------------------------------
+
 
 class TestJsonRepair(unittest.TestCase):
     """Verify common LLM JSON malformations are repaired."""
@@ -149,7 +196,7 @@ class TestJsonRepair(unittest.TestCase):
 
     def test_hopelessly_broken_json_raises(self):
         with self.assertRaises(json.JSONDecodeError):
-            _repair_json('not json at all {{{')
+            _repair_json("not json at all {{{")
 
     def test_empty_object(self):
         val, repaired = _repair_json("{}")
@@ -160,6 +207,7 @@ class TestJsonRepair(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # 3. Self-correction hints
 # ---------------------------------------------------------------------------
+
 
 class TestToolErrorHints(unittest.TestCase):
     """Verify that failed tool calls include helpful hints."""
@@ -185,7 +233,7 @@ class TestToolErrorHints(unittest.TestCase):
         self.assertIn("path: string", result.hint)
 
     def test_unknown_tool_returns_hint(self):
-        tc = self._make_tc("nonexistent_tool", '{}')
+        tc = self._make_tc("nonexistent_tool", "{}")
         result = execute_tool(tc, self.wg, self.rg)
         self.assertFalse(result.success)
         self.assertIn("Unknown tool", result.content)
@@ -227,6 +275,7 @@ class TestToolErrorHints(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # 4. Circuit breaker
 # ---------------------------------------------------------------------------
+
 
 class TestCircuitBreaker(unittest.TestCase):
     """Verify repeated tool call detection."""
@@ -286,6 +335,7 @@ class TestCircuitBreaker(unittest.TestCase):
 # 5. Schema validation
 # ---------------------------------------------------------------------------
 
+
 class TestSchemaValidation(unittest.TestCase):
     """Verify that execute_tool catches wrong parameter names."""
 
@@ -312,7 +362,7 @@ class TestSchemaValidation(unittest.TestCase):
 
     def test_missing_required_param_rejected(self):
         """Missing required 'path' param -> rejected with hint."""
-        tc = self._make_tc("read_file", '{}')
+        tc = self._make_tc("read_file", "{}")
         result = execute_tool(tc, self.wg, self.rg)
         self.assertFalse(result.success)
         self.assertIn("Missing required", result.content)
@@ -332,31 +382,37 @@ class TestSchemaValidation(unittest.TestCase):
 # 6. Scratchpad
 # ---------------------------------------------------------------------------
 
+
 class TestScratchpad(unittest.TestCase):
     """Verify scratchpad persistence and clear behavior."""
 
     def setUp(self):
         import tempfile
+
         self.tmp = tempfile.mkdtemp()
         self.db_path = os.path.join(self.tmp, "mem.json")
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def test_empty_by_default(self):
         from memory.memory import MemoryStore
+
         store = MemoryStore(self.db_path)
         self.assertEqual(store.get_scratchpad(), "")
 
     def test_set_and_get(self):
         from memory.memory import MemoryStore
+
         store = MemoryStore(self.db_path)
         store.set_scratchpad("Plan:\n1. Fix bug\n2. Test")
         self.assertEqual(store.get_scratchpad(), "Plan:\n1. Fix bug\n2. Test")
 
     def test_overwrite(self):
         from memory.memory import MemoryStore
+
         store = MemoryStore(self.db_path)
         store.set_scratchpad("v1")
         store.set_scratchpad("v2")
@@ -364,6 +420,7 @@ class TestScratchpad(unittest.TestCase):
 
     def test_clear_removes_scratchpad(self):
         from memory.memory import MemoryStore
+
         store = MemoryStore(self.db_path)
         store.set_scratchpad("important notes")
         store.save([{"role": "user", "content": "hi"}])
@@ -372,6 +429,7 @@ class TestScratchpad(unittest.TestCase):
 
     def test_persists_across_instances(self):
         from memory.memory import MemoryStore
+
         store1 = MemoryStore(self.db_path)
         store1.set_scratchpad("persistent content")
 
@@ -383,12 +441,18 @@ class TestScratchpad(unittest.TestCase):
         from memory.memory import MemoryStore
         from tools import execute_tool, set_context
         from core.safety import WriteSafetyGate, ReadSafetyGate
+
         store = MemoryStore(self.db_path)
         set_context(scratchpad_path=store._db_path)
         wg = WriteSafetyGate(self.tmp, allow_overwrites=True)
         rg = ReadSafetyGate(self.tmp)
-        tc = {"id": "test_sp", "function": {"name": "write_scratchpad",
-              "arguments": '{"content": "tool-layer test"}'}}
+        tc = {
+            "id": "test_sp",
+            "function": {
+                "name": "write_scratchpad",
+                "arguments": '{"content": "tool-layer test"}',
+            },
+        }
         result = execute_tool(tc, wg, rg)
         self.assertTrue(result.success, f"write_scratchpad failed: {result.content}")
         loaded = store.get_scratchpad()
@@ -399,6 +463,7 @@ class TestScratchpad(unittest.TestCase):
         import os as _os
         from tools import execute_tool, set_context
         from core.safety import WriteSafetyGate, ReadSafetyGate
+
         # Clear any previous scratchpad_path
         set_context(scratchpad_path=None, workspace=self.tmp)
         md_path = _os.path.join(self.tmp, ".mini_agent_scratchpad.md")
@@ -407,11 +472,18 @@ class TestScratchpad(unittest.TestCase):
             _os.remove(md_path)
         wg = WriteSafetyGate(self.tmp, allow_overwrites=True)
         rg = ReadSafetyGate(self.tmp)
-        tc = {"id": "test_sp2", "function": {"name": "write_scratchpad",
-              "arguments": '{"content": "fallback file test"}'}}
+        tc = {
+            "id": "test_sp2",
+            "function": {
+                "name": "write_scratchpad",
+                "arguments": '{"content": "fallback file test"}',
+            },
+        }
         result = execute_tool(tc, wg, rg)
         self.assertTrue(result.success, f"write_scratchpad failed: {result.content}")
-        self.assertTrue(_os.path.exists(md_path), f"Fallback file not created at {md_path}")
+        self.assertTrue(
+            _os.path.exists(md_path), f"Fallback file not created at {md_path}"
+        )
         with open(md_path) as f:
             self.assertIn("fallback file test", f.read())
 
@@ -420,11 +492,13 @@ class TestScratchpad(unittest.TestCase):
 # 7. Diff output in edit_file
 # ---------------------------------------------------------------------------
 
+
 class TestEditFileDiff(unittest.TestCase):
     """Verify that edit_file returns a unified diff."""
 
     def setUp(self):
         import tempfile
+
         self.tmp = tempfile.mkdtemp()
         self.test_file = os.path.join(self.tmp, "test.py")
         self.wg = WriteSafetyGate(self.tmp, allow_overwrites=True)
@@ -432,31 +506,39 @@ class TestEditFileDiff(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def test_successful_edit_includes_diff(self):
         with open(self.test_file, "w") as f:
             f.write("hello world\nline two\n")
         from tools import execute_tool
+
         # Must read before editing
-        execute_tool({
-            "id": "call_0",
-            "type": "function",
-            "function": {
-                "name": "read_file",
-                "arguments": json.dumps({"path": self.test_file}),
+        execute_tool(
+            {
+                "id": "call_0",
+                "type": "function",
+                "function": {
+                    "name": "read_file",
+                    "arguments": json.dumps({"path": self.test_file}),
+                },
             },
-        }, self.wg, self.rg)
+            self.wg,
+            self.rg,
+        )
         tc = {
             "id": "call_1",
             "type": "function",
             "function": {
                 "name": "edit_file",
-                "arguments": json.dumps({
-                    "path": self.test_file,
-                    "old_string": "hello world",
-                    "new_string": "goodbye world",
-                }),
+                "arguments": json.dumps(
+                    {
+                        "path": self.test_file,
+                        "old_string": "hello world",
+                        "new_string": "goodbye world",
+                    }
+                ),
             },
         }
         result = execute_tool(tc, self.wg, self.rg)
@@ -469,11 +551,13 @@ class TestEditFileDiff(unittest.TestCase):
 # 8. Transient message stripping
 # ---------------------------------------------------------------------------
 
+
 class TestTransientMessages(unittest.TestCase):
     """Verify that _transient messages are stripped from saved history."""
 
     def test_transient_messages_are_cleaned(self):
         from memory.memory import _clean_messages
+
         messages = [
             {"role": "user", "content": "real input"},
             {"role": "user", "content": "scratchpad snapshot", "_transient": True},
@@ -487,6 +571,7 @@ class TestTransientMessages(unittest.TestCase):
 
     def test_non_transient_still_preserved(self):
         from memory.memory import _clean_messages
+
         messages = [
             {"role": "user", "content": "real question"},
             {"role": "assistant", "content": "real answer"},
@@ -496,13 +581,13 @@ class TestTransientMessages(unittest.TestCase):
 
     def test_all_transient_empty_result(self):
         from memory.memory import _clean_messages
+
         messages = [
             {"role": "user", "content": "a", "_transient": True},
             {"role": "user", "content": "b", "_transient": True},
         ]
         cleaned = _clean_messages(messages)
         self.assertEqual(len(cleaned), 0)
-
 
 
 if __name__ == "__main__":

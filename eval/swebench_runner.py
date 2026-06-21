@@ -71,8 +71,8 @@ LOCAL_REPORT_DIR = Path(__file__).parent / "reports"
 
 # Repos to skip (too large / complex for local runs without Docker)
 HEAVY_REPOS = {
-    "django/django",      # needs specific Django env
-    "sympy/sympy",        # needs SymPy deps
+    "django/django",  # needs specific Django env
+    "sympy/sympy",  # needs SymPy deps
     "scikit-learn/scikit-learn",
     "pydata/xarray",
     "pylint-dev/pylint",
@@ -81,8 +81,14 @@ HEAVY_REPOS = {
 
 # Ignore patterns when copying agent workspace
 _IGNORE_PATTERNS = (
-    ".git", "__pycache__", ".pytest_cache", "venv", ".venv",
-    "node_modules", ".mypy_cache", ".ruff_cache",
+    ".git",
+    "__pycache__",
+    ".pytest_cache",
+    "venv",
+    ".venv",
+    "node_modules",
+    ".mypy_cache",
+    ".ruff_cache",
 )
 
 
@@ -99,7 +105,7 @@ class SWEBenchTask:
     repo: str
     base_commit: str
     problem_statement: str
-    patch: str = ""                    # gold patch (hidden from agent)
+    patch: str = ""  # gold patch (hidden from agent)
     test_patch: str = ""
     fail_to_pass: list[str] = field(default_factory=list)
     pass_to_pass: list[str] = field(default_factory=list)
@@ -133,9 +139,9 @@ class SWEBenchReport:
     """Aggregated results across multiple SWE-bench tasks."""
 
     total: int = 0
-    completed: int = 0     # tasks that ran without error
-    errors: int = 0        # tasks that errored out
-    resolved: int = 0      # tasks where patch resolved the issue
+    completed: int = 0  # tasks that ran without error
+    errors: int = 0  # tasks that errored out
+    resolved: int = 0  # tasks where patch resolved the issue
     resolution_rate: float = 0.0
     avg_turns: float = 0.0
     avg_tokens: float = 0.0
@@ -150,7 +156,9 @@ class SWEBenchReport:
 # ---------------------------------------------------------------------------
 
 
-def _load_dataset(dataset_name: str, split: str = "test", max_tasks: int | None = None) -> list[dict]:
+def _load_dataset(
+    dataset_name: str, split: str = "test", max_tasks: int | None = None
+) -> list[dict]:
     """Load SWE-bench tasks from HuggingFace datasets.
 
     Args:
@@ -247,8 +255,16 @@ def _get_repo(repo: str, base_commit: str) -> str:
     if not (cache_path / "HEAD").exists():
         print(f"  Cloning {repo} (cached)...", file=sys.stderr)
         subprocess.run(
-            ["git", "clone", "--bare", f"https://github.com/{repo}.git", str(cache_path)],
-            capture_output=True, text=True, timeout=300,
+            [
+                "git",
+                "clone",
+                "--bare",
+                f"https://github.com/{repo}.git",
+                str(cache_path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=300,
             check=False,
         )
 
@@ -256,7 +272,10 @@ def _get_repo(repo: str, base_commit: str) -> str:
     if (cache_path / "HEAD").exists():
         subprocess.run(
             ["git", "fetch", "--all"],
-            cwd=str(cache_path), capture_output=True, text=True, timeout=60,
+            cwd=str(cache_path),
+            capture_output=True,
+            text=True,
+            timeout=60,
             check=False,
         )
 
@@ -266,20 +285,27 @@ def _get_repo(repo: str, base_commit: str) -> str:
     # Use git worktree or just clone from the bare cache
     result = subprocess.run(
         ["git", "clone", "--shared", str(cache_path), workdir],
-        capture_output=True, text=True, timeout=120,
+        capture_output=True,
+        text=True,
+        timeout=120,
     )
     if result.returncode != 0:
         # Fallback: direct clone from GitHub
         subprocess.run(
             ["git", "clone", f"https://github.com/{repo}.git", workdir],
-            capture_output=True, text=True, timeout=300,
+            capture_output=True,
+            text=True,
+            timeout=300,
             check=True,
         )
 
     # Checkout the target commit
     subprocess.run(
         ["git", "checkout", base_commit],
-        cwd=workdir, capture_output=True, text=True, timeout=30,
+        cwd=workdir,
+        capture_output=True,
+        text=True,
+        timeout=30,
         check=True,
     )
 
@@ -342,29 +368,43 @@ def run_swebench_task(
 
     try:
         # Set up workspace
-        print(f"\n  [{task.instance_id}] Setting up {task.repo} @ {task.base_commit[:8]}...",
-              file=sys.stderr)
+        print(
+            f"\n  [{task.instance_id}] Setting up {task.repo} @ {task.base_commit[:8]}...",
+            file=sys.stderr,
+        )
         workspace = _get_repo(task.repo, task.base_commit)
 
         # Apply test patch if provided
         if task.test_patch:
             result = subprocess.run(
                 ["git", "apply"],
-                cwd=workspace, input=task.test_patch, capture_output=True, text=True,
+                cwd=workspace,
+                input=task.test_patch,
+                capture_output=True,
+                text=True,
                 timeout=30,
             )
             if result.returncode != 0:
-                print(f"  [{task.instance_id}] WARNING: test patch failed to apply: "
-                      f"{result.stderr[:200]}", file=sys.stderr)
+                print(
+                    f"  [{task.instance_id}] WARNING: test patch failed to apply: "
+                    f"{result.stderr[:200]}",
+                    file=sys.stderr,
+                )
             else:
                 # Commit the test patch so 'git diff' later captures agent changes only
                 subprocess.run(
                     ["git", "add", "-A"],
-                    cwd=workspace, capture_output=True, text=True, timeout=10,
+                    cwd=workspace,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
                 )
                 subprocess.run(
                     ["git", "commit", "-m", "Apply test patch"],
-                    cwd=workspace, capture_output=True, text=True, timeout=10,
+                    cwd=workspace,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
                 )
 
         original_cwd = os.getcwd()
@@ -385,10 +425,12 @@ def run_swebench_task(
 
         # Inject task prompt
         prompt = _build_prompt(task)
-        session["messages"].append({
-            "role": "user",
-            "content": prompt,
-        })
+        session["messages"].append(
+            {
+                "role": "user",
+                "content": prompt,
+            }
+        )
 
         # Instrument with metrics
         metrics = MetricsCollector()
@@ -426,26 +468,34 @@ def run_swebench_task(
         # Collect git diff as prediction patch
         diff_result = subprocess.run(
             ["git", "diff", "HEAD"],
-            capture_output=True, text=True, cwd=workspace, timeout=30,
+            capture_output=True,
+            text=True,
+            cwd=workspace,
+            timeout=30,
         )
         model_patch = diff_result.stdout
 
         # Estimate tokens
         from memory.memory import _total_tokens
+
         tokens = _total_tokens(session["messages"])
 
         os.chdir(original_cwd)
 
-        print(f"  [{task.instance_id}] Done in {elapsed:.0f}s, "
-              f"{metrics.turn_count} turns, {tokens} tokens, "
-              f"patch: {len(model_patch)} bytes",
-              file=sys.stderr)
+        print(
+            f"  [{task.instance_id}] Done in {elapsed:.0f}s, "
+            f"{metrics.turn_count} turns, {tokens} tokens, "
+            f"patch: {len(model_patch)} bytes",
+            file=sys.stderr,
+        )
 
         return SWEBenchResult(
             instance_id=task.instance_id,
             repo=task.repo,
             model_patch=model_patch,
-            turns_used=result_msg.get("_turn_count", metrics.turn_count) if result_msg else 0,
+            turns_used=result_msg.get("_turn_count", metrics.turn_count)
+            if result_msg
+            else 0,
             tool_calls=dict(metrics.tool_counts),
             tokens_consumed=tokens,
             wall_time_seconds=elapsed,
@@ -505,21 +555,28 @@ def run_swebench_suite(
         instance_id = task.instance_id
 
         if instance_id in skipped:
-            print(f"\n[{i+1}/{len(tasks)}] SKIPPING {instance_id} (already in resume file)",
-                  file=sys.stderr)
-            results.append(SWEBenchResult(
-                instance_id=instance_id,
-                repo=task.repo,
-                model_patch=skipped[instance_id],
-            ))
+            print(
+                f"\n[{i + 1}/{len(tasks)}] SKIPPING {instance_id} (already in resume file)",
+                file=sys.stderr,
+            )
+            results.append(
+                SWEBenchResult(
+                    instance_id=instance_id,
+                    repo=task.repo,
+                    model_patch=skipped[instance_id],
+                )
+            )
             completed += 1
             continue
 
-        print(f"\n{'='*60}", file=sys.stderr)
-        print(f"[{i+1}/{len(tasks)}] {instance_id}", file=sys.stderr)
+        print(f"\n{'=' * 60}", file=sys.stderr)
+        print(f"[{i + 1}/{len(tasks)}] {instance_id}", file=sys.stderr)
         print(f"  Repo: {task.repo}", file=sys.stderr)
-        print(f"  Issue: {task.problem_statement[:200].replace(chr(10), ' ')}...", file=sys.stderr)
-        print(f"{'='*60}", file=sys.stderr)
+        print(
+            f"  Issue: {task.problem_statement[:200].replace(chr(10), ' ')}...",
+            file=sys.stderr,
+        )
+        print(f"{'=' * 60}", file=sys.stderr)
 
         result = run_swebench_task(task, timeout_seconds=timeout_seconds, stream=stream)
         results.append(result)
@@ -555,7 +612,9 @@ def run_swebench_suite(
 # ---------------------------------------------------------------------------
 
 
-def save_predictions(results: list[SWEBenchResult], output_path: str, model_name: str = "mini_agent") -> None:
+def save_predictions(
+    results: list[SWEBenchResult], output_path: str, model_name: str = "mini_agent"
+) -> None:
     """Save results as SWE-bench predictions JSONL file.
 
     Format (one JSON object per line):
@@ -570,7 +629,9 @@ def save_predictions(results: list[SWEBenchResult], output_path: str, model_name
                 "model_name_or_path": model_name,
             }
             f.write(json.dumps(prediction) + "\n")
-    print(f"\nPredictions saved to {output_path} ({len(results)} tasks)", file=sys.stderr)
+    print(
+        f"\nPredictions saved to {output_path} ({len(results)} tasks)", file=sys.stderr
+    )
 
 
 def load_predictions(predictions_path: str) -> dict[str, str]:
@@ -597,8 +658,10 @@ def load_predictions(predictions_path: str) -> dict[str, str]:
             except json.JSONDecodeError:
                 continue
 
-    print(f"Loaded {len(predictions)} existing predictions from {predictions_path}",
-          file=sys.stderr)
+    print(
+        f"Loaded {len(predictions)} existing predictions from {predictions_path}",
+        file=sys.stderr,
+    )
     return predictions
 
 
@@ -663,7 +726,7 @@ def _cli() -> None:
         type=str,
         default="princeton-nlp/SWE-bench_Lite",
         help="HF dataset name (default: princeton-nlp/SWE-bench_Lite). "
-             "Also try: princeton-nlp/SWE-bench_Verified",
+        "Also try: princeton-nlp/SWE-bench_Verified",
     )
     parser.add_argument(
         "--max-tasks",
@@ -744,11 +807,13 @@ def _cli() -> None:
         run_ids = {r.instance_id for r in all_results}
         for inst_id, patch in resume_data.items():
             if inst_id not in run_ids:
-                all_results.append(SWEBenchResult(
-                    instance_id=inst_id,
-                    repo="",
-                    model_patch=patch,
-                ))
+                all_results.append(
+                    SWEBenchResult(
+                        instance_id=inst_id,
+                        repo="",
+                        model_patch=patch,
+                    )
+                )
 
     # Save predictions
     save_predictions(all_results, args.output, model_name=args.model_name)
@@ -757,7 +822,7 @@ def _cli() -> None:
     save_report(report, output_dir=args.report_dir)
 
     # Print summary
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("SWE-bench Run Complete")
     print(f"  Dataset:    {args.dataset}")
     print(f"  Total:      {report.total}")
@@ -769,7 +834,7 @@ def _cli() -> None:
     print(f"  Avg tokens: {report.avg_tokens:.0f}")
     print(f"  Avg time:   {report.avg_wall_time:.1f}s")
     print(f"  Predictions: {args.output}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     if report.resolved == 0 and report.completed > 0:
         print("\n  To evaluate these predictions with the official SWE-bench harness:")

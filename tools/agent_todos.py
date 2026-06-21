@@ -19,7 +19,9 @@ from tools import _register, _summarize, ToolResult, _TOOL_CONTEXT
 # Todo tracking: in-memory list, survives across turns
 # ---------------------------------------------------------------------------
 
-_AGENT_TODOS: list[dict] = []  # [{"id": str, "content": str, "status": "pending"|"done"}]
+_AGENT_TODOS: list[
+    dict
+] = []  # [{"id": str, "content": str, "status": "pending"|"done"}]
 _AGENT_TODOS_LOCK = threading.Lock()
 
 
@@ -40,7 +42,9 @@ def _todo_write(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolRe
                     t["content"] = content
                     if status:
                         t["status"] = status
-                    return ToolResult(success=True, content=f"Todo '{todo_id}' updated.")
+                    return ToolResult(
+                        success=True, content=f"Todo '{todo_id}' updated."
+                    )
         new_id = todo_id or str(len(_AGENT_TODOS) + 1)
         _AGENT_TODOS.append({"id": new_id, "content": content, "status": status})
         return ToolResult(success=True, content=f"Todo '{new_id}' created.")
@@ -59,7 +63,10 @@ def _todo_read(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolRes
             items = [t for t in items if t["status"] == status_filter]
         if not items:
             return ToolResult(success=True, content="No todos found.")
-        lines = [f"{'[x]' if t['status'] == 'done' else '[ ]'} {t['id']}: {t['content']}" for t in items]
+        lines = [
+            f"{'[x]' if t['status'] == 'done' else '[ ]'} {t['id']}: {t['content']}"
+            for t in items
+        ]
         return ToolResult(success=True, content="\n".join(lines))
 
 
@@ -91,7 +98,9 @@ def _todo_read_summary(args: dict) -> str:
 
 
 @_register("write_scratchpad")
-def _write_scratchpad(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
+def _write_scratchpad(
+    args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate
+) -> ToolResult:
     """Write content to the agent's persistent working scratchpad."""
     content_text = args["content"]
 
@@ -104,6 +113,7 @@ def _write_scratchpad(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> 
         scratchpad_path = getattr(_TOOL_CONTEXT, "scratchpad_path", None)
         if scratchpad_path:
             from memory.memory import MemoryStore
+
             memory_store = MemoryStore(scratchpad_path)
 
     if memory_store is not None:
@@ -122,6 +132,7 @@ def _write_scratchpad(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> 
 
     # Fallback: file-based scratchpad (no MemoryStore available)
     import os as _os
+
     fallback = _os.path.join(
         _TOOL_CONTEXT.workspace or ".", ".mini_agent_scratchpad.md"
     )
@@ -148,7 +159,7 @@ def _write_scratchpad_summary(args: dict) -> str:
     preview = content[:60].replace("\n", " ")
     if len(content) > 60:
         preview += "..."
-    return f"write_scratchpad(...{len(content)} chars -> \"{preview}\")"
+    return f'write_scratchpad(...{len(content)} chars -> "{preview}")'
 
 
 # ---------------------------------------------------------------------------
@@ -223,7 +234,9 @@ def _plan_status(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolR
             pass  # re-marking is harmless (a set), but we could nudge
         done.add(idx)
         _TOOL_CONTEXT._plan_done = done
-        _TOOL_CONTEXT._plan_last_advanced_turn = getattr(_TOOL_CONTEXT, "_turn_count", 0)
+        _TOOL_CONTEXT._plan_last_advanced_turn = getattr(
+            _TOOL_CONTEXT, "_turn_count", 0
+        )
 
         # Persist to memory for cross-session continuity
         _maybe_persist_plan()

@@ -26,6 +26,7 @@ class TestPostEditVerify(unittest.TestCase):
         self.read_gate = MagicMock()
         # Clear idempotency store to prevent cross-test contamination
         from tools.idempotency import clear_idempotent
+
         clear_idempotent()
 
     def tearDown(self):

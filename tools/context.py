@@ -15,9 +15,11 @@ from dataclasses import dataclass, field
 CTX_SCRATCHPAD_PATH = "scratchpad_path"
 CTX_SCRATCHPAD_UPDATED = "_scratchpad_updated"
 CTX_TURN_HISTORY = "_turn_history"  # dict[int, str] -- turn number -> summary
-CTX_PLAN_STEPS = "_plan_steps"      # list[str] -- from plan tool
-CTX_PLAN_DONE = "_plan_done"        # set[int] -- completed step indices
-CTX_PLAN_LAST_ADVANCED = "_plan_last_advanced_turn"  # int -- turn when last step advanced
+CTX_PLAN_STEPS = "_plan_steps"  # list[str] -- from plan tool
+CTX_PLAN_DONE = "_plan_done"  # set[int] -- completed step indices
+CTX_PLAN_LAST_ADVANCED = (
+    "_plan_last_advanced_turn"  # int -- turn when last step advanced
+)
 
 
 @dataclass
@@ -70,19 +72,19 @@ class AgentContext:
     _session_id: str | None = None
 
     # -- Stores & services (set by init_session / agent loop) --
-    _memory_store: object | None = None          # MemoryStore
+    _memory_store: object | None = None  # MemoryStore
     _failure_pattern_store: object | None = None  # FailurePatternStore
-    _self_critique: object | None = None          # SelfCritique
-    _tool_graph: object | None = None             # ToolGraph
-    _mistake_notebook: object | None = None       # MistakeNotebook
+    _self_critique: object | None = None  # SelfCritique
+    _tool_graph: object | None = None  # ToolGraph
+    _mistake_notebook: object | None = None  # MistakeNotebook
     # NOTE: _agent_runtime, _agent_config, _agent_depth, _subagent_callback
     # are dead fields (sub-agent system removed in commit 25d41eb).
     # Kept for backward compat — some code still references them.
-    _agent_runtime: object | None = None          # DEPRECATED: sub-agent orchestration removed
-    _agent_config: object | None = None           # DEPRECATED
-    _agent_depth: int = 0                          # DEPRECATED: recursion guard removed
-    _read_gate: object | None = None              # ReadSafetyGate
-    _provider: str = "deepseek"                    # API provider label
+    _agent_runtime: object | None = None  # DEPRECATED: sub-agent orchestration removed
+    _agent_config: object | None = None  # DEPRECATED
+    _agent_depth: int = 0  # DEPRECATED: recursion guard removed
+    _read_gate: object | None = None  # ReadSafetyGate
+    _provider: str = "deepseek"  # API provider label
 
     _subagent_callback: object | None = None  # DEPRECATED: Electron IPC bridge removed
 

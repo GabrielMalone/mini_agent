@@ -7,7 +7,12 @@ from unittest.mock import MagicMock, patch
 
 import requests
 
-from retry import _jittered_delay, _request_with_retry, _MAX_RETRIES, _RETRYABLE_STATUSES
+from retry import (
+    _jittered_delay,
+    _request_with_retry,
+    _MAX_RETRIES,
+    _RETRYABLE_STATUSES,
+)
 
 
 class TestJitteredDelay(unittest.TestCase):
@@ -97,7 +102,7 @@ class TestRetryableStatusCodes(unittest.TestCase):
 
     def _make_resp(self, status_code: int):
         resp = MagicMock()
-        resp.ok = (status_code < 400)
+        resp.ok = status_code < 400
         resp.status_code = status_code
         return resp
 

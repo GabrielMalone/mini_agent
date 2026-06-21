@@ -133,24 +133,18 @@ class TestCheckerFileExists:
             path = os.path.join(ws, "hello.py")
             with open(path, "w") as f:
                 f.write("print('hi')")
-            results = run_checks(
-                [{"type": "file_exists", "path": "hello.py"}], ws
-            )
+            results = run_checks([{"type": "file_exists", "path": "hello.py"}], ws)
             assert results[0].passed
             assert results[0].check_type == "file_exists"
 
     def test_file_exists_fail(self):
         with tempfile.TemporaryDirectory() as ws:
-            results = run_checks(
-                [{"type": "file_exists", "path": "nope.py"}], ws
-            )
+            results = run_checks([{"type": "file_exists", "path": "nope.py"}], ws)
             assert not results[0].passed
 
     def test_file_not_exists_pass(self):
         with tempfile.TemporaryDirectory() as ws:
-            results = run_checks(
-                [{"type": "file_not_exists", "path": "gone.txt"}], ws
-            )
+            results = run_checks([{"type": "file_not_exists", "path": "gone.txt"}], ws)
             assert results[0].passed
 
     def test_file_not_exists_fail(self):
@@ -158,9 +152,7 @@ class TestCheckerFileExists:
             path = os.path.join(ws, "stay.txt")
             with open(path, "w") as f:
                 f.write("here")
-            results = run_checks(
-                [{"type": "file_not_exists", "path": "stay.txt"}], ws
-            )
+            results = run_checks([{"type": "file_not_exists", "path": "stay.txt"}], ws)
             assert not results[0].passed
 
 
@@ -173,7 +165,13 @@ class TestCheckerFileContains:
             with open(path, "w") as f:
                 f.write("def hello_world(name):\n    return f'Hello, {name}!'")
             results = run_checks(
-                [{"type": "file_contains", "path": "mod.py", "pattern": "def hello_world"}],
+                [
+                    {
+                        "type": "file_contains",
+                        "path": "mod.py",
+                        "pattern": "def hello_world",
+                    }
+                ],
                 ws,
             )
             assert results[0].passed
@@ -184,7 +182,13 @@ class TestCheckerFileContains:
             with open(path, "w") as f:
                 f.write("def goodbye():\n    pass")
             results = run_checks(
-                [{"type": "file_contains", "path": "mod.py", "pattern": "def hello_world"}],
+                [
+                    {
+                        "type": "file_contains",
+                        "path": "mod.py",
+                        "pattern": "def hello_world",
+                    }
+                ],
                 ws,
             )
             assert not results[0].passed
@@ -240,9 +244,7 @@ class TestCheckerTestPasses:
             test_path = os.path.join(ws, "test_fail.py")
             with open(test_path, "w") as f:
                 f.write("def test_always_fail():\n    assert False\n")
-            results = run_checks(
-                [{"type": "test_passes", "path": "test_fail.py"}], ws
-            )
+            results = run_checks([{"type": "test_passes", "path": "test_fail.py"}], ws)
             assert not results[0].passed
 
 
@@ -297,9 +299,7 @@ class TestCheckerShell:
 
     def test_shell_pass_returncode(self):
         with tempfile.TemporaryDirectory() as ws:
-            results = run_checks(
-                [{"type": "shell", "command": "echo hello"}], ws
-            )
+            results = run_checks([{"type": "shell", "command": "echo hello"}], ws)
             assert results[0].passed
 
     def test_shell_pass_stdout_match(self):
@@ -346,9 +346,7 @@ class TestCheckerShell:
 
     def test_unknown_checker_type(self):
         with tempfile.TemporaryDirectory() as ws:
-            results = run_checks(
-                [{"type": "nonexistent_checker", "path": "x"}], ws
-            )
+            results = run_checks([{"type": "nonexistent_checker", "path": "x"}], ws)
             assert not results[0].passed
             assert "Unknown checker" in results[0].detail
 
@@ -434,8 +432,10 @@ class TestRunner:
             _init_git(ws)
 
             # Mock run_agent_turn + init_session (imported locally in runner)
-            with patch("core.llm.run_agent_turn") as mock_run, \
-                 patch("core.config.init_session") as mock_init:
+            with (
+                patch("core.llm.run_agent_turn") as mock_run,
+                patch("core.config.init_session") as mock_init,
+            ):
                 mock_run.return_value = {"role": "assistant", "content": "Done."}
                 mock_init.return_value = {
                     "config": MagicMock(),
@@ -467,8 +467,10 @@ class TestRunner:
                     on_tool_start("write_file(bar.py)")
                 return {"role": "assistant", "content": "Done."}
 
-            with patch("core.llm.run_agent_turn", side_effect=fake_run_agent_turn), \
-                 patch("core.config.init_session") as mock_init:
+            with (
+                patch("core.llm.run_agent_turn", side_effect=fake_run_agent_turn),
+                patch("core.config.init_session") as mock_init,
+            ):
                 mock_init.return_value = {
                     "config": MagicMock(),
                     "write_gate": MagicMock(),
@@ -489,8 +491,10 @@ class TestRunner:
         with tempfile.TemporaryDirectory() as ws:
             _init_git(ws)
 
-            with patch("core.llm.run_agent_turn", side_effect=RuntimeError("Boom")), \
-                 patch("core.config.init_session") as mock_init:
+            with (
+                patch("core.llm.run_agent_turn", side_effect=RuntimeError("Boom")),
+                patch("core.config.init_session") as mock_init,
+            ):
                 mock_init.return_value = {
                     "config": MagicMock(),
                     "write_gate": MagicMock(),
@@ -517,8 +521,10 @@ class TestRunner:
             workspace_fixture="mini_repo",
         )
 
-        with patch("core.llm.run_agent_turn") as mock_run, \
-             patch("core.config.init_session") as mock_init:
+        with (
+            patch("core.llm.run_agent_turn") as mock_run,
+            patch("core.config.init_session") as mock_init,
+        ):
             mock_run.return_value = {"role": "assistant", "content": "Done."}
             mock_init.return_value = {
                 "config": MagicMock(),
@@ -650,9 +656,7 @@ def _init_git(ws: str) -> None:
     subprocess.run(
         ["git", "config", "user.email", "test@test.com"], cwd=ws, capture_output=True
     )
-    subprocess.run(
-        ["git", "config", "user.name", "Test"], cwd=ws, capture_output=True
-    )
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=ws, capture_output=True)
 
 
 def _git_add_commit(ws: str, msg: str = "commit") -> None:

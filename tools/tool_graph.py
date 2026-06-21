@@ -49,8 +49,14 @@ _MAX_TRANSITION_HINTS = 2
 # Anti-patterns: undesirable sequences that should trigger a warning
 _ANTI_PATTERNS: dict[str, list[tuple[str, str]]] = {
     "edit_file": [
-        ("search_files", "Prefer read_file over search_files before editing -- you need exact text, not patterns."),
-        ("find_symbol", "Use read_file before edit_file to see the exact text you're replacing."),
+        (
+            "search_files",
+            "Prefer read_file over search_files before editing -- you need exact text, not patterns.",
+        ),
+        (
+            "find_symbol",
+            "Use read_file before edit_file to see the exact text you're replacing.",
+        ),
     ],
     "write_file": [
         ("read_file", None),  # read_file before write_file is actually good -- skip
@@ -58,9 +64,20 @@ _ANTI_PATTERNS: dict[str, list[tuple[str, str]]] = {
 }
 
 # Tools that "read" state (preliminary step before writes)
-_READ_TOOLS = frozenset({"read_file", "file_info", "list_directory", "find_symbol",
-                          "find_usages", "search_files", "lsp_definition",
-                          "lsp_hover", "lsp_references", "lsp_diagnostics"})
+_READ_TOOLS = frozenset(
+    {
+        "read_file",
+        "file_info",
+        "list_directory",
+        "find_symbol",
+        "find_usages",
+        "search_files",
+        "lsp_definition",
+        "lsp_hover",
+        "lsp_references",
+        "lsp_diagnostics",
+    }
+)
 
 # Tools that "write" state
 _WRITE_TOOLS = frozenset({"write_file", "edit_file", "run_shell"})
@@ -96,6 +113,7 @@ TOOL_TRANSITIONS_INDEXES = [
 # ToolGraph
 # ---------------------------------------------------------------------------
 
+
 class ToolGraph:
     """Weighted directed graph of tool transitions learned from observation.
 
@@ -111,6 +129,7 @@ class ToolGraph:
     def _get_conn(self) -> sqlite3.Connection:
         """Return the shared SQLite connection (one connection per db_path)."""
         from memory.memory import get_shared_conn
+
         self._conn = get_shared_conn(self._db_path)
         return self._conn
 
@@ -163,9 +182,12 @@ class ToolGraph:
                     " count = count + 1,"
                     " success_count = success_count + ?,"
                     " last_seen = datetime('now')",
-                    (from_tool, to_tool,
-                     1 if successful_turn else 0,
-                     1 if successful_turn else 0),
+                    (
+                        from_tool,
+                        to_tool,
+                        1 if successful_turn else 0,
+                        1 if successful_turn else 0,
+                    ),
                 )
                 conn.commit()
             except sqlite3.Error:
@@ -186,16 +208,20 @@ class ToolGraph:
         # Record adjacent transitions
         for i in range(len(tool_names) - 1):
             self.record_transition(
-                tool_names[i], tool_names[i + 1],
+                tool_names[i],
+                tool_names[i + 1],
                 successful_turn=successful_turn,
             )
         # Also record within a sliding window for broader co-occurrence
         if len(tool_names) > 2:
             for i in range(len(tool_names)):
-                for j in range(i + 1, min(i + _COOCCURRENCE_WINDOW + 1, len(tool_names))):
+                for j in range(
+                    i + 1, min(i + _COOCCURRENCE_WINDOW + 1, len(tool_names))
+                ):
                     if j > i + 1:  # Non-adjacent within window
                         self.record_transition(
-                            tool_names[i], tool_names[j],
+                            tool_names[i],
+                            tool_names[j],
                             successful_turn=successful_turn,
                         )
 
@@ -296,8 +322,7 @@ class ToolGraph:
         no read operations have been performed recently.
         """
         pending_names = [
-            tc.get("function", {}).get("name", "")
-            for tc in pending_tool_calls
+            tc.get("function", {}).get("name", "") for tc in pending_tool_calls
         ]
         has_write = any(n in _WRITE_TOOLS for n in pending_names)
         if not has_write:
@@ -341,8 +366,7 @@ class ToolGraph:
                 return {
                     "total_transitions": total,
                     "top_pairs": [
-                        {"from": r[0], "to": r[1], "count": r[2]}
-                        for r in top_pairs
+                        {"from": r[0], "to": r[1], "count": r[2]} for r in top_pairs
                     ],
                     "top_source_tools": [
                         {"tool": r[0], "total": r[1]} for r in top_from

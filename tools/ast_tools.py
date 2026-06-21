@@ -24,6 +24,7 @@ from core.safety import WriteSafetyGate, ReadSafetyGate
 # Shared helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_tree_sitter_parser(ext: str) -> tuple[Any, Any, Any] | None:
     """Load tree-sitter parser + language + query for extension.
 
@@ -37,16 +38,20 @@ def _get_tree_sitter_parser(ext: str) -> tuple[Any, Any, Any] | None:
     if ext in (".py",):
         try:
             import tree_sitter_python as tsp
+
             lang = Language(tsp.language())
         except (ImportError, AttributeError, OSError):
             return None
     elif ext in (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"):
         try:
             import tree_sitter_typescript as tsts
+
             if ext in (".ts", ".tsx"):
                 lang = Language(tsts.language_typescript())
             else:
-                lang = Language(tsts.language_tsx() if ext == ".tsx" else tsts.language_typescript())
+                lang = Language(
+                    tsts.language_tsx() if ext == ".tsx" else tsts.language_typescript()
+                )
         except (ImportError, AttributeError, OSError):
             return None
     else:
@@ -57,7 +62,10 @@ def _get_tree_sitter_parser(ext: str) -> tuple[Any, Any, Any] | None:
 
 
 def _extract_definitions(
-    source: str, parser: Any, lang: Any, ext: str,
+    source: str,
+    parser: Any,
+    lang: Any,
+    ext: str,
 ) -> list[dict]:
     """Extract top-level and nested definitions with line ranges.
 
@@ -103,9 +111,7 @@ def _extract_definitions(
     # tree-sitter v0.23+ returns dict[str, list[Node]]; v0.22 returns list[tuple[Node, str]]
     if isinstance(captures, dict):
         items: list[tuple[Any, str]] = [
-            (node, tag)
-            for tag, nodes in captures.items()
-            for node in nodes
+            (node, tag) for tag, nodes in captures.items() for node in nodes
         ]
     else:
         items = captures
@@ -136,14 +142,16 @@ def _extract_definitions(
             seen.add(key)
 
             kind = "class" if "class" in tag else "def"
-            definitions.append({
-                "kind": kind,
-                "name": name,
-                "start_line": start_line,
-                "end_line": end_line,
-                "start_byte": start_byte,
-                "end_byte": end_byte,
-            })
+            definitions.append(
+                {
+                    "kind": kind,
+                    "name": name,
+                    "start_line": start_line,
+                    "end_line": end_line,
+                    "start_byte": start_byte,
+                    "end_byte": end_byte,
+                }
+            )
 
     if not definitions:
         return _extract_with_regex(source, ext)
@@ -177,18 +185,20 @@ def _extract_with_regex(source: str, ext: str) -> list[dict]:
             kind = "function"
             name = match.group(1)
 
-        start_line = source[:match.start()].count("\n") + 1
+        start_line = source[: match.start()].count("\n") + 1
 
         # Find end line by counting braces or indentation
         end_line = start_line  # simplified
-        definitions.append({
-            "kind": kind,
-            "name": name,
-            "start_line": start_line,
-            "end_line": end_line,
-            "start_byte": match.start(),
-            "end_byte": match.end(),
-        })
+        definitions.append(
+            {
+                "kind": kind,
+                "name": name,
+                "start_line": start_line,
+                "end_line": end_line,
+                "start_byte": match.start(),
+                "end_byte": match.end(),
+            }
+        )
 
     return definitions
 
@@ -215,7 +225,7 @@ def _format_skeleton(
         # Single representative line
         if start < len(lines):
             line = lines[start]
-            anchor = anchors[start] if start < len(anchors) else f"L{start+1}"
+            anchor = anchors[start] if start < len(anchors) else f"L{start + 1}"
             formatted = format_line_for_model(line, anchor, include_anchors)
             output.append(formatted)
 
@@ -236,8 +246,11 @@ def _format_skeleton(
 # get_file_skeleton
 # ---------------------------------------------------------------------------
 
+
 @_register("get_file_skeleton")
-def _get_file_skeleton(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
+def _get_file_skeleton(
+    args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate
+) -> ToolResult:
     """Read the structural outline of files by extracting class/function definitions.
 
     Args:
@@ -287,9 +300,7 @@ def _get_file_skeleton(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> 
         class_count = sum(1 for d in definitions if d["kind"] == "class")
         summary = f"{def_count} function(s), {class_count} class(es)"
 
-        results.append(
-            f"--- {path} [{summary}] ---\n{skeleton}"
-        )
+        results.append(f"--- {path} [{summary}] ---\n{skeleton}")
 
     return ToolResult(success=True, content="\n\n".join(results))
 
@@ -305,6 +316,7 @@ def _get_file_skeleton_summary(args: dict) -> str:
 # ---------------------------------------------------------------------------
 # get_function
 # ---------------------------------------------------------------------------
+
 
 @_register("get_function")
 def _get_function(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
@@ -324,11 +336,15 @@ def _get_function(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolR
     include_anchors = args.get("include_anchors", False)
 
     if not names:
-        return ToolResult(success=False, content="'names' is required (list of function/class names)")
+        return ToolResult(
+            success=False, content="'names' is required (list of function/class names)"
+        )
 
     safety_result = rg.check(path)
     if not safety_result.allowed:
-        return ToolResult(success=False, content=f"Read blocked: {safety_result.reason}")
+        return ToolResult(
+            success=False, content=f"Read blocked: {safety_result.reason}"
+        )
 
     resolved = safety_result.resolved_path
 
@@ -361,7 +377,11 @@ def _get_function(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolR
             body_anchors = anchors[start:end]
 
             formatted = "\n".join(
-                format_line_for_model(line, body_anchors[i] if i < len(body_anchors) else f"L{start+i+1}", include_anchors)
+                format_line_for_model(
+                    line,
+                    body_anchors[i] if i < len(body_anchors) else f"L{start + i + 1}",
+                    include_anchors,
+                )
                 for i, line in enumerate(body_lines)
             )
 
@@ -387,6 +407,7 @@ def _get_function_summary(args: dict) -> str:
 # replace_symbol
 # ---------------------------------------------------------------------------
 
+
 @_register("replace_symbol")
 def _replace_symbol(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
     """Replace one or more symbols (functions/classes) by their AST byte range.
@@ -406,10 +427,14 @@ def _replace_symbol(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> Too
         text = args.get("text", "")
         if not path or not symbol:
             return ToolResult(success=False, content="'path' and 'symbol' are required")
-        replacements = [{"path": path, "symbol": symbol, "text": text, "type": args.get("type")}]
+        replacements = [
+            {"path": path, "symbol": symbol, "text": text, "type": args.get("type")}
+        ]
 
     if not isinstance(replacements, list) or not replacements:
-        return ToolResult(success=False, content="'replacements' must be a non-empty array")
+        return ToolResult(
+            success=False, content="'replacements' must be a non-empty array"
+        )
 
     from tools import add_modified_file, clear_tool_cache
 
@@ -462,13 +487,12 @@ def _replace_symbol(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> Too
 
         # Replace byte range
         new_content = (
-            content[:match["start_byte"]] +
-            text +
-            content[match["end_byte"]:]
+            content[: match["start_byte"]] + text + content[match["end_byte"] :]
         )
 
         # Backup and write
         from tools.file_ops import _backup_before_write
+
         _backup_before_write(resolved)
 
         try:
@@ -487,6 +511,7 @@ def _replace_symbol(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> Too
         if resolved.endswith(".py"):
             try:
                 from tools.search_ops import _reindex_file
+
                 _reindex_file(resolved, wg.workspace_root)
             except Exception:
                 pass
@@ -494,12 +519,14 @@ def _replace_symbol(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> Too
         # Keep knowledge graph fresh
         try:
             from core.knowledge_graph import invalidate_file
+
             invalidate_file(resolved, wg.workspace_root)
         except Exception:
             pass
 
         # Reconcile anchors
         from core.anchor_manager import AnchorStateManager
+
         AnchorStateManager.reconcile(resolved, new_content.split("\n"))
 
         results.append(

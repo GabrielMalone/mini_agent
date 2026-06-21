@@ -46,18 +46,23 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 # Failure pattern management
-_MAX_PATTERNS = 200                # cap on stored patterns
+_MAX_PATTERNS = 200  # cap on stored patterns
 _PATTERN_CONFIDENCE_THRESHOLD = 0.3  # min confidence to inject a pattern
-_PATTERN_MIN_OCCURRENCES = 2       # min occurrences before considering injection
-_MAX_INJECTED_PATTERNS = 3         # max patterns injected per turn
+_PATTERN_MIN_OCCURRENCES = 2  # min occurrences before considering injection
+_MAX_INJECTED_PATTERNS = 3  # max patterns injected per turn
 
 # Self-critique
-_MAX_CRITIQUE_FAILURES = 3         # failures in a turn that trigger self-critique
-_CRITIQUE_COOLDOWN_TURNS = 2       # turns between self-critique injections
+_MAX_CRITIQUE_FAILURES = 3  # failures in a turn that trigger self-critique
+_CRITIQUE_COOLDOWN_TURNS = 2  # turns between self-critique injections
 
 # Args signature normalization
-_ARGS_MAX_STRING_LENGTH = 80       # truncate long string args for signatures
-_ARGS_SKIP_KEYS = {"timeout", "_pipe", "force", "background"}  # keys to drop from signatures
+_ARGS_MAX_STRING_LENGTH = 80  # truncate long string args for signatures
+_ARGS_SKIP_KEYS = {
+    "timeout",
+    "_pipe",
+    "force",
+    "background",
+}  # keys to drop from signatures
 
 
 # ---------------------------------------------------------------------------
@@ -89,6 +94,7 @@ FAILURE_PATTERNS_INDEXES = [
 # ---------------------------------------------------------------------------
 # Error fingerprinting (standalone, mirrors tools/__init__._fingerprint_error)
 # ---------------------------------------------------------------------------
+
 
 def _fingerprint_error(name: str, content: str) -> str:
     """Extract a stable error fingerprint from tool result content.
@@ -210,6 +216,7 @@ def _args_similarity(sig1: str, sig2: str) -> float:
 # FailurePatternStore -- persists and retrieves failure patterns
 # ---------------------------------------------------------------------------
 
+
 class FailurePatternStore:
     """SQLite-backed store for tool failure patterns with confidence scoring.
 
@@ -225,6 +232,7 @@ class FailurePatternStore:
     def _get_conn(self) -> sqlite3.Connection:
         """Return the shared SQLite connection (one connection per db_path)."""
         from memory.memory import get_shared_conn
+
         self._conn = get_shared_conn(self._db_path)
         return self._conn
 
@@ -340,7 +348,8 @@ class FailurePatternStore:
                 if best_id is not None and best_sim > 0.4:
                     row = conn.execute(
                         "SELECT failure_count, success_count FROM failure_patterns"
-                        " WHERE id = ?", (best_id,),
+                        " WHERE id = ?",
+                        (best_id,),
                     ).fetchone()
                     if row:
                         fc, sc = row
@@ -357,7 +366,11 @@ class FailurePatternStore:
                 pass  # Non-critical; don't warn
 
     def get_relevant_patterns(
-        self, tool_name: str, args: dict | None = None, *, limit: int = _MAX_INJECTED_PATTERNS,
+        self,
+        tool_name: str,
+        args: dict | None = None,
+        *,
+        limit: int = _MAX_INJECTED_PATTERNS,
     ) -> list[dict]:
         """Return failure patterns relevant to a pending tool call.
 
@@ -376,8 +389,12 @@ class FailurePatternStore:
                     " WHERE tool_name = ? AND confidence >= ?"
                     "   AND failure_count >= ?"
                     " ORDER BY confidence DESC LIMIT ?",
-                    (tool_name, _PATTERN_CONFIDENCE_THRESHOLD,
-                     _PATTERN_MIN_OCCURRENCES, limit * 3),
+                    (
+                        tool_name,
+                        _PATTERN_CONFIDENCE_THRESHOLD,
+                        _PATTERN_MIN_OCCURRENCES,
+                        limit * 3,
+                    ),
                 ).fetchall()
 
                 if not rows:
@@ -389,18 +406,20 @@ class FailurePatternStore:
                     pid, tn, fp, stored_sig, fix, fc, sc, conf = row
                     sim = _args_similarity(args_sig, stored_sig)
                     score = sim * conf
-                    scored.append({
-                        "id": pid,
-                        "tool_name": tn,
-                        "error_fingerprint": fp,
-                        "args_signature": stored_sig,
-                        "fix_strategy": fix,
-                        "failure_count": fc,
-                        "success_count": sc,
-                        "confidence": conf,
-                        "similarity": sim,
-                        "score": score,
-                    })
+                    scored.append(
+                        {
+                            "id": pid,
+                            "tool_name": tn,
+                            "error_fingerprint": fp,
+                            "args_signature": stored_sig,
+                            "fix_strategy": fix,
+                            "failure_count": fc,
+                            "success_count": sc,
+                            "confidence": conf,
+                            "similarity": sim,
+                            "score": score,
+                        }
+                    )
 
                 scored.sort(key=lambda x: x["score"], reverse=True)
                 return scored[:limit]
@@ -455,9 +474,7 @@ class FailurePatternStore:
     def _prune_if_needed(self, conn: sqlite3.Connection) -> None:
         """Drop lowest-confidence patterns if over the cap."""
         try:
-            count = conn.execute(
-                "SELECT COUNT(*) FROM failure_patterns"
-            ).fetchone()[0]
+            count = conn.execute("SELECT COUNT(*) FROM failure_patterns").fetchone()[0]
             if count > _MAX_PATTERNS:
                 excess = count - _MAX_PATTERNS
                 conn.execute(
@@ -493,7 +510,11 @@ class FailurePatternStore:
                     "top_tools": [{"tool": r[0], "count": r[1]} for r in by_tool],
                 }
             except sqlite3.Error:
-                return {"total_patterns": 0, "high_confidence_patterns": 0, "top_tools": []}
+                return {
+                    "total_patterns": 0,
+                    "high_confidence_patterns": 0,
+                    "top_tools": [],
+                }
 
     def get_all_patterns_for_seeding(self) -> dict[str, int]:
         """Return {tool_name:fingerprint: failure_count} for seeding in-memory cache.
@@ -524,6 +545,7 @@ class FailurePatternStore:
 # Self-critique: post-turn failure analysis
 # ---------------------------------------------------------------------------
 
+
 class SelfCritique:
     """Lightweight post-execution assessment of tool results.
 
@@ -536,7 +558,9 @@ class SelfCritique:
         self._consecutive_failure_turns = 0
 
     def assess_turn_results(
-        self, results: list[tuple[dict, object]], turn_count: int,
+        self,
+        results: list[tuple[dict, object]],
+        turn_count: int,
     ) -> str | None:
         """Analyze a turn's tool results and return a critique message if warranted.
 
@@ -560,7 +584,9 @@ class SelfCritique:
                 failures.append((name, result))
 
         if not failures:
-            self._consecutive_failure_turns = max(0, self._consecutive_failure_turns - 1)
+            self._consecutive_failure_turns = max(
+                0, self._consecutive_failure_turns - 1
+            )
             return None
 
         # Check cooldown
@@ -576,12 +602,15 @@ class SelfCritique:
         # Single failure but with consecutive failure pattern
         if self._consecutive_failure_turns >= 3:
             self._last_critique_turn = turn_count
-            return self._build_escalation_critique(failures, self._consecutive_failure_turns)
+            return self._build_escalation_critique(
+                failures, self._consecutive_failure_turns
+            )
 
         return None
 
     def _build_cluster_critique(
-        self, failures: list[tuple[str, object]],
+        self,
+        failures: list[tuple[str, object]],
     ) -> str:
         """Build critique for multiple failures in one turn."""
         from tools import ToolResult as TR
@@ -605,7 +634,9 @@ class SelfCritique:
         return "\n".join(lines)
 
     def _build_escalation_critique(
-        self, failures: list[tuple[str, object]], consecutive: int,
+        self,
+        failures: list[tuple[str, object]],
+        consecutive: int,
     ) -> str:
         """Build critique for escalating failure pattern across turns."""
 
@@ -641,7 +672,7 @@ KNOWLEDGE_CATEGORIES = {
 }
 
 # Confidence scoring parameters
-_INITIAL_CONFIDENCE = 0.5       # new learnings start at 50% confidence
+_INITIAL_CONFIDENCE = 0.5  # new learnings start at 50% confidence
 _CONFIDENCE_BOOST_ON_HIT = 0.05  # each hit adds 5% confidence
 _CONFIDENCE_DECAY_PER_WEEK = 0.02  # unused learnings decay 2%/week
 _MAX_CONFIDENCE = 0.95
@@ -650,7 +681,9 @@ _MIN_CONFIDENCE_FOR_INJECTION = 0.3
 
 
 def compute_knowledge_confidence(
-    hits: int, created_at: str, updated_at: str,
+    hits: int,
+    created_at: str,
+    updated_at: str,
 ) -> float:
     """Compute confidence score for a knowledge entry.
 
@@ -678,7 +711,9 @@ def suggest_category(topic: str, detail: str = "") -> str:
         return "error_pattern"
     if any(kw in combined for kw in ("convention", "naming", "style", "pattern")):
         return "convention"
-    if any(kw in combined for kw in ("architecture", "design", "structure", "pipeline")):
+    if any(
+        kw in combined for kw in ("architecture", "design", "structure", "pipeline")
+    ):
         return "architecture"
     if any(kw in combined for kw in ("workaround", "hack", "bypass", "known issue")):
         return "workaround"
@@ -690,6 +725,7 @@ def suggest_category(topic: str, detail: str = "") -> str:
 # ---------------------------------------------------------------------------
 # Convenience: build self-learning context for injection
 # ---------------------------------------------------------------------------
+
 
 def build_self_learning_context(
     pattern_store: FailurePatternStore | None,
@@ -731,7 +767,6 @@ def build_self_learning_context(
         )
 
     return None
-
 
 
 # ---------------------------------------------------------------------------
@@ -801,6 +836,7 @@ class MistakeNotebook:
 
     def _get_conn(self) -> sqlite3.Connection:
         from memory.memory import get_shared_conn
+
         self._conn = get_shared_conn(self._db_path)
         return self._conn
 
@@ -858,16 +894,20 @@ class MistakeNotebook:
                     (_NOTEBOOK_MIN_CLUSTER_SIZE,),
                 ).fetchall()
 
-                for (tool_name, fingerprint, distinct_args,
-                     total_failures, total_successes, all_fixes) in rows:
-
+                for (
+                    tool_name,
+                    fingerprint,
+                    distinct_args,
+                    total_failures,
+                    total_successes,
+                    all_fixes,
+                ) in rows:
                     # --- Distill best fix from collected strategies ---
-                    fixes = [
-                        f for f in (all_fixes or "").split("|")
-                        if f and f.strip()
-                    ]
+                    fixes = [f for f in (all_fixes or "").split("|") if f and f.strip()]
                     generalized_fix = self._distill_fix(
-                        tool_name, fingerprint, fixes,
+                        tool_name,
+                        fingerprint,
+                        fixes,
                     )
 
                     # Compute confidence: aggregate across cluster
@@ -886,8 +926,14 @@ class MistakeNotebook:
                         "  distinct_args = excluded.distinct_args,"
                         "  confidence = excluded.confidence,"
                         "  last_distilled = datetime('now')",
-                        (tool_name, fingerprint, generalized_fix,
-                         total_failures, distinct_args, confidence),
+                        (
+                            tool_name,
+                            fingerprint,
+                            generalized_fix,
+                            total_failures,
+                            distinct_args,
+                            confidence,
+                        ),
                     )
                     new_entries += 1
 
@@ -965,6 +1011,7 @@ class MistakeNotebook:
         # Fallback: use most common collected fix
         if collected_fixes:
             from collections import Counter
+
             most_common = Counter(collected_fixes).most_common(1)[0][0]
             return most_common
 
@@ -987,10 +1034,9 @@ class MistakeNotebook:
         if not pending_tool_calls:
             return []
 
-        tool_names = list({
-            tc.get("function", {}).get("name", "")
-            for tc in pending_tool_calls
-        })
+        tool_names = list(
+            {tc.get("function", {}).get("name", "") for tc in pending_tool_calls}
+        )
         if not tool_names:
             return []
 
@@ -1081,9 +1127,7 @@ class MistakeNotebook:
     def _prune_if_needed(self, conn: sqlite3.Connection) -> None:
         """Drop lowest-confidence entries if over the cap."""
         try:
-            count = conn.execute(
-                "SELECT COUNT(*) FROM mistake_notebook"
-            ).fetchone()[0]
+            count = conn.execute("SELECT COUNT(*) FROM mistake_notebook").fetchone()[0]
             if count > _NOTEBOOK_MAX_ENTRIES:
                 excess = count - _NOTEBOOK_MAX_ENTRIES
                 conn.execute(
@@ -1107,8 +1151,7 @@ class MistakeNotebook:
                     "SELECT COUNT(*) FROM mistake_notebook"
                 ).fetchone()[0]
                 accepted = conn.execute(
-                    "SELECT COUNT(*) FROM mistake_notebook"
-                    " WHERE confidence >= ?",
+                    "SELECT COUNT(*) FROM mistake_notebook WHERE confidence >= ?",
                     (_NOTEBOOK_ACCEPTANCE_CONFIDENCE,),
                 ).fetchone()[0]
                 return {
@@ -1120,7 +1163,8 @@ class MistakeNotebook:
                 return {"total_entries": 0, "accepted_entries": 0}
 
     def get_dynamic_hints(
-        self, min_confidence: float | None = None,
+        self,
+        min_confidence: float | None = None,
     ) -> dict[str, dict[str, str]]:
         """Export accepted notebook entries as a _FAILURE_PATTERNS-compatible dict.
 
@@ -1188,6 +1232,7 @@ def build_experience_context(
             path = args.get("path", "") or args.get("file_path", "")
             if path:
                 import os
+
                 ext = os.path.splitext(path)[1]
                 if ext:
                     search_terms.append(ext)
@@ -1275,10 +1320,30 @@ def build_experience_context_from_text(
     try:
         # Tokenize text into search terms (words 3+ chars, skip common words)
         import re as _re
+
         STOP = {
-            "the", "and", "for", "that", "this", "with", "from", "have",
-            "what", "when", "where", "which", "does", "will", "would",
-            "should", "could", "about", "your", "just", "like", "been",
+            "the",
+            "and",
+            "for",
+            "that",
+            "this",
+            "with",
+            "from",
+            "have",
+            "what",
+            "when",
+            "where",
+            "which",
+            "does",
+            "will",
+            "would",
+            "should",
+            "could",
+            "about",
+            "your",
+            "just",
+            "like",
+            "been",
         }
         words = _re.findall(r"[a-zA-Z_][a-zA-Z0-9_]{2}", text.lower())
         search_terms = [w for w in words if w not in STOP][:10]
@@ -1356,7 +1421,10 @@ def build_experience_context_batch(
             args = {}
 
         ctx = build_experience_context(
-            memory_store, name, args, limit=2,
+            memory_store,
+            name,
+            args,
+            limit=2,
         )
         if ctx:
             for line in ctx.split("\n"):

@@ -94,7 +94,10 @@ class TestCheckpointManagerInit(unittest.TestCase):
 
     def test_different_workspaces_different_instances(self):
         """Different workspaces should return different instances."""
-        with tempfile.TemporaryDirectory() as tmp1, tempfile.TemporaryDirectory() as tmp2:
+        with (
+            tempfile.TemporaryDirectory() as tmp1,
+            tempfile.TemporaryDirectory() as tmp2,
+        ):
             cm1 = get_checkpoint_manager(tmp1)
             cm2 = get_checkpoint_manager(tmp2)
             self.assertIsNot(cm1, cm2)
@@ -112,6 +115,7 @@ class TestCheckpointCreate(unittest.TestCase):
     def tearDown(self):
         CheckpointManager.reset()
         import shutil
+
         shutil.rmtree(self.workspace, ignore_errors=True)
 
     def _write_file(self, relpath: str, content: str) -> str:
@@ -198,6 +202,7 @@ class TestCheckpointRestore(unittest.TestCase):
     def tearDown(self):
         CheckpointManager.reset()
         import shutil
+
         shutil.rmtree(self.workspace, ignore_errors=True)
 
     def _write_file(self, relpath: str, content: str) -> str:
@@ -320,16 +325,18 @@ class TestExecuteToolCheckpointIntegration(unittest.TestCase):
         _init_git_repo(self.workspace)
 
         from conftest import make_gates
+
         self.write_gate, self.read_gate = make_gates(self.workspace)
 
     def tearDown(self):
         CheckpointManager.reset()
         import shutil
+
         shutil.rmtree(self.workspace, ignore_errors=True)
 
     def test_write_file_triggers_checkpoint(self):
         """write_file should trigger a git checkpoint when tree is dirty."""
-        from tools import execute_tool, _TOOL_CONTEXT
+        from tools import execute_tool
 
         cm = get_checkpoint_manager(self.workspace)
         self.assertEqual(cm.checkpoint_count(), 0)
@@ -443,6 +450,7 @@ class TestExecuteToolCheckpointIntegration(unittest.TestCase):
         """Checkpoint should not crash when git is unavailable."""
         with tempfile.TemporaryDirectory() as tmp:
             from conftest import make_gates
+
             wg, rg = make_gates(tmp)
             from tools import execute_tool
 
@@ -478,11 +486,13 @@ class TestRestoreFileWithCheckpoint(unittest.TestCase):
         _init_git_repo(self.workspace)
 
         from conftest import make_gates
+
         self.write_gate, self.read_gate = make_gates(self.workspace)
 
     def tearDown(self):
         CheckpointManager.reset()
         import shutil
+
         shutil.rmtree(self.workspace, ignore_errors=True)
 
     def test_restore_file_uses_git_checkpoint(self):
@@ -519,8 +529,12 @@ class TestRestoreFileWithCheckpoint(unittest.TestCase):
             self.read_gate,
         )
         result = execute_tool(
-            {"function": {"name": "write_file",
-                          "arguments": '{"path": "config.py", "content": "VERSION = \\"1.0\\""}'}},
+            {
+                "function": {
+                    "name": "write_file",
+                    "arguments": '{"path": "config.py", "content": "VERSION = \\"1.0\\""}',
+                }
+            },
             self.write_gate,
             self.read_gate,
         )
@@ -533,8 +547,12 @@ class TestRestoreFileWithCheckpoint(unittest.TestCase):
         with open(os.path.join(self.workspace, "dirty.py"), "w") as f:
             f.write("dirty\n")
         result = execute_tool(
-            {"function": {"name": "write_file",
-                          "arguments": '{"path": "config.py", "content": "VERSION = \\"2.0\\""}'}},
+            {
+                "function": {
+                    "name": "write_file",
+                    "arguments": '{"path": "config.py", "content": "VERSION = \\"2.0\\""}',
+                }
+            },
             self.write_gate,
             self.read_gate,
         )
@@ -546,7 +564,12 @@ class TestRestoreFileWithCheckpoint(unittest.TestCase):
 
         # Restore — should revert to checkpointed state (1.0)
         result = execute_tool(
-            {"function": {"name": "restore_file", "arguments": f'{{"path": "{config_path}"}}'}},
+            {
+                "function": {
+                    "name": "restore_file",
+                    "arguments": f'{{"path": "{config_path}"}}',
+                }
+            },
             self.write_gate,
             self.read_gate,
         )

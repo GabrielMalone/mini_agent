@@ -273,7 +273,9 @@ def run_task(
                 on_tool_start=metrics.on_tool_start,
                 on_tool_end=metrics.on_tool_end,
                 cancel_event=cancel_event,
-                max_turns=task.expected_turns_max if task.expected_turns_max is not None else 100,
+                max_turns=task.expected_turns_max
+                if task.expected_turns_max is not None
+                else 100,
                 session=session["session"],
                 memory_store=session["memory"],
             )
@@ -477,19 +479,25 @@ def _cli() -> None:
     report = run_suite(tasks, timeout_seconds=args.timeout, stream=args.stream)
 
     # Print summary
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Suite: {'all' if suite == 'all' else suite}")
-    print(f"Total: {report.total}  Passed: {report.passed}  "
-          f"Failed: {report.failed}  Errors: {report.errors}")
+    print(
+        f"Total: {report.total}  Passed: {report.passed}  "
+        f"Failed: {report.failed}  Errors: {report.errors}"
+    )
     print(f"Pass rate: {report.pass_rate:.1%}")
-    print(f"Avg turns: {report.avg_turns:.1f}  "
-          f"Avg tokens: {report.avg_tokens:.0f}  "
-          f"Avg time: {report.avg_wall_time:.1f}s")
-    print(f"{'='*60}")
+    print(
+        f"Avg turns: {report.avg_turns:.1f}  "
+        f"Avg tokens: {report.avg_tokens:.0f}  "
+        f"Avg time: {report.avg_wall_time:.1f}s"
+    )
+    print(f"{'=' * 60}")
 
     for r in report.per_task:
         status = "V" if r.success else ("X" if not r.error else "!")
-        print(f"\n  [{status}] {r.task_id}  ({r.turns_used} turns, {r.tokens_consumed} tokens)")
+        print(
+            f"\n  [{status}] {r.task_id}  ({r.turns_used} turns, {r.tokens_consumed} tokens)"
+        )
         if r.error:
             print(f"       Error: {r.error}")
         for c in r.checks:

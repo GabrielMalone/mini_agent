@@ -1,21 +1,20 @@
 #!/usr/bin/env python3
 """Shared utilities for file operations -- Unicode normalisation, backups, cache."""
+
 from __future__ import annotations
 
 import hashlib
 import os
 import platform
-import re
-import stat as stat_module
 import shutil
 import subprocess
 import sys
 import threading
 import time
 
-from tools.result import ToolResult, ErrorClass
+from tools.result import ToolResult
 from tools import clear_tool_cache
-from tools import _register, _summarize, _TOOL_CONTEXT
+from tools import _TOOL_CONTEXT
 
 # Thread-local: current sub-agent task_id (set by agent_ops before tool execution)
 _current_agent_id: threading.local = threading.local()
@@ -35,7 +34,10 @@ _WORKER_READ_TIMEOUT = 30  # seconds for a single file read
 
 
 def _read_file_windows_worker(
-    resolved: str, offset: int, limit: int, line_numbers: bool,
+    resolved: str,
+    offset: int,
+    limit: int,
+    line_numbers: bool,
 ) -> ToolResult:
     """Read a file via the _worker subprocess with a hard timeout.
 
@@ -47,8 +49,14 @@ def _read_file_windows_worker(
         try:
             proc = subprocess.run(
                 [
-                    sys.executable, "-m", "tools._worker", "read",
-                    resolved, str(offset), str(limit), str(line_numbers),
+                    sys.executable,
+                    "-m",
+                    "tools._worker",
+                    "read",
+                    resolved,
+                    str(offset),
+                    str(limit),
+                    str(line_numbers),
                 ],
                 capture_output=True,
                 text=True,
@@ -57,6 +65,7 @@ def _read_file_windows_worker(
             )
             stdout, stderr = proc.stdout, proc.stderr
             import json
+
             data = json.loads(stdout.strip())
             if data.get("ok"):
                 return ToolResult(success=True, content=data["content"])
@@ -69,8 +78,8 @@ def _read_file_windows_worker(
             return ToolResult(
                 success=False,
                 content=f"File read timed out after {_WORKER_READ_TIMEOUT}s "
-                        f"(possibly blocked by antivirus or filter driver). "
-                        f"Try excluding the project directory from real-time scanning.",
+                f"(possibly blocked by antivirus or filter driver). "
+                f"Try excluding the project directory from real-time scanning.",
             )
         except Exception:
             pass
@@ -78,12 +87,21 @@ def _read_file_windows_worker(
         try:
             result = subprocess.run(
                 [
-                    sys.executable, "-m", "tools._worker", "read",
-                    resolved, str(offset), str(limit), str(line_numbers),
+                    sys.executable,
+                    "-m",
+                    "tools._worker",
+                    "read",
+                    resolved,
+                    str(offset),
+                    str(limit),
+                    str(line_numbers),
                 ],
-                capture_output=True, text=True, timeout=_WORKER_READ_TIMEOUT,
+                capture_output=True,
+                text=True,
+                timeout=_WORKER_READ_TIMEOUT,
             )
             import json
+
             data = json.loads(result.stdout.strip())
             if data.get("ok"):
                 return ToolResult(success=True, content=data["content"])
@@ -96,8 +114,8 @@ def _read_file_windows_worker(
             return ToolResult(
                 success=False,
                 content=f"File read timed out after {_WORKER_READ_TIMEOUT}s "
-                        f"(possibly blocked by antivirus or filter driver). "
-                        f"Try excluding the project directory from real-time scanning.",
+                f"(possibly blocked by antivirus or filter driver). "
+                f"Try excluding the project directory from real-time scanning.",
             )
         except Exception:
             pass
@@ -105,8 +123,12 @@ def _read_file_windows_worker(
     # Fallback: direct open (may hang on Windows but we already tried)
     return _read_file_direct(resolved, offset, limit, line_numbers)
 
+
 def _read_file_direct(
-    resolved: str, offset: int, limit: int, line_numbers: bool,
+    resolved: str,
+    offset: int,
+    limit: int,
+    line_numbers: bool,
     hash_lines: bool = False,
     include_anchors: bool = False,
 ) -> ToolResult:
@@ -139,10 +161,15 @@ def _read_file_direct(
         hint = ""
         if isinstance(e, FileNotFoundError) or "No such file" in str(e):
             hint = "\nHint: Check the path spelling. Try list_directory to see available files."
-        return ToolResult(success=False, content=f"Error reading '{resolved}': {e}{hint}")
+        return ToolResult(
+            success=False, content=f"Error reading '{resolved}': {e}{hint}"
+        )
 
     if offset > total_lines:
-        return ToolResult(success=False, content=f"Offset {offset} exceeds file length ({total_lines} lines).")
+        return ToolResult(
+            success=False,
+            content=f"Offset {offset} exceeds file length ({total_lines} lines).",
+        )
 
     full_content = "\n".join(collected)
     lines_after_offset = total_lines - offset + 1
@@ -158,61 +185,66 @@ def _read_file_direct(
 
     return ToolResult(success=True, content=full_content)
 
+
 # ---------------------------------------------------------------------------
 # Unicode & quote normalization maps (used by edit_file matching)
 # ---------------------------------------------------------------------------
 
 # Curly/smart quotes -> ASCII straight quotes
 _QUOTE_NORMALIZE_MAP: dict[int, int | None] = {
-    0x2018: ord("'"),   # ' left single
-    0x2019: ord("'"),   # ' right single
-    0x201A: ord("'"),   # , single low-9
-    0x201B: ord("'"),   # ' single high-reversed
-    0x201C: ord('"'),   # " left double
-    0x201D: ord('"'),   # " right double
-    0x201E: ord('"'),   # ,, double low-9
-    0x201F: ord('"'),   # " double high-reversed
-    0x2039: ord("'"),   # < single left-pointing angle
-    0x203A: ord("'"),   # > single right-pointing angle
-    0x00AB: ord('"'),   # << left-pointing double angle
-    0x00BB: ord('"'),   # >> right-pointing double angle
+    0x2018: ord("'"),  # ' left single
+    0x2019: ord("'"),  # ' right single
+    0x201A: ord("'"),  # , single low-9
+    0x201B: ord("'"),  # ' single high-reversed
+    0x201C: ord('"'),  # " left double
+    0x201D: ord('"'),  # " right double
+    0x201E: ord('"'),  # ,, double low-9
+    0x201F: ord('"'),  # " double high-reversed
+    0x2039: ord("'"),  # < single left-pointing angle
+    0x203A: ord("'"),  # > single right-pointing angle
+    0x00AB: ord('"'),  # << left-pointing double angle
+    0x00BB: ord('"'),  # >> right-pointing double angle
 }
 
 # Unicode whitespace -> ASCII space (or None = remove)
 _UNICODE_WHITESPACE_MAP: dict[int, int | None] = {
-    0x00A0: ord(" "),   # non-breaking space
-    0x2002: ord(" "),   # en space
-    0x2003: ord(" "),   # em space
-    0x2007: ord(" "),   # figure space
-    0x2008: ord(" "),   # punctuation space
-    0x2009: ord(" "),   # thin space
-    0x200A: ord(" "),   # hair space
-    0x202F: ord(" "),   # narrow non-breaking space
-    0x205F: ord(" "),   # medium mathematical space
-    0x3000: ord(" "),   # ideographic space
-    0x00AD: None,       # soft hyphen -> remove
-    0x200B: None,       # zero-width space -> remove
-    0x200C: None,       # zero-width non-joiner -> remove
-    0x200D: None,       # zero-width joiner -> remove
-    0xFEFF: None,       # BOM / zero-width no-break space -> remove
-    0x2060: None,       # word joiner -> remove
+    0x00A0: ord(" "),  # non-breaking space
+    0x2002: ord(" "),  # en space
+    0x2003: ord(" "),  # em space
+    0x2007: ord(" "),  # figure space
+    0x2008: ord(" "),  # punctuation space
+    0x2009: ord(" "),  # thin space
+    0x200A: ord(" "),  # hair space
+    0x202F: ord(" "),  # narrow non-breaking space
+    0x205F: ord(" "),  # medium mathematical space
+    0x3000: ord(" "),  # ideographic space
+    0x00AD: None,  # soft hyphen -> remove
+    0x200B: None,  # zero-width space -> remove
+    0x200C: None,  # zero-width non-joiner -> remove
+    0x200D: None,  # zero-width joiner -> remove
+    0xFEFF: None,  # BOM / zero-width no-break space -> remove
+    0x2060: None,  # word joiner -> remove
 }
 
 # Build fast translation tables (Python str.translate)
 _QUOTE_TRANS_TABLE: dict[int, int] = {}
 _UNICODE_WS_TRANS_TABLE: dict[int, int | None] = {}
 
+
 def _normalize_quotes(s: str) -> str:
     """Convert curly/smart quotes to ASCII straight quotes."""
     return s.translate(_QUOTE_TRANS_TABLE)
+
 
 def _normalize_unicode_whitespace(s: str) -> str:
     """Replace Unicode whitespace chars with ASCII space; remove zero-width chars."""
     return s.translate(_UNICODE_WS_TRANS_TABLE)
 
+
 def _canonicalize_for_match(s: str) -> str:
     """Full canonicalization for matching: normalize Unicode ws, then quotes."""
     return _normalize_quotes(_normalize_unicode_whitespace(s))
+
 
 # ---------------------------------------------------------------------------
 # Read-before-edit tracking -- set of resolved_path values that have been
@@ -227,6 +259,7 @@ _READ_FILES: set[str] = set()
 # edits.  Catch broken Python syntax before the edit cascades into a series
 # of compounding failures.  This is the SWE-agent linter-in-edit pattern.
 # ---------------------------------------------------------------------------
+
 
 def _validate_python_syntax(content: str, filepath: str) -> str | None:
     """Return an error message if *content* is not valid Python, else None.
@@ -330,8 +363,9 @@ def _finalize_edit(
         return (False, str(e))
 
     # 4. Tracking
-    from tools import add_modified_file, clear_tool_cache
+    from tools import add_modified_file
     from core.file_context_tracker import get_tracker
+
     add_modified_file(resolved)
     get_tracker().mark_file_edited(resolved)
     clear_tool_cache()
@@ -342,6 +376,7 @@ def _finalize_edit(
     if resolved.endswith(".py"):
         try:
             from tools.search_ops import _reindex_file
+
             _reindex_file(resolved, workspace_root)
         except Exception:
             pass
@@ -349,6 +384,7 @@ def _finalize_edit(
     # 6. Knowledge graph invalidation
     try:
         from core.knowledge_graph import invalidate_file
+
         invalidate_file(resolved, workspace_root)
     except Exception:
         pass
@@ -365,7 +401,9 @@ for _cp, _replacement in _QUOTE_NORMALIZE_MAP.items():
 
 # Unicode ws table: map cp -> replacement (or delete if None via str.maketrans)
 # str.translate with a dict can map to None to delete characters
-_UNICODE_WS_TRANS_TABLE.update({cp: repl for cp, repl in _UNICODE_WHITESPACE_MAP.items() if repl is not None})
+_UNICODE_WS_TRANS_TABLE.update(
+    {cp: repl for cp, repl in _UNICODE_WHITESPACE_MAP.items() if repl is not None}
+)
 # Zero-width chars: map to None to delete
 for _cp, _repl in _UNICODE_WHITESPACE_MAP.items():
     if _repl is None:
@@ -394,10 +432,22 @@ _FILE_CACHE_MAX = 50
 # Words that indicate a "read/observe" step rather than a "write/create" step.
 # Auto-advance skips steps that start with these verbs, since the trigger is a
 # file write/edit -- a "Read" step shouldn't auto-complete from a write action.
-_AUTO_ADVANCE_READ_VERBS = frozenset({
-    "read", "review", "inspect", "check", "examine", "audit",
-    "look", "view", "open", "browse", "scan", "search",
-})
+_AUTO_ADVANCE_READ_VERBS = frozenset(
+    {
+        "read",
+        "review",
+        "inspect",
+        "check",
+        "examine",
+        "audit",
+        "look",
+        "view",
+        "open",
+        "browse",
+        "scan",
+        "search",
+    }
+)
 
 _AUTO_ADVANCE_MIN_MATCH_WORDS = 2  # require at least 2 step-words in the haystack
 
@@ -421,6 +471,7 @@ def _auto_advance_plan(file_path: str, edit_text: str = "") -> None:
     # Split on non-alphanumeric boundaries so "main" won't false-match
     # inside "domain.py".
     import re as _re
+
     _token_pat = _re.compile(r"[a-zA-Z0-9]+")
     haystack_tokens = set(_token_pat.findall((file_path + " " + edit_text).lower()))
     incomplete_indices = [i for i, _ in enumerate(steps) if i not in done]
@@ -448,12 +499,15 @@ def _auto_advance_plan(file_path: str, edit_text: str = "") -> None:
             done.add(idx)
     _TOOL_CONTEXT._plan_done = done
     if incomplete_indices and any(i in done for i in incomplete_indices):
-        _TOOL_CONTEXT._plan_last_advanced_turn = getattr(_TOOL_CONTEXT, "_turn_count", 0)
+        _TOOL_CONTEXT._plan_last_advanced_turn = getattr(
+            _TOOL_CONTEXT, "_turn_count", 0
+        )
 
     # Persist to memory if any steps were auto-completed
     if incomplete_indices:
         try:
             from tools.agent_todos import _maybe_persist_plan
+
             _maybe_persist_plan()
         except ImportError:
             pass
@@ -494,11 +548,7 @@ _ABSOLUTE_MAX_LINES = 1000
 # but "include_anchors" is the new hot path.
 # ---------------------------------------------------------------------------
 
-from core.anchor_manager import (
-    AnchorStateManager,
-    format_lines_for_model,
-    content_hash as anchor_content_hash,
-)
+
 
 # Backward-compat: old hash-line helpers still referenced by tests
 def _line_hash(line: str) -> str:
@@ -511,11 +561,10 @@ def _compute_line_hashes(content: str) -> list[str]:
     return [_line_hash(line) for line in content.split("\n")]
 
 
-
-
 # ---------------------------------------------------------------------------
 # Line hashing (used by read_file and edit_file)
 # ---------------------------------------------------------------------------
+
 
 def _line_hash(line: str) -> str:
     """3-char hex hash of a line (legacy helper)."""
@@ -525,5 +574,3 @@ def _line_hash(line: str) -> str:
 def _compute_line_hashes(content: str) -> list[str]:
     """Compute hashes for every line (legacy helper)."""
     return [_line_hash(line) for line in content.split("\n")]
-
-

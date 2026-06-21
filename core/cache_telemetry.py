@@ -15,7 +15,6 @@ reading those stats and displaying them.
 from __future__ import annotations
 
 
-
 def get_cache_stats() -> dict:
     """Read current cache statistics from _TOOL_CONTEXT.
 
@@ -25,6 +24,7 @@ def get_cache_stats() -> dict:
     """
     try:
         from tools import _TOOL_CONTEXT
+
         if _TOOL_CONTEXT is None:
             return _empty_stats()
         stats = getattr(_TOOL_CONTEXT, "_cache_stats", None)
@@ -51,6 +51,7 @@ def get_semantic_cache_stats() -> dict:
     """Read semantic cache statistics."""
     try:
         from tools import _TOOL_CONTEXT
+
         if _TOOL_CONTEXT is None:
             return {"hits": 0, "misses": 0, "estimated_usd_saved": 0.0}
         s = getattr(_TOOL_CONTEXT, "_semantic_cache_stats", None)
@@ -70,8 +71,12 @@ def get_cache_status_line() -> str:
     prefix_rate = prefix.get("hit_rate_pct", 0)
     dcache_rate = dcache.get("hit_rate_pct", 0)
 
-    prefix_str = f"prefix={prefix_rate:.0f}%" if prefix.get("total", 0) > 0 else "prefix=n/a"
-    dcache_str = f"dcache={dcache_rate:.0f}%" if dcache.get("calls", 0) > 0 else "dcache=no data"
+    prefix_str = (
+        f"prefix={prefix_rate:.0f}%" if prefix.get("total", 0) > 0 else "prefix=n/a"
+    )
+    dcache_str = (
+        f"dcache={dcache_rate:.0f}%" if dcache.get("calls", 0) > 0 else "dcache=no data"
+    )
 
     return f"[cache] {prefix_str} {dcache_str} semantic={scache.get('hits', 0)}hits"
 
@@ -79,6 +84,7 @@ def get_cache_status_line() -> str:
 def _get_prefix_stats() -> dict:
     """Read prefix fingerprint stability stats."""
     from core.prefix import _session_prefix_cache
+
     cache = _session_prefix_cache
     prefix = cache.prefix
     if prefix is None:
@@ -105,7 +111,12 @@ def _estimate_usd_saved(hit_tokens: int) -> float:
 
 def _empty_stats() -> dict:
     return {
-        "hits": 0, "misses": 0, "calls": 0,
-        "hit_rate_pct": 0.0, "input_tokens": 0, "output_tokens": 0,
-        "estimated_usd_saved": 0.0, "turn_history": [],
+        "hits": 0,
+        "misses": 0,
+        "calls": 0,
+        "hit_rate_pct": 0.0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "estimated_usd_saved": 0.0,
+        "turn_history": [],
     }

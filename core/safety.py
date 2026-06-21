@@ -7,6 +7,7 @@ Enforces:
     2. Overwrites trigger a confirmation check (unless explicitly allowed).
     3. All results are returned as structured dataclasses -- never raw exceptions.
 """
+
 from __future__ import annotations
 
 import difflib
@@ -17,6 +18,7 @@ from dataclasses import dataclass
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
+
 
 def _safe_resolve(root: str, path: str) -> str:
     """Resolve *path* relative to *root* to a canonical absolute path.
@@ -41,9 +43,11 @@ def _safe_resolve(root: str, path: str) -> str:
 # Shared result type
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class SafetyResult:
     """Structured result for read/write safety checks -- never throws."""
+
     allowed: bool
     reason: str
     resolved_path: str
@@ -57,6 +61,7 @@ WriteSafetyResult = SafetyResult
 # ---------------------------------------------------------------------------
 # Read safety
 # ---------------------------------------------------------------------------
+
 
 class ReadSafetyGate:
     """Gate that validates file-read operations before execution."""
@@ -84,6 +89,7 @@ class ReadSafetyGate:
 # Diff preview result
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class DiffPreview:
     """Structured diff preview for a proposed write/edit.
@@ -100,6 +106,7 @@ class DiffPreview:
 # Write safety
 # ---------------------------------------------------------------------------
 
+
 class WriteSafetyGate:
     """Gate that validates file-write operations before execution."""
 
@@ -110,8 +117,13 @@ class WriteSafetyGate:
     _RESET = "\033[0m"
     _BOLD = "\033[1m"
 
-    def __init__(self, workspace_root: str, *, allow_overwrites: bool = False,
-                 unrestricted: bool = False) -> None:
+    def __init__(
+        self,
+        workspace_root: str,
+        *,
+        allow_overwrites: bool = False,
+        unrestricted: bool = False,
+    ) -> None:
         self._root = os.path.realpath(os.path.abspath(workspace_root))
         self._root_prefix = self._root + os.sep
         self._allow_overwrites = allow_overwrites
@@ -196,7 +208,9 @@ class WriteSafetyGate:
         lines: list[str] = []
         lines.append(f"{self._BOLD}--- /dev/null{self._RESET}")
         lines.append(f"{self._BOLD}+++ {path}{self._RESET}")
-        lines.append(f"{self._CYAN}@@ -0,0 +1,{content.count(chr(10)) + 1} @@{self._RESET}")
+        lines.append(
+            f"{self._CYAN}@@ -0,0 +1,{content.count(chr(10)) + 1} @@{self._RESET}"
+        )
         for line in content.split("\n"):
             lines.append(f"{self._GREEN}+{line}{self._RESET}")
         return "\n".join(lines)

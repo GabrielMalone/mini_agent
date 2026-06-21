@@ -6,6 +6,7 @@ Provides ``_parse_stream()`` for parsing DeepSeek's server-sent event response
 stream, accumulating text content, reasoning blocks, and tool call fragments.
 Resilient to connection drops -- returns partial results instead of crashing.
 """
+
 from __future__ import annotations
 
 import json
@@ -25,7 +26,13 @@ THINKING_END = "\n[/thinking]"
 # SSE prefix for DeepSeek's server-sent event stream
 _SSE_PREFIX = "data: "
 
-def _parse_stream(response: requests.Response, on_token: Callable[[str], None] | None = None, on_tool_ready: Callable[[dict], None] | None = None, cancel_event: threading.Event | None = None) -> dict:
+
+def _parse_stream(
+    response: requests.Response,
+    on_token: Callable[[str], None] | None = None,
+    on_tool_ready: Callable[[dict], None] | None = None,
+    cancel_event: threading.Event | None = None,
+) -> dict:
     """Parse an SSE streamed response, printing text as it arrives.
 
     Accumulates both text content and tool_calls from deltas.  Tool call
@@ -67,7 +74,7 @@ def _parse_stream(response: requests.Response, on_token: Callable[[str], None] |
                 break
             if not line or not line.startswith(_SSE_PREFIX):
                 continue
-            data_str = line[len(_SSE_PREFIX):]
+            data_str = line[len(_SSE_PREFIX) :]
             if data_str.strip() == "[DONE]":
                 break
             try:
@@ -107,7 +114,12 @@ def _parse_stream(response: requests.Response, on_token: Callable[[str], None] |
                     if on_token:
                         on_token(delta["reasoning_content"])
                     else:
-                        print(c(delta["reasoning_content"], GREEN), end="", file=sys.stderr, flush=True)
+                        print(
+                            c(delta["reasoning_content"], GREEN),
+                            end="",
+                            file=sys.stderr,
+                            flush=True,
+                        )
 
                 # Tool calls -- accumulate fragments by index and detect completion
                 if "tool_calls" in delta:
@@ -136,7 +148,9 @@ def _parse_stream(response: requests.Response, on_token: Callable[[str], None] |
                         # failures on still-fragmented arguments.
                         if on_tool_ready and idx not in fired_indices:
                             args = tc["function"]["arguments"]
-                            if args.count("{") == args.count("}") and args.count("[") == args.count("]"):
+                            if args.count("{") == args.count("}") and args.count(
+                                "["
+                            ) == args.count("]"):
                                 try:
                                     json.loads(args)
                                     fired_indices.add(idx)
@@ -145,7 +159,14 @@ def _parse_stream(response: requests.Response, on_token: Callable[[str], None] |
                                     on_tool_ready(ready)
                                 except (json.JSONDecodeError, ValueError):
                                     pass  # still fragmentary
-            except (json.JSONDecodeError, KeyError, TypeError, IndexError, ValueError, AttributeError) as _e:
+            except (
+                json.JSONDecodeError,
+                KeyError,
+                TypeError,
+                IndexError,
+                ValueError,
+                AttributeError,
+            ) as _e:
                 print(f"[SSE] stream parse: {_e}", file=sys.stderr)
                 continue
     except (
@@ -156,7 +177,8 @@ def _parse_stream(response: requests.Response, on_token: Callable[[str], None] |
     ) as exc:
         print(
             f"\n  WARNING: stream interrupted ({exc}) -- using partial response",
-            file=sys.stderr, flush=True,
+            file=sys.stderr,
+            flush=True,
         )
 
     if full_reasoning and not on_token:
@@ -179,8 +201,7 @@ def _parse_stream(response: requests.Response, on_token: Callable[[str], None] |
 
     if tool_calls_by_index:
         msg["tool_calls"] = [
-            tool_calls_by_index[i]
-            for i in sorted(tool_calls_by_index)
+            tool_calls_by_index[i] for i in sorted(tool_calls_by_index)
         ]
         # Tag which ones were already incrementally executed
         if fired_indices:

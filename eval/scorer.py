@@ -59,9 +59,7 @@ def run_checks(checks: list[dict], workspace: str) -> list[CheckResult]:
         try:
             results.append(checker(check, workspace))
         except Exception as exc:
-            results.append(
-                CheckResult(check_type, False, f"Checker error: {exc}")
-            )
+            results.append(CheckResult(check_type, False, f"Checker error: {exc}"))
     return results
 
 
@@ -99,7 +97,9 @@ def _check_file_contains(params: dict, workspace: str) -> CheckResult:
         with open(path, "r", encoding="utf-8") as f:
             content = f.read()
     except (OSError, UnicodeDecodeError) as exc:
-        return CheckResult("file_contains", False, f"Cannot read {params['path']}: {exc}")
+        return CheckResult(
+            "file_contains", False, f"Cannot read {params['path']}: {exc}"
+        )
     match = re.search(params["pattern"], content, re.MULTILINE)
     return CheckResult(
         "file_contains",
@@ -117,7 +117,9 @@ def _check_file_not_contains(params: dict, workspace: str) -> CheckResult:
         with open(path, "r", encoding="utf-8") as f:
             content = f.read()
     except (OSError, UnicodeDecodeError) as exc:
-        return CheckResult("file_not_contains", False, f"Cannot read {params['path']}: {exc}")
+        return CheckResult(
+            "file_not_contains", False, f"Cannot read {params['path']}: {exc}"
+        )
     match = re.search(params["pattern"], content, re.MULTILINE)
     ok = not match
     return CheckResult(
@@ -163,7 +165,9 @@ def _check_diff_not_contains(params: dict, workspace: str) -> CheckResult:
     return CheckResult(
         "diff_not_contains",
         ok,
-        "fragment absent from diff (good)" if ok else "fragment found in diff (should not be)",
+        "fragment absent from diff (good)"
+        if ok
+        else "fragment found in diff (should not be)",
     )
 
 

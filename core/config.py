@@ -5,6 +5,7 @@ config.py -- project-level configuration for mini_agent.
 Looks for ``.mini_agent.toml`` in the workspace root and merges settings
 with env vars and CLI flags.  Priority: CLI > env var > config file > default.
 """
+
 from __future__ import annotations
 
 import os
@@ -36,9 +37,11 @@ from .constants import (  # noqa: F401  — re-exported
 # constants (DEEPSEEK_DEFAULT_MODEL, etc.) are kept as aliases for
 # backward compatibility but new code should use PROVIDER_DEFAULTS[provider].
 
+
 @dataclass
 class ProviderDefaults:
     """Default values for one LLM provider."""
+
     model: str
     sub_agent_model: str
     api_url: str
@@ -48,9 +51,10 @@ class ProviderDefaults:
     # Example: ["claude", "xai"] means try Claude after DeepSeek, then xAI.
     fallback_providers: tuple[str, ...] = ()
     # Pricing in USD per 1M tokens (used by session_stats for cost savings)
-    input_price: float = 0.0       # cache-miss (full) input price
-    cache_hit_price: float = 0.0   # cache-hit input price
-    output_price: float = 0.0      # completion/output price
+    input_price: float = 0.0  # cache-miss (full) input price
+    cache_hit_price: float = 0.0  # cache-hit input price
+    output_price: float = 0.0  # completion/output price
+
 
 PROVIDER_DEFAULTS: dict[str, ProviderDefaults] = {
     "deepseek": ProviderDefaults(
@@ -62,9 +66,9 @@ PROVIDER_DEFAULTS: dict[str, ProviderDefaults] = {
         fallback_providers=("claude",),  # fall back to Claude on DeepSeek outage
         # V4-Pro promo pricing (75% off through 2026-05-31):
         # list $1.74 / $0.0145 / $3.48  ->  promo $0.435 / $0.003625 / $0.87
-        input_price=0.435,          # $0.435 / 1M input tokens (cache miss)
-        cache_hit_price=0.003625,   # $0.003625 / 1M input tokens (cache hit)
-        output_price=0.87,          # $0.87 / 1M output tokens
+        input_price=0.435,  # $0.435 / 1M input tokens (cache miss)
+        cache_hit_price=0.003625,  # $0.003625 / 1M input tokens (cache hit)
+        output_price=0.87,  # $0.87 / 1M output tokens
     ),
     "claude": ProviderDefaults(
         model="claude-sonnet-4-5",
@@ -72,9 +76,9 @@ PROVIDER_DEFAULTS: dict[str, ProviderDefaults] = {
         api_url="https://api.anthropic.com/v1/chat/completions",
         max_tokens=32_000,
         context_window=1_000_000,  # Opus 4.7 / Sonnet 4.5 native context length
-        input_price=3.00,          # $3.00 / 1M input tokens (cache miss)
-        cache_hit_price=0.30,      # $0.30 / 1M input tokens (cache hit)
-        output_price=15.00,        # $15.00 / 1M output tokens
+        input_price=3.00,  # $3.00 / 1M input tokens (cache miss)
+        cache_hit_price=0.30,  # $0.30 / 1M input tokens (cache hit)
+        output_price=15.00,  # $15.00 / 1M output tokens
     ),
     "xai": ProviderDefaults(
         model="grok-4.3",
@@ -97,7 +101,10 @@ PROVIDER_DEFAULTS: dict[str, ProviderDefaults] = {
         api_url="https://openrouter.ai/api/v1/chat/completions",
         max_tokens=200_000,
         context_window=256_000,  # Kimi K2.7 native context length
-        fallback_providers=("deepseek", "claude"),  # fall back to native keys on OpenRouter outage
+        fallback_providers=(
+            "deepseek",
+            "claude",
+        ),  # fall back to native keys on OpenRouter outage
     ),
     "moonshot": ProviderDefaults(
         model="kimi-k2.7-code",  # Kimi K2.7 Code (latest)
@@ -105,7 +112,7 @@ PROVIDER_DEFAULTS: dict[str, ProviderDefaults] = {
         api_url="https://api.moonshot.ai/v1/chat/completions",
         max_tokens=200_000,
         context_window=256_000,  # Kimi K2.7 native context length
-        input_price=0,    # Moonshot pricing TBD
+        input_price=0,  # Moonshot pricing TBD
         output_price=0,
     ),
     "qwen": ProviderDefaults(
@@ -135,36 +142,36 @@ PROVIDER_DEFAULTS: dict[str, ProviderDefaults] = {
 
 # Legacy module-level aliases (kept for backward compatibility with tests
 # and external consumers that import e.g. DEEPSEEK_DEFAULT_MODEL directly).
-DEEPSEEK_DEFAULT_MODEL         = PROVIDER_DEFAULTS["deepseek"].model
+DEEPSEEK_DEFAULT_MODEL = PROVIDER_DEFAULTS["deepseek"].model
 DEEPSEEK_DEFAULT_SUB_AGENT_MODEL = PROVIDER_DEFAULTS["deepseek"].sub_agent_model
-DEEPSEEK_DEFAULT_API_URL       = PROVIDER_DEFAULTS["deepseek"].api_url
-DEEPSEEK_DEFAULT_MAX_TOKENS    = PROVIDER_DEFAULTS["deepseek"].max_tokens
+DEEPSEEK_DEFAULT_API_URL = PROVIDER_DEFAULTS["deepseek"].api_url
+DEEPSEEK_DEFAULT_MAX_TOKENS = PROVIDER_DEFAULTS["deepseek"].max_tokens
 DEEPSEEK_DEFAULT_CONTEXT_WINDOW = PROVIDER_DEFAULTS["deepseek"].context_window
-CLAUDE_DEFAULT_MODEL           = PROVIDER_DEFAULTS["claude"].model
+CLAUDE_DEFAULT_MODEL = PROVIDER_DEFAULTS["claude"].model
 CLAUDE_DEFAULT_SUB_AGENT_MODEL = PROVIDER_DEFAULTS["claude"].sub_agent_model
-CLAUDE_DEFAULT_API_URL         = PROVIDER_DEFAULTS["claude"].api_url
-CLAUDE_DEFAULT_MAX_TOKENS      = PROVIDER_DEFAULTS["claude"].max_tokens
-CLAUDE_DEFAULT_CONTEXT_WINDOW  = PROVIDER_DEFAULTS["claude"].context_window
+CLAUDE_DEFAULT_API_URL = PROVIDER_DEFAULTS["claude"].api_url
+CLAUDE_DEFAULT_MAX_TOKENS = PROVIDER_DEFAULTS["claude"].max_tokens
+CLAUDE_DEFAULT_CONTEXT_WINDOW = PROVIDER_DEFAULTS["claude"].context_window
 
-XAI_DEFAULT_MODEL              = PROVIDER_DEFAULTS["xai"].model
-XAI_DEFAULT_SUB_AGENT_MODEL    = PROVIDER_DEFAULTS["xai"].sub_agent_model
-XAI_DEFAULT_API_URL            = PROVIDER_DEFAULTS["xai"].api_url
-XAI_DEFAULT_MAX_TOKENS         = PROVIDER_DEFAULTS["xai"].max_tokens
-XAI_DEFAULT_CONTEXT_WINDOW  = PROVIDER_DEFAULTS["xai"].context_window
+XAI_DEFAULT_MODEL = PROVIDER_DEFAULTS["xai"].model
+XAI_DEFAULT_SUB_AGENT_MODEL = PROVIDER_DEFAULTS["xai"].sub_agent_model
+XAI_DEFAULT_API_URL = PROVIDER_DEFAULTS["xai"].api_url
+XAI_DEFAULT_MAX_TOKENS = PROVIDER_DEFAULTS["xai"].max_tokens
+XAI_DEFAULT_CONTEXT_WINDOW = PROVIDER_DEFAULTS["xai"].context_window
 
-OLLAMA_DEFAULT_MODEL           = PROVIDER_DEFAULTS["ollama"].model
+OLLAMA_DEFAULT_MODEL = PROVIDER_DEFAULTS["ollama"].model
 OLLAMA_DEFAULT_SUB_AGENT_MODEL = PROVIDER_DEFAULTS["ollama"].sub_agent_model
-OLLAMA_DEFAULT_API_URL         = PROVIDER_DEFAULTS["ollama"].api_url
-OLLAMA_DEFAULT_MAX_TOKENS      = PROVIDER_DEFAULTS["ollama"].max_tokens
-OLLAMA_DEFAULT_CONTEXT_WINDOW  = PROVIDER_DEFAULTS["ollama"].context_window
+OLLAMA_DEFAULT_API_URL = PROVIDER_DEFAULTS["ollama"].api_url
+OLLAMA_DEFAULT_MAX_TOKENS = PROVIDER_DEFAULTS["ollama"].max_tokens
+OLLAMA_DEFAULT_CONTEXT_WINDOW = PROVIDER_DEFAULTS["ollama"].context_window
 
-DEFAULT_MODEL        = DEEPSEEK_DEFAULT_MODEL
+DEFAULT_MODEL = DEEPSEEK_DEFAULT_MODEL
 DEFAULT_SUB_AGENT_MODEL = DEEPSEEK_DEFAULT_SUB_AGENT_MODEL
 DEFAULT_SUB_AGENT_MAX_CONCURRENT = 10
-DEFAULT_API_URL      = DEEPSEEK_DEFAULT_API_URL
-DEFAULT_API_KEY      = ""  # set via DEEPSEEK_API_KEY/CLAUDE_API_KEY env var, .env file, or .mini_agent.toml
+DEFAULT_API_URL = DEEPSEEK_DEFAULT_API_URL
+DEFAULT_API_KEY = ""  # set via DEEPSEEK_API_KEY/CLAUDE_API_KEY env var, .env file, or .mini_agent.toml
 DEFAULT_MAX_MESSAGES = 50
-DEFAULT_MAX_TOKENS   = DEEPSEEK_DEFAULT_MAX_TOKENS
+DEFAULT_MAX_TOKENS = DEEPSEEK_DEFAULT_MAX_TOKENS
 DEFAULT_CONTEXT_WINDOW = DEEPSEEK_DEFAULT_CONTEXT_WINDOW
 DEFAULT_SUB_AGENT_MAX_TURNS = 25
 DEFAULT_EXA_API_KEY = ""  # set via EXA_API_KEY env var or .mini_agent.toml
@@ -185,49 +192,50 @@ from .constants import (  # noqa: F401  — re-exported
 
 # Environment variable names used during config loading
 ENV_DEEPSEEK_API_KEY = "DEEPSEEK_API_KEY"
-ENV_CLAUDE_API_KEY   = "CLAUDE_API_KEY"
-ENV_XAI_API_KEY      = "XAI_API_KEY"
+ENV_CLAUDE_API_KEY = "CLAUDE_API_KEY"
+ENV_XAI_API_KEY = "XAI_API_KEY"
 ENV_SUB_AGENT_API_KEY = "SUB_AGENT_API_KEY"
 ENV_DEEPSEEK_API_URL = "DEEPSEEK_API_URL"
-ENV_CLAUDE_API_URL   = "CLAUDE_API_URL"
-ENV_XAI_API_URL      = "XAI_API_URL"
-ENV_CLAUDE_MODEL     = "CLAUDE_MODEL"
-ENV_XAI_MODEL        = "XAI_MODEL"
-ENV_OLLAMA_MODEL     = "OLLAMA_MODEL"
-ENV_OLLAMA_API_URL   = "OLLAMA_API_URL"
-ENV_OLLAMA_API_KEY   = "OLLAMA_API_KEY"
+ENV_CLAUDE_API_URL = "CLAUDE_API_URL"
+ENV_XAI_API_URL = "XAI_API_URL"
+ENV_CLAUDE_MODEL = "CLAUDE_MODEL"
+ENV_XAI_MODEL = "XAI_MODEL"
+ENV_OLLAMA_MODEL = "OLLAMA_MODEL"
+ENV_OLLAMA_API_URL = "OLLAMA_API_URL"
+ENV_OLLAMA_API_KEY = "OLLAMA_API_KEY"
 ENV_OPENROUTER_MODEL = "OPENROUTER_MODEL"
 ENV_OPENROUTER_API_URL = "OPENROUTER_API_URL"
 ENV_OPENROUTER_API_KEY = "OPENROUTER_API_KEY"
-ENV_MOONSHOT_API_KEY  = "MOONSHOT_API_KEY"
-ENV_MOONSHOT_API_URL  = "MOONSHOT_API_URL"
-ENV_MOONSHOT_MODEL    = "MOONSHOT_MODEL"
-ENV_QWEN_API_KEY      = "QWEN_API_KEY"
-ENV_QWEN_API_URL      = "QWEN_API_URL"
-ENV_QWEN_MODEL        = "QWEN_MODEL"
-ENV_DASHSCOPE_API_KEY  = "DASHSCOPE_API_KEY"
-ENV_GEMINI_API_KEY    = "GEMINI_API_KEY"
-ENV_GOOGLE_API_KEY    = "GOOGLE_API_KEY"  # alt name for Gemini
-ENV_GEMINI_MODEL      = "GEMINI_MODEL"
-ENV_GEMINI_API_URL    = "GEMINI_API_URL"
-ENV_OPENAI_MODEL      = "OPENAI_MODEL"
-ENV_OPENAI_API_URL    = "OPENAI_API_URL"
-ENV_API_PROVIDER     = "API_PROVIDER"  # "deepseek", "claude", "xai", "openrouter", "moonshot", "qwen", "gemini", "openai", or "ollama" -- overrides auto-detection
-ENV_AGENT_WORKSPACE  = "AGENT_WORKSPACE"
-ENV_EXA_API_KEY      = "EXA_API_KEY"
-ENV_OPENAI_API_KEY   = "OPENAI_API_KEY"
+ENV_MOONSHOT_API_KEY = "MOONSHOT_API_KEY"
+ENV_MOONSHOT_API_URL = "MOONSHOT_API_URL"
+ENV_MOONSHOT_MODEL = "MOONSHOT_MODEL"
+ENV_QWEN_API_KEY = "QWEN_API_KEY"
+ENV_QWEN_API_URL = "QWEN_API_URL"
+ENV_QWEN_MODEL = "QWEN_MODEL"
+ENV_DASHSCOPE_API_KEY = "DASHSCOPE_API_KEY"
+ENV_GEMINI_API_KEY = "GEMINI_API_KEY"
+ENV_GOOGLE_API_KEY = "GOOGLE_API_KEY"  # alt name for Gemini
+ENV_GEMINI_MODEL = "GEMINI_MODEL"
+ENV_GEMINI_API_URL = "GEMINI_API_URL"
+ENV_OPENAI_MODEL = "OPENAI_MODEL"
+ENV_OPENAI_API_URL = "OPENAI_API_URL"
+ENV_API_PROVIDER = "API_PROVIDER"  # "deepseek", "claude", "xai", "openrouter", "moonshot", "qwen", "gemini", "openai", or "ollama" -- overrides auto-detection
+ENV_AGENT_WORKSPACE = "AGENT_WORKSPACE"
+ENV_EXA_API_KEY = "EXA_API_KEY"
+ENV_OPENAI_API_KEY = "OPENAI_API_KEY"
 
 # CLI flag strings (matched against sys.argv or argparse namespace)
-CLI_STREAM           = "--stream"
-CLI_QUIET            = "--quiet"
+CLI_STREAM = "--stream"
+CLI_QUIET = "--quiet"
 CLI_ALLOW_OVERWRITES = "--allow-overwrites"
-CLI_APPROVE          = "--approve"
-CLI_UNRESTRICTED     = "--unrestricted"
+CLI_APPROVE = "--approve"
+CLI_UNRESTRICTED = "--unrestricted"
 
 
 # ---------------------------------------------------------------------------
 # Config object
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class AgentConfig:
@@ -267,10 +275,18 @@ class AgentConfig:
     approve_write_ops: bool = False
     unrestricted: bool = False
     frontend: str = "terminal"  # "terminal", "electron" -- injected into system prompt
-    mcp_servers: dict = field(default_factory=dict)  # {name: {command: [...], env: {...}}}
-    tool_choice: str = ""  # "auto" (default), "required", "none", or "" (unset = API default)
-    use_strict_function_calling: bool = False  # DeepSeek Strict Function Calling (Beta) -- opt-in
-    budget_limit: float = 0.0  # Hard stop after estimated cost exceeds this USD amount (0 = disabled)
+    mcp_servers: dict = field(
+        default_factory=dict
+    )  # {name: {command: [...], env: {...}}}
+    tool_choice: str = (
+        ""  # "auto" (default), "required", "none", or "" (unset = API default)
+    )
+    use_strict_function_calling: bool = (
+        False  # DeepSeek Strict Function Calling (Beta) -- opt-in
+    )
+    budget_limit: float = (
+        0.0  # Hard stop after estimated cost exceeds this USD amount (0 = disabled)
+    )
 
     # ------------------------------------------------------------------
     # Factory
@@ -393,8 +409,7 @@ def _load_toml_from_workspace(config: AgentConfig, workspace: str) -> None:
         AgentConfig._toml_cache[cache_key] = agent_data
         _apply_toml(config, agent_data)
     except (OSError, tomllib.TOMLDecodeError) as exc:
-        print(f"Warning: failed to parse {config_path}: {exc}",
-              file=sys.stderr)
+        print(f"Warning: failed to parse {config_path}: {exc}", file=sys.stderr)
 
 
 def _load_dotenv(workspace: str) -> None:
@@ -419,8 +434,8 @@ def _load_dotenv(workspace: str) -> None:
                 key = key.strip()
                 value = value.strip()
                 # Strip inline comments (e.g. KEY="val"# comment)
-                if '#' in value:
-                    value = value.split('#')[0].strip()
+                if "#" in value:
+                    value = value.split("#")[0].strip()
                 # Remove optional surrounding quotes
                 if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
                     value = value[1:-1]
@@ -468,7 +483,17 @@ _PROVIDER_MODEL_ENV: dict[str, str] = {
 }
 
 # Auto-detection priority order (first provider with an available key wins).
-_AUTO_DETECT_ORDER = ["deepseek", "moonshot", "claude", "xai", "qwen", "gemini", "openai", "ollama", "openrouter"]
+_AUTO_DETECT_ORDER = [
+    "deepseek",
+    "moonshot",
+    "claude",
+    "xai",
+    "qwen",
+    "gemini",
+    "openai",
+    "ollama",
+    "openrouter",
+]
 
 
 def _switch_to_provider(config: "AgentConfig", provider: str) -> str | None:
@@ -495,7 +520,10 @@ def _switch_to_provider(config: "AgentConfig", provider: str) -> str | None:
     old_prov = config.api_provider
     config.api_provider = provider
     old_provider_defaults = PROVIDER_DEFAULTS.get(old_prov)
-    if old_provider_defaults and config.model in (old_provider_defaults.model, old_provider_defaults.sub_agent_model):
+    if old_provider_defaults and config.model in (
+        old_provider_defaults.model,
+        old_provider_defaults.sub_agent_model,
+    ):
         config.model = defaults.model
         config.sub_agent_model = defaults.sub_agent_model
     config.max_tokens = defaults.max_tokens
@@ -588,8 +616,7 @@ def _apply_env_overrides(config: AgentConfig) -> None:
         config.openai_api_key = os.environ[ENV_OPENAI_API_KEY]
 
 
-def _apply_cli_overrides(config: AgentConfig,
-                         cli_args: object | None) -> None:
+def _apply_cli_overrides(config: AgentConfig, cli_args: object | None) -> None:
     """Phase 3: apply CLI flag overrides (highest priority).
 
     When *cli_args* is an argparse namespace, its attributes are used
@@ -620,6 +647,7 @@ def _apply_cli_overrides(config: AgentConfig,
     if any(a == CLI_UNRESTRICTED for a in _argv):
         config.unrestricted = True
 
+
 def parse_args(argv: list[str] | None = None) -> object:
     """Parse CLI flags with argparse.
 
@@ -629,52 +657,71 @@ def parse_args(argv: list[str] | None = None) -> object:
     from "passed with False". Workspace defaults to the env var or cwd.
     """
     import argparse as _ap
+
     parser = _ap.ArgumentParser(
         prog="mini_agent",
         description="A coding agent powered by DeepSeek V4 Pro.",
     )
     parser.add_argument(
-        "--workspace", default=None,
+        "--workspace",
+        default=None,
         help="Workspace root directory (env: AGENT_WORKSPACE, default: cwd)",
     )
     parser.add_argument(
-        "--stream", action="store_true", default=None,
+        "--stream",
+        action="store_true",
+        default=None,
         help="Stream responses token-by-token (default: off)",
     )
     parser.add_argument(
-        "--quiet", action="store_true", default=None,
+        "--quiet",
+        action="store_true",
+        default=None,
         help="Suppress tool execution logs (default: off)",
     )
     parser.add_argument(
-        "--allow-overwrites", action="store_true", default=None,
+        "--allow-overwrites",
+        action="store_true",
+        default=None,
         help="Allow overwriting existing files without confirmation (default: off)",
     )
     parser.add_argument(
-        "--approve", action="store_true", default=None,
+        "--approve",
+        action="store_true",
+        default=None,
         help="Prompt for approval before each write/destructive operation (default: off)",
     )
     parser.add_argument(
-        "--no-color", action="store_true", default=None,
+        "--no-color",
+        action="store_true",
+        default=None,
         help="Disable ANSI colours in output (default: off)",
     )
     parser.add_argument(
-        "--unrestricted", action="store_true", default=None,
+        "--unrestricted",
+        action="store_true",
+        default=None,
         help="Remove workspace boundary checks (allows read/write anywhere)",
     )
     # ----- UI selection (prompt_toolkit TUI by default) -----
     parser.add_argument(
-        "--no-ui", action="store_true", default=None,
+        "--no-ui",
+        action="store_true",
+        default=None,
         help="Run the plain stdin REPL instead of the Electron UI",
     )
 
     parser.add_argument(
-        "--theme", default=None,
+        "--theme",
+        default=None,
         help="Initial UI theme (slate, dawn, sepia, ember, midnight, cobalt, neon, forest, dracula)",
     )
     ns, unknown = parser.parse_known_args(argv)
     if unknown:
-        print(f"Warning: unknown CLI arguments ignored: {' '.join(unknown)}",
-              file=sys.stderr)
+        print(
+            f"Warning: unknown CLI arguments ignored: {' '.join(unknown)}",
+            file=sys.stderr,
+        )
     return ns
 
 
@@ -688,6 +735,7 @@ def resolve_workspace(override: str | None = None) -> str:
     if override is not None:
         return override
     import sys as _sys
+
     args = _sys.argv[1:]
     for i, arg in enumerate(args):
         if arg == "--workspace" and i + 1 < len(args):
@@ -704,12 +752,14 @@ def resolve_workspace(override: str | None = None) -> str:
 
 # Filesystem type constants for remote-filesystem detection.
 # Network filesystems that don't support POSIX locks or WAL shared memory.
-_REMOTE_FS_TYPES: frozenset[int] = frozenset({
-    0x517B,      # SMB / CIFS
-    0x6969,      # NFS
-    0x01021997,  # AFP (Apple Filing Protocol)
-    0x2FC12FC1,  # AFS (Andrew File System)
-})
+_REMOTE_FS_TYPES: frozenset[int] = frozenset(
+    {
+        0x517B,  # SMB / CIFS
+        0x6969,  # NFS
+        0x01021997,  # AFP (Apple Filing Protocol)
+        0x2FC12FC1,  # AFS (Andrew File System)
+    }
+)
 
 
 def _is_remote_workspace(path: str) -> bool:
@@ -722,7 +772,11 @@ def _is_remote_workspace(path: str) -> bool:
     # macOS network mounts are under /Volumes/ (but not the root volume).
     # '/Volumes/Macintosh HD' is local; anything else is typically a
     # network mount or external drive.
-    if path.startswith("/Volumes/") and path != "/Volumes/Macintosh HD" and not path.startswith("/Volumes/Macintosh HD/"):
+    if (
+        path.startswith("/Volumes/")
+        and path != "/Volumes/Macintosh HD"
+        and not path.startswith("/Volumes/Macintosh HD/")
+    ):
         return True
     # UNC paths (SMB): //server/share/...
     if path.startswith("//"):
@@ -754,6 +808,7 @@ def _try_with_timeout(fn, timeout: float = 10.0, description: str = "operation")
             done = True
 
     import threading
+
     t = threading.Thread(target=_target, daemon=True)
     t.start()
     t.join(timeout=timeout)

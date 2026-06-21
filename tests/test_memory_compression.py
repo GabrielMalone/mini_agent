@@ -26,19 +26,22 @@ def _make_tool_msg(tool_call_id: str, content: str) -> dict:
     }
 
 
-def _make_assistant_with_tool_call(tool_call_id: str, tool_name: str,
-                                   arguments: dict | None = None) -> dict:
+def _make_assistant_with_tool_call(
+    tool_call_id: str, tool_name: str, arguments: dict | None = None
+) -> dict:
     return {
         "role": "assistant",
         "content": "",
-        "tool_calls": [{
-            "id": tool_call_id,
-            "type": "function",
-            "function": {
-                "name": tool_name,
-                "arguments": json.dumps(arguments or {}),
-            },
-        }],
+        "tool_calls": [
+            {
+                "id": tool_call_id,
+                "type": "function",
+                "function": {
+                    "name": tool_name,
+                    "arguments": json.dumps(arguments or {}),
+                },
+            }
+        ],
     }
 
 
@@ -47,8 +50,9 @@ class TestFindToolCallName(unittest.TestCase):
 
     def test_finds_name_from_preceding_assistant(self):
         msgs = [
-            _make_assistant_with_tool_call("call_1", "read_file",
-                                           {"path": "/x", "offset": 0, "limit": 50}),
+            _make_assistant_with_tool_call(
+                "call_1", "read_file", {"path": "/x", "offset": 0, "limit": 50}
+            ),
             _make_tool_msg("call_1", "line 1\nline 2\nline 3\n"),
         ]
         name = _find_tool_call_name(msgs, 1)
@@ -82,8 +86,9 @@ class TestFindToolCallArgs(unittest.TestCase):
 
     def test_returns_args_dict(self):
         msgs = [
-            _make_assistant_with_tool_call("c1", "read_file",
-                                           {"path": "/a", "offset": 10, "limit": 20}),
+            _make_assistant_with_tool_call(
+                "c1", "read_file", {"path": "/a", "offset": 10, "limit": 20}
+            ),
             _make_tool_msg("c1", "content"),
         ]
         args = _find_tool_call_args(msgs, 1)
@@ -94,11 +99,13 @@ class TestFindToolCallArgs(unittest.TestCase):
             {
                 "role": "assistant",
                 "content": "",
-                "tool_calls": [{
-                    "id": "c1",
-                    "type": "function",
-                    "function": {"name": "f"},
-                }],
+                "tool_calls": [
+                    {
+                        "id": "c1",
+                        "type": "function",
+                        "function": {"name": "f"},
+                    }
+                ],
             },
             _make_tool_msg("c1", "result"),
         ]
@@ -115,11 +122,13 @@ class TestFindToolCallArgs(unittest.TestCase):
             {
                 "role": "assistant",
                 "content": "",
-                "tool_calls": [{
-                    "id": "c1",
-                    "type": "function",
-                    "function": {"name": "f", "arguments": "not-json"},
-                }],
+                "tool_calls": [
+                    {
+                        "id": "c1",
+                        "type": "function",
+                        "function": {"name": "f", "arguments": "not-json"},
+                    }
+                ],
             },
             _make_tool_msg("c1", "result"),
         ]
@@ -152,8 +161,7 @@ class TestIsMatchLine(unittest.TestCase):
         self.assertTrue(_is_match_line("test.py:5: import os"))
 
     def test_deeply_nested_path(self):
-        self.assertTrue(
-            _is_match_line("a/b/c/d/e/f/g.py:1234: some long line"))
+        self.assertTrue(_is_match_line("a/b/c/d/e/f/g.py:1234: some long line"))
 
 
 class TestBuildCompressed(unittest.TestCase):
@@ -212,7 +220,8 @@ class TestCompressDefault(unittest.TestCase):
         # First line should be truncated at _COMPRESSION_MAX_FIRST_LINE
         # + 3 for "..." (3 chars) after truncation
         self.assertLessEqual(
-            len(result.split("\n")[0]), _COMPRESSION_MAX_FIRST_LINE + 3)
+            len(result.split("\n")[0]), _COMPRESSION_MAX_FIRST_LINE + 3
+        )
 
 
 class TestCompressRunShell(unittest.TestCase):
@@ -265,8 +274,14 @@ class TestCompressSearchFiles(unittest.TestCase):
         self.assertNotIn("some context line", result)
 
     def test_no_match_lines_falls_back_to_default(self):
-        lines = ["no matches found", "try again", "still nothing",
-                 "nope", "nada", "zilch"]
+        lines = [
+            "no matches found",
+            "try again",
+            "still nothing",
+            "nope",
+            "nada",
+            "zilch",
+        ]
         result = _compress_search_files(lines)
         # Should fall back to default (first 5 lines + truncation)
         self.assertIn("truncated", result)
@@ -279,8 +294,9 @@ class TestCompressReadFile(unittest.TestCase):
         lines = ["1: a", "2: b", "3: c"]
         # Need a message list so _find_tool_call_args can work
         msgs = [
-            _make_assistant_with_tool_call("c1", "read_file",
-                                           {"offset": 0, "limit": 50}),
+            _make_assistant_with_tool_call(
+                "c1", "read_file", {"offset": 0, "limit": 50}
+            ),
             _make_tool_msg("c1", "\n".join(lines)),
         ]
         result = _compress_read_file(lines, msgs, 1)
@@ -289,8 +305,9 @@ class TestCompressReadFile(unittest.TestCase):
     def test_keeps_lines_in_offset_range(self):
         lines = [f"{i}: line {i}" for i in range(1, 101)]
         msgs = [
-            _make_assistant_with_tool_call("c1", "read_file",
-                                           {"offset": 40, "limit": 20}),
+            _make_assistant_with_tool_call(
+                "c1", "read_file", {"offset": 40, "limit": 20}
+            ),
             _make_tool_msg("c1", "\n".join(lines)),
         ]
         result = _compress_read_file(lines, msgs, 1)
@@ -304,8 +321,9 @@ class TestCompressReadFile(unittest.TestCase):
     def test_no_line_numbers_falls_back(self):
         lines = ["plain text", "no line numbers", "here"] * 10
         msgs = [
-            _make_assistant_with_tool_call("c1", "read_file",
-                                           {"offset": 0, "limit": 50}),
+            _make_assistant_with_tool_call(
+                "c1", "read_file", {"offset": 0, "limit": 50}
+            ),
             _make_tool_msg("c1", "\n".join(lines)),
         ]
         result = _compress_read_file(lines, msgs, 1)
@@ -332,8 +350,7 @@ class TestCompressToolResults(unittest.TestCase):
 
     def test_recent_tool_messages_not_compressed(self):
         msgs = [
-            _make_assistant_with_tool_call("c1", "run_shell",
-                                           {"command": "ls"}),
+            _make_assistant_with_tool_call("c1", "run_shell", {"command": "ls"}),
             _make_tool_msg("c1", "\n".join([f"line {i}" for i in range(30)])),
         ]
         result, changed = _compress_tool_results(msgs, keep_recent=6)
@@ -346,8 +363,7 @@ class TestCompressToolResults(unittest.TestCase):
     def test_old_tool_results_compressed(self):
         lines = [f"line {i}" for i in range(100)]
         msgs = [
-            _make_assistant_with_tool_call("c1", "run_shell",
-                                           {"command": "longcmd"}),
+            _make_assistant_with_tool_call("c1", "run_shell", {"command": "longcmd"}),
             _make_tool_msg("c1", "\n".join(lines)),
             {"role": "user", "content": "next"},
             {"role": "assistant", "content": "ok"},
@@ -367,8 +383,7 @@ class TestCompressToolResults(unittest.TestCase):
 
     def test_change_flag_false_when_nothing_to_compress(self):
         msgs = [
-            _make_assistant_with_tool_call("c1", "run_shell",
-                                           {"command": "echo hi"}),
+            _make_assistant_with_tool_call("c1", "run_shell", {"command": "echo hi"}),
             _make_tool_msg("c1", "hi"),
         ]
         _, changed = _compress_tool_results(msgs, keep_recent=0)
@@ -378,8 +393,9 @@ class TestCompressToolResults(unittest.TestCase):
     def test_read_file_compression_with_args(self):
         lines = [f"{i}: line {i}" for i in range(1, 51)]
         msgs = [
-            _make_assistant_with_tool_call("c1", "read_file",
-                                           {"offset": 0, "limit": 10}),
+            _make_assistant_with_tool_call(
+                "c1", "read_file", {"offset": 0, "limit": 10}
+            ),
             _make_tool_msg("c1", "\n".join(lines)),
             {"role": "user", "content": "x"},
             {"role": "assistant", "content": "x"},

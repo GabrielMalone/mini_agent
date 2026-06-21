@@ -55,6 +55,7 @@ import pytest
 def _load_yaml_tasks() -> list:
     """Load all YAML tasks from eval/tasks/."""
     from eval.runner import load_tasks
+
     return load_tasks()
 
 
@@ -124,9 +125,8 @@ def test_eval_task_local(task, request):
     if result.error:
         pytest.fail(f"Task errored: {result.error}")
 
-    assert result.success, (
-        f"Task {task.id} failed: "
-        + "; ".join(f"{c.check_type}: {c.detail}" for c in result.checks if not c.passed)
+    assert result.success, f"Task {task.id} failed: " + "; ".join(
+        f"{c.check_type}: {c.detail}" for c in result.checks if not c.passed
     )
 
     # Verify expected tools were used
@@ -162,6 +162,7 @@ def _require_swebench(request):
 def _require_network():
     """Skip if network unavailable."""
     import socket
+
     try:
         socket.create_connection(("github.com", 443), timeout=5)
     except (socket.timeout, OSError):
@@ -181,7 +182,11 @@ def test_swebench_smoke(request):
     _require_swebench(request)
     _require_network()
 
-    from eval.swebench_runner import run_swebench_task, parse_swebench_task, _load_dataset
+    from eval.swebench_runner import (
+        run_swebench_task,
+        parse_swebench_task,
+        _load_dataset,
+    )
 
     # Load just one task
     raw_tasks = _load_dataset("princeton-nlp/SWE-bench_Lite", max_tasks=1)
@@ -210,9 +215,7 @@ def test_swebench_smoke(request):
     patch_lines = result.model_patch.strip().split("\n")
     has_diff_header = any(
         line.startswith("diff --git") for line in patch_lines[:5]
-    ) or any(
-        "---" in line or "+++" in line for line in patch_lines[:10]
-    )
+    ) or any("---" in line or "+++" in line for line in patch_lines[:10])
     print(f"Patch has diff header: {has_diff_header}")
     print(f"Patch preview (first 500 chars):\n{result.model_patch[:500]}")
 
@@ -284,7 +287,10 @@ def test_swebench_lite(request, task):
 
 def pytest_generate_tests(metafunc):
     """Dynamically parametrize SWE-bench tests based on CLI flags."""
-    if "task" in metafunc.fixturenames and metafunc.function.__name__ == "test_swebench_lite":
+    if (
+        "task" in metafunc.fixturenames
+        and metafunc.function.__name__ == "test_swebench_lite"
+    ):
         # Only load SWE-bench tasks if --swebench is set
         if not metafunc.config.getoption("--swebench", default=False):
             metafunc.parametrize("task", [], ids=lambda t: "skipped")

@@ -75,8 +75,9 @@ class TestBuildSystemPrompt(unittest.TestCase):
         """build_system_prompt should return identical output regardless of config flags."""
         p1 = build_system_prompt(self._config(unrestricted=True, workspace="/foo"))
         p2 = build_system_prompt(self._config(unrestricted=False, workspace="/bar"))
-        self.assertEqual(p1, p2,
-                         "System prompt should be immutable regardless of config")
+        self.assertEqual(
+            p1, p2, "System prompt should be immutable regardless of config"
+        )
 
     # ------------------------------------------------------------------
     # Prompt length
@@ -86,15 +87,16 @@ class TestBuildSystemPrompt(unittest.TestCase):
         prompt = build_system_prompt(self._config())
         length = len(prompt)
         # Static prompt is ~3,900 chars -- allow some headroom for provider notes
-        self.assertLess(length, 8000,
-                        f"Prompt is {length} chars (expected ~3900)")
-        self.assertGreater(length, 2000,
-                           f"Prompt is only {length} chars, expected > 2000")
+        self.assertLess(length, 8000, f"Prompt is {length} chars (expected ~3900)")
+        self.assertGreater(
+            length, 2000, f"Prompt is only {length} chars, expected > 2000"
+        )
 
     def test_prompt_not_empty(self):
         prompt = build_system_prompt(self._config())
-        self.assertGreater(len(prompt), 500,
-                           "Prompt should be substantially longer than 500 chars")
+        self.assertGreater(
+            len(prompt), 500, "Prompt should be substantially longer than 500 chars"
+        )
 
 
 class TestBuildSessionHeader(unittest.TestCase):
@@ -172,8 +174,7 @@ class TestBuildSessionHeader(unittest.TestCase):
 
     def test_session_header_not_empty(self):
         hdr = build_session_header(self._config())
-        self.assertGreater(len(hdr), 500,
-                           "Session header should be substantial")
+        self.assertGreater(len(hdr), 500, "Session header should be substantial")
 
 
 if __name__ == "__main__":

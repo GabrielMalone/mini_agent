@@ -19,15 +19,29 @@ class TestTransientOrphanBug(unittest.TestCase):
         must also be removed (truncated) to avoid API 400 errors."""
         messages = [
             {"role": "user", "content": "do thing"},
-            {"role": "assistant", "content": "", "tool_calls": [
-                {"id": "call_1", "function": {"name": "read_file", "arguments": "{}"}}
-            ]},
-            {"role": "tool", "tool_call_id": "call_1", "content": "result", "_transient": True},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "function": {"name": "read_file", "arguments": "{}"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "tool_call_id": "call_1",
+                "content": "result",
+                "_transient": True,
+            },
             {"role": "user", "content": "next thing"},
         ]
 
         # Simulate what _clean_messages does: strip system + _transient, then strip orphans
-        cleaned = [m for m in messages if m.get("role") != "system" and not m.get("_transient")]
+        cleaned = [
+            m for m in messages if m.get("role") != "system" and not m.get("_transient")
+        ]
         result = _strip_orphaned_tool_messages(cleaned, truncate=True)
 
         # Check: no assistant messages with tool_calls remain (they were truncated)
@@ -48,16 +62,33 @@ class TestTransientOrphanBug(unittest.TestCase):
         sequence from that assistant onward should be truncated."""
         messages = [
             {"role": "user", "content": "do things"},
-            {"role": "assistant", "content": "", "tool_calls": [
-                {"id": "call_a", "function": {"name": "read_file", "arguments": "{}"}},
-                {"id": "call_b", "function": {"name": "search_files", "arguments": "{}"}},
-            ]},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call_a",
+                        "function": {"name": "read_file", "arguments": "{}"},
+                    },
+                    {
+                        "id": "call_b",
+                        "function": {"name": "search_files", "arguments": "{}"},
+                    },
+                ],
+            },
             {"role": "tool", "tool_call_id": "call_a", "content": "result a"},
-            {"role": "tool", "tool_call_id": "call_b", "content": "result b", "_transient": True},
+            {
+                "role": "tool",
+                "tool_call_id": "call_b",
+                "content": "result b",
+                "_transient": True,
+            },
             {"role": "user", "content": "next"},
         ]
 
-        cleaned = [m for m in messages if m.get("role") != "system" and not m.get("_transient")]
+        cleaned = [
+            m for m in messages if m.get("role") != "system" and not m.get("_transient")
+        ]
         result = _strip_orphaned_tool_messages(cleaned, truncate=True)
 
         for msg in result:
@@ -83,14 +114,23 @@ class TestTransientOrphanBug(unittest.TestCase):
         """Without _transient markers, all messages are kept."""
         messages = [
             {"role": "user", "content": "do thing"},
-            {"role": "assistant", "content": "", "tool_calls": [
-                {"id": "call_1", "function": {"name": "read_file", "arguments": "{}"}}
-            ]},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "function": {"name": "read_file", "arguments": "{}"},
+                    }
+                ],
+            },
             {"role": "tool", "tool_call_id": "call_1", "content": "result"},
             {"role": "user", "content": "next"},
         ]
 
-        cleaned = [m for m in messages if m.get("role") != "system" and not m.get("_transient")]
+        cleaned = [
+            m for m in messages if m.get("role") != "system" and not m.get("_transient")
+        ]
         result = _strip_orphaned_tool_messages(cleaned, truncate=True)
 
         self.assertEqual(len(result), 4)
@@ -101,9 +141,16 @@ class TestTransientOrphanBug(unittest.TestCase):
         """truncate=False should only remove the orphaned assistant, not truncate."""
         messages = [
             {"role": "user", "content": "first"},
-            {"role": "assistant", "content": "", "tool_calls": [
-                {"id": "call_orphan", "function": {"name": "bad_tool", "arguments": "{}"}}
-            ]},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call_orphan",
+                        "function": {"name": "bad_tool", "arguments": "{}"},
+                    }
+                ],
+            },
             {"role": "user", "content": "second"},
             {"role": "assistant", "content": "reply"},
         ]
@@ -121,12 +168,13 @@ class TestTransientOrphanBug(unittest.TestCase):
             {"role": "user", "content": "hello"},
         ]
 
-        cleaned = [m for m in messages if m.get("role") != "system" and not m.get("_transient")]
+        cleaned = [
+            m for m in messages if m.get("role") != "system" and not m.get("_transient")
+        ]
         result = _strip_orphaned_tool_messages(cleaned, truncate=True)
 
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]["role"], "user")
-
 
     def test_user_messages_between_assistant_and_tool_results_truncate_true(self):
         """Even with truncate=True, _strip_orphaned_tool_messages does NOT
@@ -139,9 +187,16 @@ class TestTransientOrphanBug(unittest.TestCase):
         essential defense against this API 400 error."""
         messages = [
             {"role": "user", "content": "do thing"},
-            {"role": "assistant", "content": "", "tool_calls": [
-                {"id": "call_a", "function": {"name": "run_shell", "arguments": "{}"}},
-            ]},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call_a",
+                        "function": {"name": "run_shell", "arguments": "{}"},
+                    },
+                ],
+            },
             {"role": "user", "content": "FAILURE PATTERN WARNING: ..."},
             {"role": "user", "content": "TOOL SEQUENCING WARNING: ..."},
             {"role": "tool", "tool_call_id": "call_a", "content": "result"},
@@ -163,9 +218,16 @@ class TestTransientOrphanBug(unittest.TestCase):
         preventing this scenario at the source."""
         messages = [
             {"role": "user", "content": "do thing"},
-            {"role": "assistant", "content": "", "tool_calls": [
-                {"id": "call_a", "function": {"name": "run_shell", "arguments": "{}"}},
-            ]},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call_a",
+                        "function": {"name": "run_shell", "arguments": "{}"},
+                    },
+                ],
+            },
             {"role": "user", "content": "FAILURE PATTERN WARNING: ..."},
             {"role": "tool", "tool_call_id": "call_a", "content": "result"},
         ]
@@ -184,10 +246,20 @@ class TestTransientOrphanBug(unittest.TestCase):
         """Normal case: assistant(tool_calls) immediately followed by tool results."""
         messages = [
             {"role": "user", "content": "do thing"},
-            {"role": "assistant", "content": "", "tool_calls": [
-                {"id": "call_a", "function": {"name": "run_shell", "arguments": "{}"}},
-                {"id": "call_b", "function": {"name": "read_file", "arguments": "{}"}},
-            ]},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call_a",
+                        "function": {"name": "run_shell", "arguments": "{}"},
+                    },
+                    {
+                        "id": "call_b",
+                        "function": {"name": "read_file", "arguments": "{}"},
+                    },
+                ],
+            },
             {"role": "tool", "tool_call_id": "call_a", "content": "result a"},
             {"role": "tool", "tool_call_id": "call_b", "content": "result b"},
             {"role": "user", "content": "context message after results"},

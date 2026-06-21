@@ -12,7 +12,7 @@ import json
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from unittest.mock import ANY, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -47,7 +47,11 @@ def _make_tc(name: str, args: dict, idx: int = 0) -> dict:
 
 
 def _make_tc_with_pipe(
-    name: str, args: dict, pipe_from: int, pipe_into: str = "", idx: int = 0,
+    name: str,
+    args: dict,
+    pipe_from: int,
+    pipe_into: str = "",
+    idx: int = 0,
 ) -> dict:
     """Build a tool call dict with _pipe metadata."""
     full_args = dict(args)
@@ -145,7 +149,9 @@ class TestExtractPipeDeps:
     def test_pipe_with_explicit_into(self):
         remaining = [
             _make_tc("run_shell", {"command": "echo hello"}, 0),
-            _make_tc_with_pipe("write_file", {"content": ""}, pipe_from=0, pipe_into="content", idx=1),
+            _make_tc_with_pipe(
+                "write_file", {"content": ""}, pipe_from=0, pipe_into="content", idx=1
+            ),
         ]
         deps, _ = _extract_pipe_deps(remaining)
         assert deps == {1: (0, "content")}
@@ -202,7 +208,9 @@ class TestApplyPipe:
         assert tc["function"]["arguments"] == original
 
     def test_auto_detects_first_string_param(self):
-        tc = _make_tc_with_pipe("write_file", {"content": "will be replaced"}, pipe_from=0, idx=1)
+        tc = _make_tc_with_pipe(
+            "write_file", {"content": "will be replaced"}, pipe_from=0, idx=1
+        )
         pipe_deps = {1: (0, "")}  # no into_param specified
         src_result = ToolResult(True, "new content")
         pipe_results = {0: src_result}
@@ -237,9 +245,7 @@ class TestBuildExecutionGroups:
     def test_diamond_dependency(self):
         # 0 -> 1, 0 -> 2, 1 -> 3, 2 -> 3
         pipe_deps = {1: (0, ""), 2: (0, ""), 3: (1, ""), 4: (2, "")}
-        remaining = [
-            _make_tc("read_file", {"path": "a.py"}, i) for i in range(5)
-        ]
+        remaining = [_make_tc("read_file", {"path": "a.py"}, i) for i in range(5)]
         groups = _build_execution_groups(remaining, pipe_deps)
         # Should produce: [0], [1, 2], [3, 4]
         assert groups == [[0], [1, 2], [3, 4]]
@@ -270,9 +276,15 @@ class TestExecuteToolsNoPipe:
         with patch("core.llm.execute_tool") as mock_exec:
             mock_exec.return_value = ToolResult(True, "content of a.py")
             results = _execute_tools(
-                remaining, messages, write_gate, read_gate,
-                on_tool_start=None, on_tool_end=None, on_tool_output=None,
-                approve_callback=None, cancel_event=None,
+                remaining,
+                messages,
+                write_gate,
+                read_gate,
+                on_tool_start=None,
+                on_tool_end=None,
+                on_tool_output=None,
+                approve_callback=None,
+                cancel_event=None,
             )
         assert len(results) == 1
         assert results[0][1].success is True
@@ -291,9 +303,15 @@ class TestExecuteToolsNoPipe:
                 (remaining[1], ToolResult(True, "b")),
             ]
             results = _execute_tools(
-                remaining, messages, write_gate, read_gate,
-                on_tool_start=None, on_tool_end=None, on_tool_output=None,
-                approve_callback=None, cancel_event=None,
+                remaining,
+                messages,
+                write_gate,
+                read_gate,
+                on_tool_start=None,
+                on_tool_end=None,
+                on_tool_output=None,
+                approve_callback=None,
+                cancel_event=None,
             )
         mock_par.assert_called_once()
         assert len(results) == 2
@@ -304,9 +322,15 @@ class TestExecuteToolsNoPipe:
         with patch("core.llm._execute_single_no_pipe") as mock_single:
             mock_single.return_value = [(remaining[0], ToolResult(True, "ok"))]
             _execute_tools(
-                remaining, messages, write_gate, read_gate,
-                on_tool_start=None, on_tool_end=None, on_tool_output=None,
-                approve_callback=None, cancel_event=None,
+                remaining,
+                messages,
+                write_gate,
+                read_gate,
+                on_tool_start=None,
+                on_tool_end=None,
+                on_tool_output=None,
+                approve_callback=None,
+                cancel_event=None,
             )
         mock_single.assert_called_once()
 
@@ -327,9 +351,15 @@ class TestExecuteToolsWithPipe:
                 ToolResult(True, "wrote b.py"),
             ]
             results = _execute_tools(
-                remaining, messages, write_gate, read_gate,
-                on_tool_start=None, on_tool_end=None, on_tool_output=None,
-                approve_callback=None, cancel_event=None,
+                remaining,
+                messages,
+                write_gate,
+                read_gate,
+                on_tool_start=None,
+                on_tool_end=None,
+                on_tool_output=None,
+                approve_callback=None,
+                cancel_event=None,
             )
         assert len(results) == 2
         # The second tool should have gotten the piped result
@@ -345,9 +375,15 @@ class TestExecuteToolsWithPipe:
         with patch("core.llm.execute_tool") as mock_exec:
             mock_exec.return_value = ToolResult(True, "ok")
             results = _execute_tools(
-                remaining, messages, write_gate, read_gate,
-                on_tool_start=None, on_tool_end=None, on_tool_output=None,
-                approve_callback=None, cancel_event=None,
+                remaining,
+                messages,
+                write_gate,
+                read_gate,
+                on_tool_start=None,
+                on_tool_end=None,
+                on_tool_output=None,
+                approve_callback=None,
+                cancel_event=None,
             )
         assert len(results) == 2
 
@@ -361,15 +397,24 @@ class TestCancelPropagation:
         cancel.set()
         remaining = [_make_tc("read_file", {"path": "a.py"})]
         results = _execute_single_no_pipe(
-            remaining[0], messages, write_gate, read_gate,
-            on_tool_start=None, on_tool_end=None, on_tool_output=None,
-            approve_callback=None, cancel_event=cancel,
-            recent_tool_keys=None, tool_keys_lock=None,
+            remaining[0],
+            messages,
+            write_gate,
+            read_gate,
+            on_tool_start=None,
+            on_tool_end=None,
+            on_tool_output=None,
+            approve_callback=None,
+            cancel_event=cancel,
+            recent_tool_keys=None,
+            tool_keys_lock=None,
         )
         assert len(results) == 0
         assert len(messages) == 1  # cancel failure message
 
-    def test_parallel_no_pipe_cancel_mid_execution(self, write_gate, read_gate, messages):
+    def test_parallel_no_pipe_cancel_mid_execution(
+        self, write_gate, read_gate, messages
+    ):
         """Cancel during parallel execution should add failure results for incomplete tools."""
         cancel = threading.Event()
         remaining = [
@@ -391,10 +436,17 @@ class TestCancelPropagation:
 
         with patch("core.llm.execute_tool", side_effect=slow_then_cancel):
             _execute_parallel_no_pipes(
-                remaining, messages, write_gate, read_gate,
-                on_tool_start=None, on_tool_end=None, on_tool_output=None,
-                approve_callback=None, cancel_event=cancel,
-                recent_tool_keys=None, tool_keys_lock=None,
+                remaining,
+                messages,
+                write_gate,
+                read_gate,
+                on_tool_start=None,
+                on_tool_end=None,
+                on_tool_output=None,
+                approve_callback=None,
+                cancel_event=cancel,
+                recent_tool_keys=None,
+                tool_keys_lock=None,
             )
         # At least the cancel failure message should be appended
         assert len(messages) >= 1
@@ -407,10 +459,17 @@ class TestCancelPropagation:
             _make_tc("read_file", {"path": "b.py"}, 1),
         ]
         results = _execute_parallel_no_pipes(
-            remaining, messages, write_gate, read_gate,
-            on_tool_start=None, on_tool_end=None, on_tool_output=None,
-            approve_callback=None, cancel_event=cancel,
-            recent_tool_keys=None, tool_keys_lock=None,
+            remaining,
+            messages,
+            write_gate,
+            read_gate,
+            on_tool_start=None,
+            on_tool_end=None,
+            on_tool_output=None,
+            approve_callback=None,
+            cancel_event=cancel,
+            recent_tool_keys=None,
+            tool_keys_lock=None,
         )
         # All tools should get failure results
         assert len(messages) == 2
@@ -435,11 +494,20 @@ class TestCancelPropagation:
 
         with patch("core.llm.execute_tool", side_effect=exec_then_cancel):
             _execute_groups(
-                groups, remaining, messages, write_gate, read_gate,
-                pipe_deps, pipe_results,
-                on_tool_start=None, on_tool_end=None, on_tool_output=None,
-                approve_callback=None, cancel_event=cancel,
-                recent_tool_keys=None, tool_keys_lock=None,
+                groups,
+                remaining,
+                messages,
+                write_gate,
+                read_gate,
+                pipe_deps,
+                pipe_results,
+                on_tool_start=None,
+                on_tool_end=None,
+                on_tool_output=None,
+                approve_callback=None,
+                cancel_event=cancel,
+                recent_tool_keys=None,
+                tool_keys_lock=None,
             )
         # Tool 0 succeeded, tools 1 and 2 should get failure messages
         assert len(messages) >= 3  # 1 success + 2 cancel failures
@@ -458,8 +526,8 @@ class TestCancelEventIsolation:
         seen_events: dict[str, threading.Event | None] = {}
 
         def capture_cancel_event(tc, wg, rg, **kw):
-            import contextvars
             from tools import _CURRENT_CANCEL_EVENT as cce_var
+
             seen_events[tc["function"]["name"]] = cce_var.get()
             return ToolResult(True, "ok")
 
@@ -472,6 +540,7 @@ class TestCancelEventIsolation:
         # but with different cancel events per tool
         def run_a():
             from tools import _CURRENT_CANCEL_EVENT as cce_var
+
             tok = cce_var.set(cancel_a)
             try:
                 return capture_cancel_event(remaining[0], write_gate, read_gate)
@@ -480,6 +549,7 @@ class TestCancelEventIsolation:
 
         def run_b():
             from tools import _CURRENT_CANCEL_EVENT as cce_var
+
             tok = cce_var.set(cancel_b)
             try:
                 return capture_cancel_event(remaining[1], write_gate, read_gate)
@@ -519,7 +589,14 @@ class TestConcurrencyCap:
 
     def test_capped_workers_never_exceeds_max(self):
         """_capped_workers should return at most MAX_PARALLEL_TOOLS."""
-        for n in (0, 1, 3, MAX_PARALLEL_TOOLS, MAX_PARALLEL_TOOLS + 1, MAX_PARALLEL_TOOLS * 10):
+        for n in (
+            0,
+            1,
+            3,
+            MAX_PARALLEL_TOOLS,
+            MAX_PARALLEL_TOOLS + 1,
+            MAX_PARALLEL_TOOLS * 10,
+        ):
             result = _capped_workers(list(range(n)))
             assert result == min(n, MAX_PARALLEL_TOOLS)
 
@@ -573,7 +650,10 @@ class TestCacheThreadSafety:
                     tmod._TOOL_CACHE_MISSES += 1
                     miss_events.append(True)
                     if should_hit:
-                        tmod._TOOL_CACHE[key] = (time.monotonic(), ToolResult(True, "ok"))
+                        tmod._TOOL_CACHE[key] = (
+                            time.monotonic(),
+                            ToolResult(True, "ok"),
+                        )
 
         with ThreadPoolExecutor(max_workers=8) as pool:
             # First wave: all misses, populate cache

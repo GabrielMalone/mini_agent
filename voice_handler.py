@@ -35,9 +35,11 @@ import discord
 # TTS providers
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class TTSResult:
     """Audio data returned by a TTS engine."""
+
     data: bytes
     mime_type: str = "audio/mpeg"
 
@@ -113,8 +115,15 @@ class MacSayTTS:
             # Convert aiff -> mp3 via ffmpeg
             result = subprocess.run(
                 [
-                    "ffmpeg", "-y", "-i", aiff_path,
-                    "-f", "mp3", "-b:a", "64k", "pipe:1",
+                    "ffmpeg",
+                    "-y",
+                    "-i",
+                    aiff_path,
+                    "-f",
+                    "mp3",
+                    "-b:a",
+                    "64k",
+                    "pipe:1",
                 ],
                 check=True,
                 capture_output=True,

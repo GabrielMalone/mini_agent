@@ -52,6 +52,7 @@ HTML_PAGE2 = """<!DOCTYPE html>
 
 def _start_test_server() -> tuple[str, threading.Thread]:
     """Start a local HTTP server on a free port, return (base_url, thread)."""
+
     class Handler(http.server.SimpleHTTPRequestHandler):
         def do_GET(self):
             if self.path == "/" or self.path == "/index.html":
@@ -81,6 +82,7 @@ def _start_test_server() -> tuple[str, threading.Thread]:
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(autouse=True)
 def _reset_browser_state():
     """Reset the lazy singleton globals between tests."""
@@ -100,6 +102,7 @@ def test_server():
 # ---------------------------------------------------------------------------
 # open_url tests (stdlib only, no Playwright needed)
 # ---------------------------------------------------------------------------
+
 
 class TestOpenUrl:
     """Unit tests for open_url -- uses mock for webbrowser.open."""
@@ -143,7 +146,9 @@ class TestOpenUrl:
 # browser_navigate tests (integration -- real Playwright)
 # ---------------------------------------------------------------------------
 
-pytestmark = pytest.mark.skip(reason="Integration test -- run tests/browser_validation.py instead")
+pytestmark = pytest.mark.skip(
+    reason="Integration test -- run tests/browser_validation.py instead"
+)
 
 
 @pytest.mark.integration
@@ -172,7 +177,9 @@ class TestBrowserNavigate:
         assert "http://" in result.content
 
     def test_invalid_url_returns_error(self):
-        result = bo._browser_navigate({"url": "http://does.not.exist.invalid"}, None, None)
+        result = bo._browser_navigate(
+            {"url": "http://does.not.exist.invalid"}, None, None
+        )
         assert result.success is False
 
     def test_summary(self):
@@ -183,6 +190,7 @@ class TestBrowserNavigate:
 # ---------------------------------------------------------------------------
 # browser_snapshot tests (integration -- real Playwright)
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.integration
 class TestBrowserSnapshot:
@@ -211,6 +219,7 @@ class TestBrowserSnapshot:
 # ---------------------------------------------------------------------------
 # browser_click tests (integration -- real Playwright)
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.integration
 class TestBrowserClick:
@@ -259,6 +268,7 @@ class TestBrowserClick:
 # browser_type tests (integration -- real Playwright)
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.integration
 class TestBrowserType:
     """Integration tests for typing into inputs."""
@@ -267,7 +277,8 @@ class TestBrowserType:
         bo._browser_navigate({"url": test_server}, None, None)
         result = bo._browser_type(
             {"role": "textbox", "name": "Search", "text": "hello world"},
-            None, None,
+            None,
+            None,
         )
         assert result.success is True
         assert "Typed" in result.content
@@ -292,6 +303,7 @@ class TestBrowserType:
 # browser_screenshot tests (integration -- real Playwright)
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.integration
 class TestBrowserScreenshot:
     """Integration tests for screenshot capture."""
@@ -299,9 +311,7 @@ class TestBrowserScreenshot:
     def test_captures_screenshot(self, test_server, tmp_path):
         bo._browser_navigate({"url": test_server}, None, None)
         screenshot_path = str(tmp_path / "test.png")
-        result = bo._browser_screenshot(
-            {"path": screenshot_path}, None, None
-        )
+        result = bo._browser_screenshot({"path": screenshot_path}, None, None)
         assert result.success is True
         assert os.path.exists(screenshot_path)
         assert os.path.getsize(screenshot_path) > 0
@@ -326,6 +336,7 @@ class TestBrowserScreenshot:
 # Playwright-not-installed tests (mock the import to fail)
 # ---------------------------------------------------------------------------
 
+
 class TestPlaywrightNotInstalled:
     """Tests for graceful error when Playwright is missing."""
 
@@ -342,9 +353,7 @@ class TestPlaywrightNotInstalled:
 
     def test_click_without_playwright(self):
         with mock.patch.object(bo, "_get_page", side_effect=ImportError("no pw")):
-            result = bo._browser_click(
-                {"role": "button", "name": "X"}, None, None
-            )
+            result = bo._browser_click({"role": "button", "name": "X"}, None, None)
         assert result.success is False
 
     def test_type_without_playwright(self):
@@ -364,37 +373,79 @@ class TestPlaywrightNotInstalled:
 # Interactive element formatting
 # ---------------------------------------------------------------------------
 
+
 class TestInteractiveElementFormatting:
     """Unit tests for _format_interactive_elements helper."""
 
     def test_basic_element(self):
-        elements = [{"role": "button", "name": "Click me", "tag": "button",
-                      "type": "", "href": "", "checked": "", "disabled": False}]
+        elements = [
+            {
+                "role": "button",
+                "name": "Click me",
+                "tag": "button",
+                "type": "",
+                "href": "",
+                "checked": "",
+                "disabled": False,
+            }
+        ]
         result = bo._format_interactive_elements(elements)
-        assert 'button' in result
+        assert "button" in result
         assert '"Click me"' in result
-        assert '[0]' in result
+        assert "[0]" in result
 
     def test_element_with_href(self):
-        elements = [{"role": "a", "name": "Home", "tag": "a",
-                      "type": "", "href": "/home", "checked": "", "disabled": False}]
+        elements = [
+            {
+                "role": "a",
+                "name": "Home",
+                "tag": "a",
+                "type": "",
+                "href": "/home",
+                "checked": "",
+                "disabled": False,
+            }
+        ]
         result = bo._format_interactive_elements(elements)
-        assert '/home' in result
+        assert "/home" in result
 
     def test_element_with_checked_and_disabled(self):
-        elements = [{"role": "checkbox", "name": "Accept", "tag": "div",
-                      "type": "", "href": "", "checked": "true", "disabled": True}]
+        elements = [
+            {
+                "role": "checkbox",
+                "name": "Accept",
+                "tag": "div",
+                "type": "",
+                "href": "",
+                "checked": "true",
+                "disabled": True,
+            }
+        ]
         result = bo._format_interactive_elements(elements)
-        assert '[true]' in result
-        assert '[disabled]' in result
+        assert "[true]" in result
+        assert "[disabled]" in result
         assert '"Accept"' in result
 
     def test_multiple_elements(self):
         elements = [
-            {"role": "button", "name": "OK", "tag": "button",
-             "type": "", "href": "", "checked": "", "disabled": False},
-            {"role": "textbox", "name": "Search", "tag": "input",
-             "type": "text", "href": "", "checked": "", "disabled": False},
+            {
+                "role": "button",
+                "name": "OK",
+                "tag": "button",
+                "type": "",
+                "href": "",
+                "checked": "",
+                "disabled": False,
+            },
+            {
+                "role": "textbox",
+                "name": "Search",
+                "tag": "input",
+                "type": "text",
+                "href": "",
+                "checked": "",
+                "disabled": False,
+            },
         ]
         result = bo._format_interactive_elements(elements)
         lines = result.strip().split("\n")
@@ -403,7 +454,16 @@ class TestInteractiveElementFormatting:
         assert "Search" in result
 
     def test_element_with_type(self):
-        elements = [{"role": "input", "name": "Email", "tag": "input",
-                      "type": "email", "href": "", "checked": "", "disabled": False}]
+        elements = [
+            {
+                "role": "input",
+                "name": "Email",
+                "tag": "input",
+                "type": "email",
+                "href": "",
+                "checked": "",
+                "disabled": False,
+            }
+        ]
         result = bo._format_interactive_elements(elements)
-        assert 'type=email' in result
+        assert "type=email" in result

@@ -33,7 +33,7 @@ def repair_json(raw: str) -> tuple[object, bool]:
                 # Find end of string (handle backslash escapes)
                 j = i + 1
                 while j < len(text):
-                    if text[j] == '\\' and j + 1 < len(text):
+                    if text[j] == "\\" and j + 1 < len(text):
                         j += 2
                         continue
                     if text[j] == '"':
@@ -53,18 +53,18 @@ def repair_json(raw: str) -> tuple[object, bool]:
         # Use [A-Za-z_]\\w* instead of \\w+ to avoid matching numeric keys
         # like '1:' which would produce '"1":}' instead of leaving '1:' alone.
         for idx in range(0, len(result), 2):
-            result[idx] = re.sub(r'([A-Za-z_]\w*)(\s*:)', r'"\1"\2', result[idx])
-        return ''.join(result)
+            result[idx] = re.sub(r"([A-Za-z_]\w*)(\s*:)", r'"\1"\2', result[idx])
+        return "".join(result)
 
     # Individual fixes
-    fix1 = re.sub(r',\s*([}\]])', r'\1', raw)
+    fix1 = re.sub(r",\s*([}\]])", r"\1", raw)
 
     fix2 = raw
     if "'" in raw:
         fix2 = raw.replace("'", '"')
 
     fix3 = raw
-    if not raw.strip().startswith('['):
+    if not raw.strip().startswith("["):
         fix3 = _fix_unquoted_keys(raw)
 
     # Combinations — apply fixes in sequence on copies
@@ -72,11 +72,11 @@ def repair_json(raw: str) -> tuple[object, bool]:
         s = base
         for i in indices:
             if i == 1:
-                s = re.sub(r',\s*([}\]])', r'\1', s)
+                s = re.sub(r",\s*([}\]])", r"\1", s)
             elif i == 2:
                 s = s.replace("'", '"')
             elif i == 3:
-                if not s.strip().startswith('['):
+                if not s.strip().startswith("["):
                     s = _fix_unquoted_keys(s)
         return s
 

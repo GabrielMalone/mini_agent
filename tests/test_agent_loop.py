@@ -27,6 +27,7 @@ from tools import execute_tool, ToolResult
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_api_response(content: str = "", tool_calls: list[dict] | None = None) -> dict:
     """Build a minimal DeepSeek-style API response."""
     msg: dict = {"role": "assistant", "content": content}
@@ -54,6 +55,7 @@ from conftest import make_gates as _gates
 # Tests: turn pipeline
 # ---------------------------------------------------------------------------
 
+
 class TestAgentTurnPipeline(unittest.TestCase):
     """Simulate full turns: API -> tool execution -> response."""
 
@@ -64,6 +66,7 @@ class TestAgentTurnPipeline(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.workspace, ignore_errors=True)
 
     @patch("api.requests.post")
@@ -72,10 +75,16 @@ class TestAgentTurnPipeline(unittest.TestCase):
         call1_response = MagicMock()
         call1_response.ok = True
         call1_response.json.return_value = _make_api_response(
-            tool_calls=[_tool_call("write_file", "call_1", {
-                "path": os.path.join(self.workspace, "out.txt"),
-                "content": "hello integration",
-            })]
+            tool_calls=[
+                _tool_call(
+                    "write_file",
+                    "call_1",
+                    {
+                        "path": os.path.join(self.workspace, "out.txt"),
+                        "content": "hello integration",
+                    },
+                )
+            ]
         )
 
         call2_response = MagicMock()
@@ -98,11 +107,13 @@ class TestAgentTurnPipeline(unittest.TestCase):
         for tc in msg1["tool_calls"]:
             result = execute_tool(tc, self.write_gate, self.read_gate)
             self.assertTrue(result.success)
-            messages.append({
-                "role": "tool",
-                "tool_call_id": tc["id"],
-                "content": result.to_json(),
-            })
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tc["id"],
+                    "content": result.to_json(),
+                }
+            )
 
         msg2 = call_deepseek(messages, self.config)
         self.assertNotIn("tool_calls", msg2)
@@ -124,14 +135,22 @@ class TestAgentTurnPipeline(unittest.TestCase):
         call1_response.ok = True
         call1_response.json.return_value = _make_api_response(
             tool_calls=[
-                _tool_call("write_file", "call_a", {
-                    "path": os.path.join(self.workspace, "a.txt"),
-                    "content": "AAA",
-                }),
-                _tool_call("write_file", "call_b", {
-                    "path": os.path.join(self.workspace, "b.txt"),
-                    "content": "BBB",
-                }),
+                _tool_call(
+                    "write_file",
+                    "call_a",
+                    {
+                        "path": os.path.join(self.workspace, "a.txt"),
+                        "content": "AAA",
+                    },
+                ),
+                _tool_call(
+                    "write_file",
+                    "call_b",
+                    {
+                        "path": os.path.join(self.workspace, "b.txt"),
+                        "content": "BBB",
+                    },
+                ),
             ]
         )
 
@@ -143,9 +162,7 @@ class TestAgentTurnPipeline(unittest.TestCase):
 
         mock_post.side_effect = [call1_response, call2_response]
 
-        messages: list[dict] = [
-            {"role": "user", "content": "write a.txt and b.txt"}
-        ]
+        messages: list[dict] = [{"role": "user", "content": "write a.txt and b.txt"}]
 
         msg1 = call_deepseek(messages, self.config)
         self.assertEqual(len(msg1["tool_calls"]), 2)
@@ -154,11 +171,13 @@ class TestAgentTurnPipeline(unittest.TestCase):
         for tc in msg1["tool_calls"]:
             result = execute_tool(tc, self.write_gate, self.read_gate)
             self.assertTrue(result.success)
-            messages.append({
-                "role": "tool",
-                "tool_call_id": tc["id"],
-                "content": result.to_json(),
-            })
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tc["id"],
+                    "content": result.to_json(),
+                }
+            )
 
         msg2 = call_deepseek(messages, self.config)
         self.assertEqual(msg2["content"], "Both files written.")
@@ -179,9 +198,7 @@ class TestAgentTurnPipeline(unittest.TestCase):
 
         mock_post.return_value = call_response
 
-        messages: list[dict] = [
-            {"role": "user", "content": "hi"}
-        ]
+        messages: list[dict] = [{"role": "user", "content": "hi"}]
 
         msg = call_deepseek(messages, self.config)
         self.assertNotIn("tool_calls", msg)
@@ -197,9 +214,15 @@ class TestAgentTurnPipeline(unittest.TestCase):
         call1_response = MagicMock()
         call1_response.ok = True
         call1_response.json.return_value = _make_api_response(
-            tool_calls=[_tool_call("read_file", "call_fail", {
-                "path": os.path.join(self.workspace, "nonexistent.xyz"),
-            })]
+            tool_calls=[
+                _tool_call(
+                    "read_file",
+                    "call_fail",
+                    {
+                        "path": os.path.join(self.workspace, "nonexistent.xyz"),
+                    },
+                )
+            ]
         )
 
         call2_response = MagicMock()
@@ -210,9 +233,7 @@ class TestAgentTurnPipeline(unittest.TestCase):
 
         mock_post.side_effect = [call1_response, call2_response]
 
-        messages: list[dict] = [
-            {"role": "user", "content": "read nonexistent.xyz"}
-        ]
+        messages: list[dict] = [{"role": "user", "content": "read nonexistent.xyz"}]
 
         msg1 = call_deepseek(messages, self.config)
         messages.append(msg1)
@@ -221,11 +242,13 @@ class TestAgentTurnPipeline(unittest.TestCase):
             result = execute_tool(tc, self.write_gate, self.read_gate)
             self.assertFalse(result.success)
             self.assertIsInstance(result, ToolResult)
-            messages.append({
-                "role": "tool",
-                "tool_call_id": tc["id"],
-                "content": result.to_json(),
-            })
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tc["id"],
+                    "content": result.to_json(),
+                }
+            )
 
         msg2 = call_deepseek(messages, self.config)
         self.assertEqual(msg2["content"], "That file doesn't exist.")
@@ -241,10 +264,16 @@ class TestAgentTurnPipeline(unittest.TestCase):
             call1_response = MagicMock()
             call1_response.ok = True
             call1_response.json.return_value = _make_api_response(
-                tool_calls=[_tool_call("write_file", "call_block", {
-                    "path": os.path.join(outside, "escape.txt"),
-                    "content": "should not be written",
-                })]
+                tool_calls=[
+                    _tool_call(
+                        "write_file",
+                        "call_block",
+                        {
+                            "path": os.path.join(outside, "escape.txt"),
+                            "content": "should not be written",
+                        },
+                    )
+                ]
             )
 
             call2_response = MagicMock()
@@ -269,12 +298,14 @@ class TestAgentTurnPipeline(unittest.TestCase):
                 self.assertIsInstance(result, ToolResult)
         finally:
             import shutil
+
             shutil.rmtree(outside, ignore_errors=True)
 
 
 # ---------------------------------------------------------------------------
 # Tests: API retry
 # ---------------------------------------------------------------------------
+
 
 class TestAPIRetry(unittest.TestCase):
     """Verify that transient API failures are retried."""
@@ -285,6 +316,7 @@ class TestAPIRetry(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.workspace, ignore_errors=True)
 
     @patch("api.requests.post")
@@ -300,7 +332,9 @@ class TestAPIRetry(unittest.TestCase):
 
         success = MagicMock()
         success.ok = True
-        success.json.return_value = {"choices": [{"message": {"role": "assistant", "content": "ok"}}]}
+        success.json.return_value = {
+            "choices": [{"message": {"role": "assistant", "content": "ok"}}]
+        }
 
         mock_post.side_effect = [fail1, fail2, success]
 
@@ -314,7 +348,9 @@ class TestAPIRetry(unittest.TestCase):
         """Two ConnectionErrors then a successful response."""
         success = MagicMock()
         success.ok = True
-        success.json.return_value = {"choices": [{"message": {"role": "assistant", "content": "recovered"}}]}
+        success.json.return_value = {
+            "choices": [{"message": {"role": "assistant", "content": "recovered"}}]
+        }
 
         mock_post.side_effect = [
             req_mod.ConnectionError("refused"),
@@ -359,6 +395,7 @@ class TestAPIRetry(unittest.TestCase):
 # Tests: run_agent_turn (shared loop)
 # ---------------------------------------------------------------------------
 
+
 class TestRunAgentTurn(unittest.TestCase):
     """Verify the shared run_agent_turn() used by both terminal and TUI."""
 
@@ -369,15 +406,14 @@ class TestRunAgentTurn(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.workspace, ignore_errors=True)
 
     @patch("api.requests.post")
     def test_text_only_response(self, mock_post):
         """No tool calls -- returns text message directly."""
         mock_post.return_value.ok = True
-        mock_post.return_value.json.return_value = _make_api_response(
-            content="Hello!"
-        )
+        mock_post.return_value.json.return_value = _make_api_response(content="Hello!")
 
         messages: list[dict] = [{"role": "user", "content": "hi"}]
         msg = run_agent_turn(messages, self.config, self.write_gate, self.read_gate)
@@ -393,10 +429,16 @@ class TestRunAgentTurn(unittest.TestCase):
         call1 = MagicMock()
         call1.ok = True
         call1.json.return_value = _make_api_response(
-            tool_calls=[_tool_call("write_file", "c1", {
-                "path": os.path.join(self.workspace, "f.txt"),
-                "content": "data",
-            })]
+            tool_calls=[
+                _tool_call(
+                    "write_file",
+                    "c1",
+                    {
+                        "path": os.path.join(self.workspace, "f.txt"),
+                        "content": "data",
+                    },
+                )
+            ]
         )
         call2 = MagicMock()
         call2.ok = True
@@ -415,9 +457,11 @@ class TestRunAgentTurn(unittest.TestCase):
     def test_callbacks_fire(self, mock_post):
         """on_tool_start and on_tool_end are called."""
         mock_post.side_effect = [
-            _mock_response(tool_calls=[
-                _tool_call("file_info", "c1", {"path": self.workspace}),
-            ]),
+            _mock_response(
+                tool_calls=[
+                    _tool_call("file_info", "c1", {"path": self.workspace}),
+                ]
+            ),
             _mock_response(content="ok"),
         ]
 
@@ -426,7 +470,10 @@ class TestRunAgentTurn(unittest.TestCase):
 
         messages: list[dict] = [{"role": "user", "content": "info"}]
         msg = run_agent_turn(
-            messages, self.config, self.write_gate, self.read_gate,
+            messages,
+            self.config,
+            self.write_gate,
+            self.read_gate,
             on_tool_start=lambda s: starts.append(s),
             on_tool_end=lambda ok, d, **kw: ends.append((ok, d)),
         )
@@ -440,15 +487,23 @@ class TestRunAgentTurn(unittest.TestCase):
     def test_multiple_rounds(self, mock_post):
         """Two rounds of tool calls before final text."""
         mock_post.side_effect = [
-            _mock_response(tool_calls=[
-                _tool_call("file_info", "c1", {"path": self.workspace}),
-            ]),
-            _mock_response(tool_calls=[
-                _tool_call("write_file", "c2", {
-                    "path": os.path.join(self.workspace, "out.txt"),
-                    "content": "multi-round",
-                }),
-            ]),
+            _mock_response(
+                tool_calls=[
+                    _tool_call("file_info", "c1", {"path": self.workspace}),
+                ]
+            ),
+            _mock_response(
+                tool_calls=[
+                    _tool_call(
+                        "write_file",
+                        "c2",
+                        {
+                            "path": os.path.join(self.workspace, "out.txt"),
+                            "content": "multi-round",
+                        },
+                    ),
+                ]
+            ),
             _mock_response(content="All done."),
         ]
 
@@ -494,7 +549,10 @@ class TestRunAgentTurn(unittest.TestCase):
 
         messages: list[dict] = [{"role": "user", "content": "hi"}]
         msg = run_agent_turn(
-            messages, self.config, self.write_gate, self.read_gate,
+            messages,
+            self.config,
+            self.write_gate,
+            self.read_gate,
             cancel_event=cancel,
         )
         self.assertIsNone(msg)
@@ -505,14 +563,21 @@ class TestRunAgentTurn(unittest.TestCase):
         # Each call returns a tool call -- never a plain text response
         responses = []
         for i in range(5):
-            responses.append(_mock_response(tool_calls=[
-                _tool_call("file_info", f"c{i}", {"path": self.workspace}),
-            ]))
+            responses.append(
+                _mock_response(
+                    tool_calls=[
+                        _tool_call("file_info", f"c{i}", {"path": self.workspace}),
+                    ]
+                )
+            )
         mock_post.side_effect = responses
 
         messages: list[dict] = [{"role": "user", "content": "loop"}]
         msg = run_agent_turn(
-            messages, self.config, self.write_gate, self.read_gate,
+            messages,
+            self.config,
+            self.write_gate,
+            self.read_gate,
             max_turns=3,
         )
 
@@ -526,16 +591,26 @@ class TestRunAgentTurn(unittest.TestCase):
     def test_parallel_tool_execution(self, mock_post):
         """Multiple tool calls in one response execute in parallel."""
         mock_post.side_effect = [
-            _mock_response(tool_calls=[
-                _tool_call("write_file", "pa", {
-                    "path": os.path.join(self.workspace, "a.txt"),
-                    "content": "A",
-                }),
-                _tool_call("write_file", "pb", {
-                    "path": os.path.join(self.workspace, "b.txt"),
-                    "content": "B",
-                }),
-            ]),
+            _mock_response(
+                tool_calls=[
+                    _tool_call(
+                        "write_file",
+                        "pa",
+                        {
+                            "path": os.path.join(self.workspace, "a.txt"),
+                            "content": "A",
+                        },
+                    ),
+                    _tool_call(
+                        "write_file",
+                        "pb",
+                        {
+                            "path": os.path.join(self.workspace, "b.txt"),
+                            "content": "B",
+                        },
+                    ),
+                ]
+            ),
             _mock_response(content="Both written in parallel."),
         ]
 
@@ -544,7 +619,10 @@ class TestRunAgentTurn(unittest.TestCase):
 
         messages: list[dict] = [{"role": "user", "content": "write two files"}]
         msg = run_agent_turn(
-            messages, self.config, self.write_gate, self.read_gate,
+            messages,
+            self.config,
+            self.write_gate,
+            self.read_gate,
             on_tool_start=lambda s, parallel=False: starts.append((s, parallel)),
             on_tool_end=lambda ok, d, **kw: ends.append((ok, d)),
         )
@@ -578,6 +656,7 @@ def _mock_response(content: str = "", tool_calls=None) -> MagicMock:
 # Tests: real agent loop with run_agent_turn (integration-style)
 # ---------------------------------------------------------------------------
 
+
 class TestRealAgentLoop(unittest.TestCase):
     """Exercise run_agent_turn end-to-end with mocked API -- not abstract."""
 
@@ -588,6 +667,7 @@ class TestRealAgentLoop(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.workspace, ignore_errors=True)
 
     @patch("api.requests.post")
@@ -595,18 +675,30 @@ class TestRealAgentLoop(unittest.TestCase):
         """Agent writes a file, reads it back, and confirms in one turn."""
         mock_post.side_effect = [
             # Turn 1: write file
-            _mock_response(tool_calls=[
-                _tool_call("write_file", "w1", {
-                    "path": os.path.join(self.workspace, "greeting.txt"),
-                    "content": "hello from agent",
-                }),
-            ]),
+            _mock_response(
+                tool_calls=[
+                    _tool_call(
+                        "write_file",
+                        "w1",
+                        {
+                            "path": os.path.join(self.workspace, "greeting.txt"),
+                            "content": "hello from agent",
+                        },
+                    ),
+                ]
+            ),
             # Turn 2: read it back
-            _mock_response(tool_calls=[
-                _tool_call("read_file", "r1", {
-                    "path": os.path.join(self.workspace, "greeting.txt"),
-                }),
-            ]),
+            _mock_response(
+                tool_calls=[
+                    _tool_call(
+                        "read_file",
+                        "r1",
+                        {
+                            "path": os.path.join(self.workspace, "greeting.txt"),
+                        },
+                    ),
+                ]
+            ),
             # Turn 3: text response
             _mock_response(content="File contains 'hello from agent'. Done."),
         ]
@@ -616,7 +708,10 @@ class TestRealAgentLoop(unittest.TestCase):
         ]
 
         msg = run_agent_turn(
-            messages, self.config, self.write_gate, self.read_gate,
+            messages,
+            self.config,
+            self.write_gate,
+            self.read_gate,
             max_turns=5,
         )
 
@@ -632,12 +727,13 @@ class TestRealAgentLoop(unittest.TestCase):
         """run_agent_turn with text-only response exercises the full loop."""
         mock_post.return_value = _mock_response(content="I am ready to help.")
 
-        messages: list[dict] = [
-            {"role": "user", "content": "are you ready?"}
-        ]
+        messages: list[dict] = [{"role": "user", "content": "are you ready?"}]
 
         msg = run_agent_turn(
-            messages, self.config, self.write_gate, self.read_gate,
+            messages,
+            self.config,
+            self.write_gate,
+            self.read_gate,
         )
 
         self.assertIsNotNone(msg)

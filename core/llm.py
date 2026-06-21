@@ -36,12 +36,12 @@ _log = get_logger("llm")
 # ---------------------------------------------------------------------------
 
 # Display / truncation
-TOOL_DETAIL_DISPLAY_LENGTH = 300   # max chars for tool result detail display
+TOOL_DETAIL_DISPLAY_LENGTH = 300  # max chars for tool result detail display
 
 # Turn summary
 TURN_SUMMARY_ASSISTANT_PREVIEW = 200  # max chars for assistant content in summary
-TURN_SUMMARY_RESULT_PREVIEW = 150     # max chars for tool result content in summary
-TURN_HISTORY_MAX_ENTRIES = 200        # cap on _turn_history entries
+TURN_SUMMARY_RESULT_PREVIEW = 150  # max chars for tool result content in summary
+TURN_HISTORY_MAX_ENTRIES = 200  # cap on _turn_history entries
 
 # Parallel execution
 MAX_PARALLEL_TOOLS = 6  # max concurrent tool threads in ThreadPoolExecutor
@@ -50,6 +50,7 @@ MAX_PARALLEL_TOOLS = 6  # max concurrent tool threads in ThreadPoolExecutor
 def _capped_workers(items: list | list[int]) -> int:
     """Return the number of workers for a parallel group, capped at MAX_PARALLEL_TOOLS."""
     return min(len(items), MAX_PARALLEL_TOOLS)
+
 
 # Orchestration / context injection -- constants now in context_inject.py
 # (imported below after the circuit breaker section)
@@ -78,7 +79,7 @@ from .context_inject import _CIRCUIT_WINDOW
 
 from collections import deque as _deque
 
-_STORM_THRESHOLD = 3               # consecutive identical failures to trigger
+_STORM_THRESHOLD = 3  # consecutive identical failures to trigger
 _STORM_FAILURES: _deque[tuple[str, str]] = _deque()  # (tool_name, error_fp)
 _STORM_LOCK = threading.Lock()
 
@@ -116,6 +117,7 @@ def _synthesize_storm_breaker_message(tool_name: str, error: str) -> str:
 # Shared agent loop -- used by both terminal REPL and TUI
 # ---------------------------------------------------------------------------
 
+
 def _save_turn_summary(
     turn: int,
     msg: dict,
@@ -132,7 +134,9 @@ def _save_turn_summary(
     if tool_calls:
         for tc in tool_calls:
             fn = tc.get("function", {})
-            parts.append(f"  Tool: {fn.get('name', '?')}({str(fn.get('arguments', ''))[:100]})")
+            parts.append(
+                f"  Tool: {fn.get('name', '?')}({str(fn.get('arguments', ''))[:100]})"
+            )
     for tc, result in deferred_results:
         ok = "V" if result.success else "X"
         summary = result.content[:TURN_SUMMARY_RESULT_PREVIEW].replace("\n", " ")
@@ -141,7 +145,7 @@ def _save_turn_summary(
         parts.append(f"  Result: {ok} {summary}")
     _TOOL_CONTEXT._turn_history[turn] = "\n".join(parts)
     # Cap to last TURN_HISTORY_MAX_ENTRIES entries to prevent unbounded memory growth
-    if not hasattr(_TOOL_CONTEXT, '_min_turn'):
+    if not hasattr(_TOOL_CONTEXT, "_min_turn"):
         _TOOL_CONTEXT._min_turn = 0
     if len(_TOOL_CONTEXT._turn_history) > TURN_HISTORY_MAX_ENTRIES:
         oldest = _TOOL_CONTEXT._min_turn
@@ -167,8 +171,9 @@ from .context_inject import (  # noqa: E402
 )
 
 
-def _apply_pipe(tc: dict, i: int,
-                pipe_deps: dict, pipe_results: dict, _json: Any) -> None:
+def _apply_pipe(
+    tc: dict, i: int, pipe_deps: dict, pipe_results: dict, _json: Any
+) -> None:
     """Substitute piped result into tc's arguments in-place."""
     if i not in pipe_deps:
         return
@@ -198,10 +203,7 @@ def _extract_pipe_deps(
     """
     pipe_deps: dict[int, tuple[int, str]] = {}
     pipe_results: dict[int, "ToolResult"] = {}
-    has_pipe = any(
-        "_pipe" in tc["function"].get("arguments", "")
-        for tc in remaining
-    )
+    has_pipe = any("_pipe" in tc["function"].get("arguments", "") for tc in remaining)
     if not has_pipe:
         return pipe_deps, pipe_results
     for i, tc in enumerate(remaining):
@@ -233,18 +235,32 @@ def _execute_single_no_pipe(
 ) -> list[tuple[dict, "ToolResult"]]:
     """Execute a single tool call with no piping dependencies."""
     if cancel_event is not None and cancel_event.is_set():
-        _append_cancel_results([tc], messages, on_tool_end=on_tool_end,
-                                recent_keys=recent_tool_keys, lock=tool_keys_lock)
+        _append_cancel_results(
+            [tc],
+            messages,
+            on_tool_end=on_tool_end,
+            recent_keys=recent_tool_keys,
+            lock=tool_keys_lock,
+        )
         return []
     if on_tool_start is not None:
         on_tool_start(tool_summary(tc))
-    result = execute_tool(tc, write_gate, read_gate,
-                          on_output=on_tool_output,
-                          approve_callback=approve_callback,
-                          cancel_event=cancel_event)
-    _append_tool_result(messages, tc, result, on_tool_end,
-                        recent_keys=recent_tool_keys,
-                        lock=tool_keys_lock)
+    result = execute_tool(
+        tc,
+        write_gate,
+        read_gate,
+        on_output=on_tool_output,
+        approve_callback=approve_callback,
+        cancel_event=cancel_event,
+    )
+    _append_tool_result(
+        messages,
+        tc,
+        result,
+        on_tool_end,
+        recent_keys=recent_tool_keys,
+        lock=tool_keys_lock,
+    )
     return [(tc, result)]
 
 
@@ -268,10 +284,14 @@ def _execute_parallel_no_pipes(
             on_tool_start(tool_summary(tc), True)
 
     def _run_tool(tc: dict) -> tuple[dict, "ToolResult"]:
-        return tc, execute_tool(tc, write_gate, read_gate,
-                                on_output=on_tool_output,
-                                approve_callback=approve_callback,
-                                cancel_event=cancel_event)
+        return tc, execute_tool(
+            tc,
+            write_gate,
+            read_gate,
+            on_output=on_tool_output,
+            approve_callback=approve_callback,
+            cancel_event=cancel_event,
+        )
 
     parallel_results: list[tuple] = []
     with ThreadPoolExecutor(max_workers=_capped_workers(remaining)) as pool:
@@ -283,14 +303,22 @@ def _execute_parallel_no_pipes(
                 completed = {id(tc) for tc, _ in parallel_results}
                 uncompleted = [tc for tc in remaining if id(tc) not in completed]
                 _append_cancel_results(
-                    uncompleted, messages, on_tool_end=on_tool_end,
-                    recent_keys=recent_tool_keys, lock=tool_keys_lock,
+                    uncompleted,
+                    messages,
+                    on_tool_end=on_tool_end,
+                    recent_keys=recent_tool_keys,
+                    lock=tool_keys_lock,
                 )
                 return parallel_results
             tc, result = future.result()
-            _append_tool_result(messages, tc, result, on_tool_end,
-                                recent_keys=recent_tool_keys,
-                                lock=tool_keys_lock)
+            _append_tool_result(
+                messages,
+                tc,
+                result,
+                on_tool_end,
+                recent_keys=recent_tool_keys,
+                lock=tool_keys_lock,
+            )
             parallel_results.append((tc, result))
     return parallel_results
 
@@ -352,8 +380,7 @@ def _execute_groups(
     for group_idx, group in enumerate(groups):
         if on_tool_start is not None:
             for i in group:
-                on_tool_start(tool_summary(remaining[i]),
-                              parallel=len(group) > 1)
+                on_tool_start(tool_summary(remaining[i]), parallel=len(group) > 1)
 
         if len(group) == 1:
             i = group[0]
@@ -362,21 +389,28 @@ def _execute_groups(
             if cancel_event is not None and cancel_event.is_set():
                 # Append failure results for current + all future groups
                 remaining_indices = {i} | {
-                    idx for g in groups[group_idx + 1:] for idx in g
+                    idx for g in groups[group_idx + 1 :] for idx in g
                 }
                 _append_cancel_results(
-                    [remaining[idx] for idx in remaining_indices], messages,
-                    on_tool_end=on_tool_end, recent_keys=recent_tool_keys,
+                    [remaining[idx] for idx in remaining_indices],
+                    messages,
+                    on_tool_end=on_tool_end,
+                    recent_keys=recent_tool_keys,
                     lock=tool_keys_lock,
                 )
                 break
-            result = execute_tool(tc, write_gate, read_gate,
-                                  on_output=on_tool_output,
-                                  approve_callback=approve_callback,
-                                  cancel_event=cancel_event)
+            result = execute_tool(
+                tc,
+                write_gate,
+                read_gate,
+                on_output=on_tool_output,
+                approve_callback=approve_callback,
+                cancel_event=cancel_event,
+            )
             pipe_results[i] = result
-            _append_tool_result(messages, tc, result, on_tool_end,
-                                recent_keys=recent_tool_keys)
+            _append_tool_result(
+                messages, tc, result, on_tool_end, recent_keys=recent_tool_keys
+            )
             all_results.append((tc, result))
         else:
             results_lock = threading.Lock()
@@ -384,10 +418,18 @@ def _execute_groups(
             def _run_piped(i: int) -> tuple[int, dict, "ToolResult"]:
                 tc = remaining[i]
                 _apply_pipe(tc, i, pipe_deps, pipe_results, json)
-                return i, tc, execute_tool(tc, write_gate, read_gate,
-                                            on_output=on_tool_output,
-                                            approve_callback=approve_callback,
-                                            cancel_event=cancel_event)
+                return (
+                    i,
+                    tc,
+                    execute_tool(
+                        tc,
+                        write_gate,
+                        read_gate,
+                        on_output=on_tool_output,
+                        approve_callback=approve_callback,
+                        cancel_event=cancel_event,
+                    ),
+                )
 
             with ThreadPoolExecutor(max_workers=_capped_workers(group)) as pool:
                 futures = {pool.submit(_run_piped, i): i for i in group}
@@ -398,10 +440,11 @@ def _execute_groups(
                         # Append failure results for incomplete in this group
                         # plus all future groups
                         incomplete = (set(group) - completed_in_group) | {
-                            idx for g in groups[group_idx + 1:] for idx in g
+                            idx for g in groups[group_idx + 1 :] for idx in g
                         }
                         _append_cancel_results(
-                            [remaining[idx] for idx in incomplete], messages,
+                            [remaining[idx] for idx in incomplete],
+                            messages,
                             on_tool_end=on_tool_end,
                             recent_keys=recent_tool_keys,
                             lock=tool_keys_lock,
@@ -411,9 +454,14 @@ def _execute_groups(
                     completed_in_group.add(i)
                     with results_lock:
                         pipe_results[i] = result
-                    _append_tool_result(messages, tc, result, on_tool_end,
-                                        recent_keys=recent_tool_keys,
-                                        lock=tool_keys_lock)
+                    _append_tool_result(
+                        messages,
+                        tc,
+                        result,
+                        on_tool_end,
+                        recent_keys=recent_tool_keys,
+                        lock=tool_keys_lock,
+                    )
                     all_results.append((tc, result))
     return all_results
 
@@ -445,18 +493,30 @@ def _execute_tools(
     if not pipe_deps:
         if len(remaining) == 1:
             return _execute_single_no_pipe(
-                remaining[0], messages, write_gate, read_gate,
-                on_tool_start=on_tool_start, on_tool_end=on_tool_end,
-                on_tool_output=on_tool_output, approve_callback=approve_callback,
+                remaining[0],
+                messages,
+                write_gate,
+                read_gate,
+                on_tool_start=on_tool_start,
+                on_tool_end=on_tool_end,
+                on_tool_output=on_tool_output,
+                approve_callback=approve_callback,
                 cancel_event=cancel_event,
-                recent_tool_keys=recent_tool_keys, tool_keys_lock=tool_keys_lock,
+                recent_tool_keys=recent_tool_keys,
+                tool_keys_lock=tool_keys_lock,
             )
         return _execute_parallel_no_pipes(
-            remaining, messages, write_gate, read_gate,
-            on_tool_start=on_tool_start, on_tool_end=on_tool_end,
-            on_tool_output=on_tool_output, approve_callback=approve_callback,
+            remaining,
+            messages,
+            write_gate,
+            read_gate,
+            on_tool_start=on_tool_start,
+            on_tool_end=on_tool_end,
+            on_tool_output=on_tool_output,
+            approve_callback=approve_callback,
             cancel_event=cancel_event,
-            recent_tool_keys=recent_tool_keys, tool_keys_lock=tool_keys_lock,
+            recent_tool_keys=recent_tool_keys,
+            tool_keys_lock=tool_keys_lock,
         )
 
     # --- Piping: topological sort into execution groups ---
@@ -470,29 +530,43 @@ def _execute_tools(
         for i, tc in enumerate(remaining):
             if cancel_event is not None and cancel_event.is_set():
                 _append_cancel_results(
-                    remaining[i:], messages,
+                    remaining[i:],
+                    messages,
                     on_tool_end=on_tool_end,
                     recent_keys=recent_tool_keys,
                     lock=tool_keys_lock,
                 )
                 break
-            result = execute_tool(tc, write_gate, read_gate,
-                                  on_output=on_tool_output,
-                                  approve_callback=approve_callback,
-                                  cancel_event=cancel_event)
+            result = execute_tool(
+                tc,
+                write_gate,
+                read_gate,
+                on_output=on_tool_output,
+                approve_callback=approve_callback,
+                cancel_event=cancel_event,
+            )
             pipe_results[i] = result
-            _append_tool_result(messages, tc, result, on_tool_end,
-                                recent_keys=recent_tool_keys)
+            _append_tool_result(
+                messages, tc, result, on_tool_end, recent_keys=recent_tool_keys
+            )
             results.append((tc, result))
         return results
 
     # --- Execute groups: parallel within group, sequential across groups ---
     return _execute_groups(
-        groups, remaining, messages, write_gate, read_gate,
-        pipe_deps, pipe_results,
-        on_tool_start=on_tool_start, on_tool_end=on_tool_end,
-        on_tool_output=on_tool_output, approve_callback=approve_callback,
-        cancel_event=cancel_event, recent_tool_keys=recent_tool_keys,
+        groups,
+        remaining,
+        messages,
+        write_gate,
+        read_gate,
+        pipe_deps,
+        pipe_results,
+        on_tool_start=on_tool_start,
+        on_tool_end=on_tool_end,
+        on_tool_output=on_tool_output,
+        approve_callback=approve_callback,
+        cancel_event=cancel_event,
+        recent_tool_keys=recent_tool_keys,
         tool_keys_lock=tool_keys_lock,
     )
 
@@ -500,6 +574,7 @@ def _execute_tools(
 # ---------------------------------------------------------------------------
 # Helpers for run_agent_turn
 # ---------------------------------------------------------------------------
+
 
 def _set_console_title(title: str) -> None:
     """Set the console/terminal window title via ANSI escape.
@@ -509,18 +584,21 @@ def _set_console_title(title: str) -> None:
     """
     try:
         import sys as _sys
+
         # OSC 0 ; title BEL  — sets both window and icon title
         _sys.stderr.write(f"\x1b]0;{title}\x07")
         _sys.stderr.flush()
     except Exception:
         pass
 
+
 def _accumulate_usage(total: dict[str, int], msg: dict) -> dict[str, int]:
     """Merge ``_usage`` from *msg* into the running *total* dict."""
     usage: dict[str, int] = msg.get("_usage", {})
     return {
         "prompt_tokens": total.get("prompt_tokens", 0) + usage.get("prompt_tokens", 0),
-        "completion_tokens": total.get("completion_tokens", 0) + usage.get("completion_tokens", 0),
+        "completion_tokens": total.get("completion_tokens", 0)
+        + usage.get("completion_tokens", 0),
         "total_tokens": total.get("total_tokens", 0) + usage.get("total_tokens", 0),
     }
 
@@ -572,14 +650,23 @@ def _api_call_phase(
         if on_tool_start is not None:
             on_tool_start(tool_summary(tc))
         import sys as _sys_otr
-        _sys_otr.stderr.write(f"[_on_tool_ready] calling execute_tool for '{tc.get('function',{}).get('name','?')}'...\n")
+
+        _sys_otr.stderr.write(
+            f"[_on_tool_ready] calling execute_tool for '{tc.get('function', {}).get('name', '?')}'...\n"
+        )
         _sys_otr.stderr.flush()
         try:
-            result = execute_tool(tc, write_gate, read_gate,
-                                  on_output=on_tool_output,
-                                  approve_callback=approve_callback,
-                                  cancel_event=cancel_event)
-            _sys_otr.stderr.write(f"[_on_tool_ready] execute_tool returned success={result.success}\n")
+            result = execute_tool(
+                tc,
+                write_gate,
+                read_gate,
+                on_output=on_tool_output,
+                approve_callback=approve_callback,
+                cancel_event=cancel_event,
+            )
+            _sys_otr.stderr.write(
+                f"[_on_tool_ready] execute_tool returned success={result.success}\n"
+            )
             _sys_otr.stderr.flush()
             executed_tool_indices.add(idx)
         except Exception as _exc:
@@ -587,9 +674,14 @@ def _api_call_phase(
             # must be appended so the next API call doesn't get a 400
             # "insufficient tool messages following tool_calls" error.
             from tools import ToolResult as TR
+
             tool_name = tc.get("function", {}).get("name", "?")
-            log_error_trace("tool_execution_crash", f"{type(_exc).__name__}: {_exc}",
-                            exc_info=True, extra={"tool_name": tool_name})
+            log_error_trace(
+                "tool_execution_crash",
+                f"{type(_exc).__name__}: {_exc}",
+                exc_info=True,
+                extra={"tool_name": tool_name},
+            )
             result = TR(
                 success=False,
                 content=f"Tool '{tool_name}' failed during streaming: {_exc}",
@@ -598,9 +690,14 @@ def _api_call_phase(
         # on_tool_end is deferred to _tool_execution_phase to avoid
         # double-firing for streaming tools.
 
-    msg = call_llm(messages, config, on_token=_outer_on_token,
-                        session=session, on_tool_ready=_on_tool_ready,
-                        cancel_event=cancel_event)
+    msg = call_llm(
+        messages,
+        config,
+        on_token=_outer_on_token,
+        session=session,
+        on_tool_ready=_on_tool_ready,
+        cancel_event=cancel_event,
+    )
 
     # Strip internal tracking fields and merge into executed set
     fired_indices: set[int] = set(msg.pop("_fired_indices", []))
@@ -636,8 +733,7 @@ def _tool_execution_phase(
     """
     raw_tool_calls = msg["tool_calls"]
     remaining = [
-        tc for i, tc in enumerate(raw_tool_calls)
-        if i not in executed_tool_indices
+        tc for i, tc in enumerate(raw_tool_calls) if i not in executed_tool_indices
     ]
 
     if not remaining:
@@ -645,13 +741,16 @@ def _tool_execution_phase(
         messages.append(msg)
         # Fire on_tool_end for deferred streaming results (not fired during streaming)
         for tc, result in deferred_stream_results:
-            _append_tool_result(messages, tc, result, on_tool_end=on_tool_end,
-                                recent_keys=recent_tool_keys,
-                                lock=tool_keys_lock)
+            _append_tool_result(
+                messages,
+                tc,
+                result,
+                on_tool_end=on_tool_end,
+                recent_keys=recent_tool_keys,
+                lock=tool_keys_lock,
+            )
         # Record streaming-executed tools to ToolGraph
-        _all_ok = all(
-            getattr(r, "success", True) for _, r in deferred_stream_results
-        )
+        _all_ok = all(getattr(r, "success", True) for _, r in deferred_stream_results)
         _record_tool_sequence_to_graph(deferred_stream_results, successful_turn=_all_ok)
         _save_turn_summary(turn_count, msg, deferred_stream_results, messages)
         return False  # continue the turn loop
@@ -670,13 +769,21 @@ def _tool_execution_phase(
 
     # Flush deferred tool results from streaming execution
     for tc, result in deferred_stream_results:
-        _append_tool_result(messages, tc, result, on_tool_end=on_tool_end,
-                            recent_keys=recent_tool_keys,
-                            lock=tool_keys_lock)
+        _append_tool_result(
+            messages,
+            tc,
+            result,
+            on_tool_end=on_tool_end,
+            recent_keys=recent_tool_keys,
+            lock=tool_keys_lock,
+        )
 
     # Execute remaining tools with piping support
     tool_results = _execute_tools(
-        remaining, messages, write_gate, read_gate,
+        remaining,
+        messages,
+        write_gate,
+        read_gate,
         on_tool_start=on_tool_start,
         on_tool_end=on_tool_end,
         on_tool_output=on_tool_output,
@@ -689,9 +796,7 @@ def _tool_execution_phase(
     # --- Record tool sequence to ToolGraph for future pattern learning ---
     # Include deferred results for complete turn picture
     all_results = deferred_stream_results + tool_results
-    _all_ok = all(
-        getattr(r, "success", True) for _, r in all_results
-    )
+    _all_ok = all(getattr(r, "success", True) for _, r in all_results)
     _record_tool_sequence_to_graph(all_results, successful_turn=_all_ok)
 
     # --- SelfCritique: post-turn failure analysis ---
@@ -702,11 +807,13 @@ def _tool_execution_phase(
         if sc is not None:
             critique = sc.assess_turn_results(all_results, turn_count)
             if critique:
-                messages.append({
-                    "role": "user",
-                    "content": critique,
-                    "_transient": True,
-                })
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": critique,
+                        "_transient": True,
+                    }
+                )
     except Exception:
         pass  # Self-critique is best-effort, never blocks the main loop
 
@@ -765,6 +872,7 @@ def run_agent_turn(
     # messages list is mutated. Clearing it every turn defeats the optimization.
     clear_tool_cache()
     from tools.idempotency import clear_idempotent
+
     clear_idempotent()
 
     # --- Console title hint for glazewm/zebar workspace detection ---
@@ -801,7 +909,11 @@ def run_agent_turn(
 
             # ----- phase 2: API call -----
             msg, deferred_stream_results, executed_tool_indices = _api_call_phase(
-                messages, config, session, write_gate, read_gate,
+                messages,
+                config,
+                session,
+                write_gate,
+                read_gate,
                 on_token=on_token,
                 on_tool_start=on_tool_start,
                 on_tool_end=on_tool_end,
@@ -830,7 +942,9 @@ def run_agent_turn(
                         "(read a file, search for something, write one function) "
                         "and call exactly ONE tool. Do not try to do everything at once."
                     )
-                    messages.append({"role": "user", "content": recovery, "_transient": True})
+                    messages.append(
+                        {"role": "user", "content": recovery, "_transient": True}
+                    )
                     continue  # retry the turn loop
 
                 # Return the result directly.
@@ -848,8 +962,13 @@ def run_agent_turn(
             # _tool_execution_phase -> _inject_pre_execution_context()
             # (not here -- avoids double injection).
             continue_loop = _tool_execution_phase(
-                msg, messages, deferred_stream_results, executed_tool_indices,
-                write_gate, read_gate, turn_count,
+                msg,
+                messages,
+                deferred_stream_results,
+                executed_tool_indices,
+                write_gate,
+                read_gate,
+                turn_count,
                 on_tool_start=on_tool_start,
                 on_tool_end=on_tool_end,
                 on_tool_output=on_tool_output,
@@ -867,7 +986,11 @@ def run_agent_turn(
                 storm_msg = _synthesize_storm_breaker_message(storm_name, storm_error)
                 messages.append({"role": "assistant", "content": storm_msg})
                 if total_usage:
-                    storm_msg_dict = {"role": "assistant", "content": storm_msg, "_total_usage": total_usage}
+                    storm_msg_dict = {
+                        "role": "assistant",
+                        "content": storm_msg,
+                        "_total_usage": total_usage,
+                    }
                 else:
                     storm_msg_dict = {"role": "assistant", "content": storm_msg}
                 if turn_count > 1:
@@ -894,6 +1017,7 @@ def run_agent_turn(
             # 12KB through every future prompt.  All compaction is append-only
             # to preserve the DeepSeek prefix cache.
             from core.compaction import compact_tool_results_at_turn_end
+
             compact_tool_results_at_turn_end(messages)
 
             if not continue_loop:
@@ -920,12 +1044,19 @@ def _append_tool_result(
     """Append a tool result message and fire the on_tool_end callback."""
     detail = format_tool_detail(result, max_len=TOOL_DETAIL_DISPLAY_LENGTH)
     if on_tool_end is not None:
-        on_tool_end(result.success, detail, diff_preview=result.diff_preview, content=result.content)
-    messages.append({
-        "role": "tool",
-        "tool_call_id": tc["id"],
-        "content": result.to_json(),
-    })
+        on_tool_end(
+            result.success,
+            detail,
+            diff_preview=result.diff_preview,
+            content=result.content,
+        )
+    messages.append(
+        {
+            "role": "tool",
+            "tool_call_id": tc["id"],
+            "content": result.to_json(),
+        }
+    )
     # Track for circuit breaker
     if recent_keys is not None:
         if lock is not None:
@@ -963,14 +1094,16 @@ def _append_cancel_results(
     API call doesn't get a 400 "insufficient tool messages" error.
     """
     from tools import ToolResult as TR
+
     for tc in tool_calls:
         name = tc.get("function", {}).get("name", "?")
         result = TR(
             success=False,
             content=f"Tool '{name}' cancelled.",
         )
-        _append_tool_result(messages, tc, result, on_tool_end,
-                            recent_keys=recent_keys, lock=lock)
+        _append_tool_result(
+            messages, tc, result, on_tool_end, recent_keys=recent_keys, lock=lock
+        )
 
 
 def _run_consolidation(messages: list[dict], config: Any) -> None:
@@ -982,6 +1115,7 @@ def _run_consolidation(messages: list[dict], config: Any) -> None:
     """
     try:
         from tools.memory_consolidation import consolidate_if_needed
+
         consolidate_if_needed(messages, config)
     except Exception:
         pass

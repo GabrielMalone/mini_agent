@@ -53,7 +53,11 @@ class TestDrainStderr(unittest.TestCase):
     def test_returns_thread_and_drains_stderr(self) -> None:
         """drain_stderr starts a daemon thread that drains stderr."""
         proc = subprocess.Popen(
-            [sys.executable, "-c", "import sys; sys.stderr.write('hello stderr\\n'); sys.stderr.flush()"],
+            [
+                sys.executable,
+                "-c",
+                "import sys; sys.stderr.write('hello stderr\\n'); sys.stderr.flush()",
+            ],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -85,7 +89,11 @@ class TestDrainStderr(unittest.TestCase):
         """Writing enough stderr to fill the pipe buffer does not deadlock."""
         # Write ~128KB to stderr -- more than the default pipe buffer
         proc = subprocess.Popen(
-            [sys.executable, "-c", "import sys; sys.stderr.write('x' * 200000); sys.stderr.flush()"],
+            [
+                sys.executable,
+                "-c",
+                "import sys; sys.stderr.write('x' * 200000); sys.stderr.flush()",
+            ],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -122,6 +130,7 @@ class TestDrain(unittest.TestCase):
 
     def test_handles_non_iterable(self) -> None:
         """_drain handles streams that fail on iteration (OSError/ValueError)."""
+
         # A mock that raises on iteration
         class BadStream:
             def __init__(self) -> None:

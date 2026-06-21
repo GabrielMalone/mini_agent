@@ -65,11 +65,23 @@ def prune_dead_tools(
 
     if preserve_tools is None:
         preserve_tools = {
-            "read_file", "write_file", "edit_file", "run_shell",
-            "search_files", "find_symbol", "list_directory", "file_info",
-            "web_search", "todo_write", "todo_read",
-            "plan", "plan_status", "memory_core", "remember",
-            "write_scratchpad", "session_search",
+            "read_file",
+            "write_file",
+            "edit_file",
+            "run_shell",
+            "search_files",
+            "find_symbol",
+            "list_directory",
+            "file_info",
+            "web_search",
+            "todo_write",
+            "todo_read",
+            "plan",
+            "plan_status",
+            "memory_core",
+            "remember",
+            "write_scratchpad",
+            "session_search",
         }
 
     pruned: set[str] = set()
@@ -86,10 +98,13 @@ def prune_dead_tools(
 
     if pruned:
         import logging
+
         _log = logging.getLogger("cost_control")
         _log.info(
             "dead_tool_prune: removed %d unused tools (turn %d): %s",
-            len(pruned), turn_count, sorted(pruned),
+            len(pruned),
+            turn_count,
+            sorted(pruned),
         )
 
     return kept, pruned
@@ -111,7 +126,11 @@ def should_escalate_model(
 
     turn_failures: list of bools (True = failure) in chronological order.
     """
-    recent = turn_failures[-window_turns:] if len(turn_failures) > window_turns else turn_failures
+    recent = (
+        turn_failures[-window_turns:]
+        if len(turn_failures) > window_turns
+        else turn_failures
+    )
     failures = sum(1 for f in recent if f)
     if failures < max_failures:
         return None
@@ -179,10 +198,7 @@ def _emergency_compact(messages: list[dict], context_limit: int) -> int:
     rest = messages[1:]
 
     # Find last 4 assistant messages (turn boundaries)
-    assistant_indices = [
-        i for i, m in enumerate(rest)
-        if m.get("role") == "assistant"
-    ]
+    assistant_indices = [i for i, m in enumerate(rest) if m.get("role") == "assistant"]
     if len(assistant_indices) <= 4:
         return 0  # not enough turns to compact
 
@@ -235,6 +251,7 @@ class BudgetExceeded(Exception):
 # Thread-safe accumulator for estimated cost.
 # Keyed by thread ID so sub-agents don't interfere with the parent.
 import threading as _threading
+
 _budget_accumulator: dict[int, float] = {}
 _budget_lock = _threading.Lock()
 
@@ -247,6 +264,7 @@ def _get_provider_pricing(config: Any) -> tuple[float, float]:
     provider = getattr(config, "api_provider", "deepseek")
     try:
         from core.config import PROVIDER_DEFAULTS
+
         pd = PROVIDER_DEFAULTS.get(provider)
         if pd:
             return pd.input_price, pd.output_price
@@ -275,8 +293,9 @@ def track_api_cost(input_tokens: int, output_tokens: int, config: Any) -> float:
         The estimated cost of this call in USD.
     """
     input_price, output_price = _get_provider_pricing(config)
-    cost = (input_tokens / 1_000_000) * input_price + \
-          (output_tokens / 1_000_000) * output_price
+    cost = (input_tokens / 1_000_000) * input_price + (
+        output_tokens / 1_000_000
+    ) * output_price
     tid = _threading.get_ident()
     with _budget_lock:
         _budget_accumulator[tid] = _budget_accumulator.get(tid, 0.0) + cost

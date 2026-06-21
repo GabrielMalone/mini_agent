@@ -28,25 +28,58 @@ _TOOL_PARAM_CACHE: dict[str, tuple[str, set[str]]] = {}
 # ---------------------------------------------------------------------------
 _ERROR_HINTS: dict[str, list[tuple[str, str]]] = {
     "read_file": [
-        ("not found", "The file does not exist. Try list_directory to see available files."),
-        ("No such file", "The file does not exist. Try list_directory to see available files."),
-        ("FileNotFoundError", "The file does not exist. Try list_directory to explore the workspace."),
+        (
+            "not found",
+            "The file does not exist. Try list_directory to see available files.",
+        ),
+        (
+            "No such file",
+            "The file does not exist. Try list_directory to see available files.",
+        ),
+        (
+            "FileNotFoundError",
+            "The file does not exist. Try list_directory to explore the workspace.",
+        ),
     ],
     "search_files": [
-        ("No matches", "No matches found. Try find_symbol, or broaden your search with regex or a shorter/simpler pattern."),
+        (
+            "No matches",
+            "No matches found. Try find_symbol, or broaden your search with regex or a shorter/simpler pattern.",
+        ),
     ],
     "write_file": [
-        ("blocked", "Write blocked by safety layer. Use a path inside the workspace or enable unrestricted mode."),
-        ("outside workspace", "Write blocked -- path is outside the workspace. Try a path inside the workspace root."),
+        (
+            "blocked",
+            "Write blocked by safety layer. Use a path inside the workspace or enable unrestricted mode.",
+        ),
+        (
+            "outside workspace",
+            "Write blocked -- path is outside the workspace. Try a path inside the workspace root.",
+        ),
     ],
     "edit_file": [
-        ("blocked", "Edit blocked by safety layer. Use a path inside the workspace or enable unrestricted mode."),
-        ("outside workspace", "Edit blocked -- path is outside the workspace. Try a path inside the workspace root."),
+        (
+            "blocked",
+            "Edit blocked by safety layer. Use a path inside the workspace or enable unrestricted mode.",
+        ),
+        (
+            "outside workspace",
+            "Edit blocked -- path is outside the workspace. Try a path inside the workspace root.",
+        ),
     ],
     "run_shell": [
-        ("not found", "Command not found. Check that it is installed and on your PATH."),
-        ("command not found", "Command not found. Check that it is installed and on your PATH."),
-        ("No such file or directory", "Command not found. Check that it is installed and on your PATH, or check for typos."),
+        (
+            "not found",
+            "Command not found. Check that it is installed and on your PATH.",
+        ),
+        (
+            "command not found",
+            "Command not found. Check that it is installed and on your PATH.",
+        ),
+        (
+            "No such file or directory",
+            "Command not found. Check that it is installed and on your PATH, or check for typos.",
+        ),
     ],
 }
 
@@ -86,7 +119,9 @@ def _build_error_hint(name: str, exc: Exception = None, error_msg: str = "") -> 
         for tool_def in TOOLS:
             if tool_def["function"]["name"] == name:
                 props = tool_def["function"].get("parameters", {}).get("properties", {})
-                required = set(tool_def["function"].get("parameters", {}).get("required", []))
+                required = set(
+                    tool_def["function"].get("parameters", {}).get("required", [])
+                )
                 for pname, pinfo in props.items():
                     ptype = pinfo.get("type", "any")
                     marker = " (required)" if pname in required else ""
@@ -197,7 +232,9 @@ _ERROR_CLASS_MAP: dict[str, dict[str, tuple[ErrorClass, bool, int]]] = {
 }
 
 
-def _error_class_for(name: str, fingerprint: str) -> tuple[ErrorClass, bool, int] | None:
+def _error_class_for(
+    name: str, fingerprint: str
+) -> tuple[ErrorClass, bool, int] | None:
     """Return (error_class, retryable, retry_after_ms) for a (tool, fingerprint)."""
     tool_map = _ERROR_CLASS_MAP.get(name)
     if tool_map is None:
@@ -226,21 +263,39 @@ def _classify_result(result: ToolResult, tool_name: str) -> None:
         return
 
     # Fallback heuristics from content
-    if any(kw in content for kw in ("timeout", "timed out", "connection", "network", "unreachable")):
+    if any(
+        kw in content
+        for kw in ("timeout", "timed out", "connection", "network", "unreachable")
+    ):
         result.error_class = ErrorClass.TRANSIENT
         result.retryable = True
         result.retry_after_ms = 2000
-    elif any(kw in content for kw in ("not found", "no such file", "does not exist", "no match")):
+    elif any(
+        kw in content
+        for kw in ("not found", "no such file", "does not exist", "no match")
+    ):
         result.error_class = ErrorClass.NOT_FOUND
         result.retryable = False
-    elif any(kw in content for kw in ("blocked", "safety", "permission denied", "unauthorized", "forbidden")):
+    elif any(
+        kw in content
+        for kw in (
+            "blocked",
+            "safety",
+            "permission denied",
+            "unauthorized",
+            "forbidden",
+        )
+    ):
         result.error_class = ErrorClass.AUTHORIZATION
         result.retryable = False
     elif any(kw in content for kw in ("rate limit", "too many requests", "429")):
         result.error_class = ErrorClass.RATE_LIMIT
         result.retryable = True
         result.retry_after_ms = 5000
-    elif any(kw in content for kw in ("invalid", "malformed", "bad", "unknown parameter", "missing")):
+    elif any(
+        kw in content
+        for kw in ("invalid", "malformed", "bad", "unknown parameter", "missing")
+    ):
         result.error_class = ErrorClass.VALIDATION
         result.retryable = True
     else:
@@ -372,8 +427,7 @@ def _learn_from_failure(name: str, result: "ToolResult | None") -> None:
             if existing["importance"] < 2:
                 conn = memory._get_conn()
                 conn.execute(
-                    "UPDATE project_knowledge SET importance = 2"
-                    " WHERE id = ?",
+                    "UPDATE project_knowledge SET importance = 2 WHERE id = ?",
                     (existing["id"],),
                 )
                 conn.commit()

@@ -14,7 +14,6 @@ from tools.search_ops import (
     _find_callers,
     _find_callees,
     _find_related,
-    _web_search,
 )
 from tools.ast_tools import _get_file_skeleton, _get_function
 from tools.lsp import _lsp_definition, _lsp_references, _lsp_hover, _lsp_diagnostics
@@ -49,6 +48,7 @@ class TestFindSymbolCorrectness(unittest.TestCase):
             )
         # Set up context for tools that need it
         from tools.context import set_context
+
         set_context(workspace=self.root, _read_gate=self.rg)
 
     def test_exact_symbol_match(self):
@@ -100,6 +100,7 @@ class TestFindUsagesCorrectness(unittest.TestCase):
                 "    return result\n"
             )
         from tools.context import set_context
+
         set_context(workspace=self.root, _read_gate=self.rg)
 
     def test_finds_usages(self):
@@ -118,6 +119,7 @@ class TestCallerCalleeTools(unittest.TestCase):
         self.wg = WriteSafetyGate(self.root, allow_overwrites=True)
         self.rg = ReadSafetyGate(self.root)
         from tools.context import set_context
+
         set_context(workspace=self.root, _read_gate=self.rg)
 
     def test_find_callers_uses_name_param(self):
@@ -162,12 +164,11 @@ class TestASTTools(unittest.TestCase):
                 "        pass\n"
             )
         from tools.context import set_context
+
         set_context(workspace=self.root, _read_gate=self.rg)
 
     def test_get_file_skeleton_finds_defs(self):
-        result = _get_file_skeleton(
-            {"paths": ["test_mod.py"]}, self.wg, self.rg
-        )
+        result = _get_file_skeleton({"paths": ["test_mod.py"]}, self.wg, self.rg)
         self.assertTrue(result.success)
         content = str(result.content)
         self.assertIn("outer", content)
@@ -200,19 +201,26 @@ class TestLSPTools(unittest.TestCase):
         with open(src, "w") as f:
             f.write("def foo():\n    pass\n")
         from tools.context import set_context
+
         set_context(workspace=self.root, _read_gate=self.rg)
         # Set LSP root
         from tools.lsp import set_lsp_root
+
         set_lsp_root(self.root)
 
     def tearDown(self):
         from tools.lsp import shutdown_lsp
+
         shutdown_lsp()
 
     def test_lsp_definition_on_existing_file(self):
         """LSP definition should work on a real Python file or return error."""
         result = _lsp_definition(
-            {"file_path": os.path.join(self.root, "test_mod.py"), "line": 1, "character": 5},
+            {
+                "file_path": os.path.join(self.root, "test_mod.py"),
+                "line": 1,
+                "character": 5,
+            },
             self.wg,
             self.rg,
         )
@@ -221,7 +229,11 @@ class TestLSPTools(unittest.TestCase):
 
     def test_lsp_references_on_existing_file(self):
         result = _lsp_references(
-            {"file_path": os.path.join(self.root, "test_mod.py"), "line": 1, "character": 5},
+            {
+                "file_path": os.path.join(self.root, "test_mod.py"),
+                "line": 1,
+                "character": 5,
+            },
             self.wg,
             self.rg,
         )
@@ -229,7 +241,11 @@ class TestLSPTools(unittest.TestCase):
 
     def test_lsp_hover_on_existing_file(self):
         result = _lsp_hover(
-            {"file_path": os.path.join(self.root, "test_mod.py"), "line": 1, "character": 5},
+            {
+                "file_path": os.path.join(self.root, "test_mod.py"),
+                "line": 1,
+                "character": 5,
+            },
             self.wg,
             self.rg,
         )

@@ -16,17 +16,12 @@ def _sse_response(lines):
 
 
 class TestParseStream(unittest.TestCase):
-
     def test_content_only(self):
         """Plain text content across multiple chunks."""
         lines = [
-            'data: ' + json.dumps({
-                "choices": [{"delta": {"content": "Hello"}}]
-            }),
-            'data: ' + json.dumps({
-                "choices": [{"delta": {"content": " world"}}]
-            }),
-            'data: [DONE]',
+            "data: " + json.dumps({"choices": [{"delta": {"content": "Hello"}}]}),
+            "data: " + json.dumps({"choices": [{"delta": {"content": " world"}}]}),
+            "data: [DONE]",
         ]
         tokens = []
         msg = _parse_stream(_sse_response(lines), on_token=tokens.append)
@@ -36,33 +31,63 @@ class TestParseStream(unittest.TestCase):
     def test_single_tool_call_fragments(self):
         """Tool call arguments arrive in fragments across chunks."""
         lines = [
-            'data: ' + json.dumps({
-                "choices": [{"delta": {
-                    "tool_calls": [{
-                        "index": 0,
-                        "id": "call_1",
-                        "type": "function",
-                        "function": {"name": "read_file", "arguments": ""},
-                    }]
-                }}]
-            }),
-            'data: ' + json.dumps({
-                "choices": [{"delta": {
-                    "tool_calls": [{
-                        "index": 0,
-                        "function": {"arguments": '{"path": "/f'},
-                    }]
-                }}]
-            }),
-            'data: ' + json.dumps({
-                "choices": [{"delta": {
-                    "tool_calls": [{
-                        "index": 0,
-                        "function": {"arguments": 'oo.py"}'},
-                    }]
-                }}]
-            }),
-            'data: [DONE]',
+            "data: "
+            + json.dumps(
+                {
+                    "choices": [
+                        {
+                            "delta": {
+                                "tool_calls": [
+                                    {
+                                        "index": 0,
+                                        "id": "call_1",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "read_file",
+                                            "arguments": "",
+                                        },
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ),
+            "data: "
+            + json.dumps(
+                {
+                    "choices": [
+                        {
+                            "delta": {
+                                "tool_calls": [
+                                    {
+                                        "index": 0,
+                                        "function": {"arguments": '{"path": "/f'},
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ),
+            "data: "
+            + json.dumps(
+                {
+                    "choices": [
+                        {
+                            "delta": {
+                                "tool_calls": [
+                                    {
+                                        "index": 0,
+                                        "function": {"arguments": 'oo.py"}'},
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ),
+            "data: [DONE]",
         ]
         msg = _parse_stream(_sse_response(lines))
         self.assertIn("tool_calls", msg)
@@ -73,16 +98,17 @@ class TestParseStream(unittest.TestCase):
     def test_reasoning_then_content(self):
         """Reasoning content followed by text content."""
         lines = [
-            'data: ' + json.dumps({
-                "choices": [{"delta": {"reasoning_content": "Let me think..."}}]
-            }),
-            'data: ' + json.dumps({
-                "choices": [{"delta": {"reasoning_content": "hmm"}}]
-            }),
-            'data: ' + json.dumps({
-                "choices": [{"delta": {"content": "I think the answer is 42."}}]
-            }),
-            'data: [DONE]',
+            "data: "
+            + json.dumps(
+                {"choices": [{"delta": {"reasoning_content": "Let me think..."}}]}
+            ),
+            "data: "
+            + json.dumps({"choices": [{"delta": {"reasoning_content": "hmm"}}]}),
+            "data: "
+            + json.dumps(
+                {"choices": [{"delta": {"content": "I think the answer is 42."}}]}
+            ),
+            "data: [DONE]",
         ]
         tokens = []
         msg = _parse_stream(_sse_response(lines), on_token=tokens.append)
@@ -96,9 +122,8 @@ class TestParseStream(unittest.TestCase):
     def test_connection_drop_returns_partial(self):
         """If stream drops, accumulated content is returned."""
         lines = [
-            'data: ' + json.dumps({
-                "choices": [{"delta": {"content": "Partial response..."}}]
-            }),
+            "data: "
+            + json.dumps({"choices": [{"delta": {"content": "Partial response..."}}]}),
         ]
         resp = _sse_response(lines)
 
@@ -113,11 +138,10 @@ class TestParseStream(unittest.TestCase):
     def test_malformed_json_skipped(self):
         """Malformed SSE chunks are silently skipped."""
         lines = [
-            'data: {not valid json}',
-            'data: ' + json.dumps({
-                "choices": [{"delta": {"content": "valid content"}}]
-            }),
-            'data: [DONE]',
+            "data: {not valid json}",
+            "data: "
+            + json.dumps({"choices": [{"delta": {"content": "valid content"}}]}),
+            "data: [DONE]",
         ]
         msg = _parse_stream(_sse_response(lines))
         self.assertEqual(msg["content"], "valid content")
@@ -125,11 +149,14 @@ class TestParseStream(unittest.TestCase):
     def test_usage_in_chunk(self):
         """Usage info is captured when present."""
         lines = [
-            'data: ' + json.dumps({
-                "choices": [{"delta": {"content": "Hi"}}],
-                "usage": {"total_tokens": 42, "completion_tokens": 1},
-            }),
-            'data: [DONE]',
+            "data: "
+            + json.dumps(
+                {
+                    "choices": [{"delta": {"content": "Hi"}}],
+                    "usage": {"total_tokens": 42, "completion_tokens": 1},
+                }
+            ),
+            "data: [DONE]",
         ]
         msg = _parse_stream(_sse_response(lines))
         self.assertEqual(msg["content"], "Hi")
@@ -145,33 +172,74 @@ class TestParseStream(unittest.TestCase):
     def test_multiple_tool_calls_parallel(self):
         """Two tool calls arriving interleaved by index."""
         lines = [
-            'data: ' + json.dumps({
-                "choices": [{"delta": {
-                    "tool_calls": [
-                        {"index": 0, "id": "c0", "type": "function",
-                         "function": {"name": "read_file", "arguments": ""}},
-                        {"index": 1, "id": "c1", "type": "function",
-                         "function": {"name": "write_file", "arguments": ""}},
+            "data: "
+            + json.dumps(
+                {
+                    "choices": [
+                        {
+                            "delta": {
+                                "tool_calls": [
+                                    {
+                                        "index": 0,
+                                        "id": "c0",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "read_file",
+                                            "arguments": "",
+                                        },
+                                    },
+                                    {
+                                        "index": 1,
+                                        "id": "c1",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "write_file",
+                                            "arguments": "",
+                                        },
+                                    },
+                                ]
+                            }
+                        }
                     ]
-                }}]
-            }),
-            'data: ' + json.dumps({
-                "choices": [{"delta": {
-                    "tool_calls": [
-                        {"index": 0, "function": {"arguments": '{"path":'}},
-                        {"index": 1, "function": {"arguments": '{"path":'}},
+                }
+            ),
+            "data: "
+            + json.dumps(
+                {
+                    "choices": [
+                        {
+                            "delta": {
+                                "tool_calls": [
+                                    {"index": 0, "function": {"arguments": '{"path":'}},
+                                    {"index": 1, "function": {"arguments": '{"path":'}},
+                                ]
+                            }
+                        }
                     ]
-                }}]
-            }),
-            'data: ' + json.dumps({
-                "choices": [{"delta": {
-                    "tool_calls": [
-                        {"index": 0, "function": {"arguments": '{"path": "a.txt"}'}},
-                        {"index": 1, "function": {"arguments": '{"path": "b.txt"}'}},
+                }
+            ),
+            "data: "
+            + json.dumps(
+                {
+                    "choices": [
+                        {
+                            "delta": {
+                                "tool_calls": [
+                                    {
+                                        "index": 0,
+                                        "function": {"arguments": '{"path": "a.txt"}'},
+                                    },
+                                    {
+                                        "index": 1,
+                                        "function": {"arguments": '{"path": "b.txt"}'},
+                                    },
+                                ]
+                            }
+                        }
                     ]
-                }}]
-            }),
-            'data: [DONE]',
+                }
+            ),
+            "data: [DONE]",
         ]
         msg = _parse_stream(_sse_response(lines))
         self.assertEqual(len(msg["tool_calls"]), 2)

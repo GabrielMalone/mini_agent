@@ -24,6 +24,7 @@ Protocol (Python -> Electron):
   {"type": "error",     "message": "..."}
   {"type": "status",    "model": "...", "git_branch": "...", ...}
 """
+
 from __future__ import annotations
 
 import json
@@ -70,8 +71,12 @@ if _parent not in sys.path:
     sys.path.insert(0, _parent)
 
 from core.config import (
-    resolve_workspace, init_session, parse_args,
-    _is_remote_workspace, _try_with_timeout, _switch_to_provider,
+    resolve_workspace,
+    init_session,
+    parse_args,
+    _is_remote_workspace,
+    _try_with_timeout,
+    _switch_to_provider,
 )
 from core.llm import run_agent_turn
 from stream import THINKING_START, THINKING_END
@@ -98,6 +103,7 @@ _stdout_lock = threading.Lock()
 # keep coming and the watchdog stays quiet.
 # ---------------------------------------------------------------------------
 _HEARTBEAT_INTERVAL = 30  # seconds
+
 
 def _start_heartbeat(stop_event: threading.Event) -> threading.Thread:
     """Start a daemon thread that sends heartbeat messages to stdout.
@@ -152,8 +158,13 @@ def read_msg() -> dict | None:
         # flushPending() and an IPC handler producing an interleaved line.
         # Show the raw line (truncated) so we can diagnose.
         import sys as _sys
-        raw_preview = repr(line)[:120] if line is not None else '<no line>'
-        print(f"[server] Ignoring stdin parse error ({raw_preview}): {e}", file=_sys.stderr, flush=True)
+
+        raw_preview = repr(line)[:120] if line is not None else "<no line>"
+        print(
+            f"[server] Ignoring stdin parse error ({raw_preview}): {e}",
+            file=_sys.stderr,
+            flush=True,
+        )
         return None
 
 
@@ -161,6 +172,7 @@ def read_msg() -> dict | None:
 # PTY shell runner -- gives subprocesses a real terminal so they produce
 # colours (ANSI escape codes) and columnar output (e.g. `ls` without -1).
 # ---------------------------------------------------------------------------
+
 
 def _run_shell_pty(cmd: str, cwd: str, timeout: float = 30.0) -> tuple[str, int]:
     """Run *cmd* with a pseudo-terminal and return (stdout_text, exit_code).
@@ -180,8 +192,13 @@ def _run_shell_pty(cmd: str, cwd: str, timeout: float = 30.0) -> tuple[str, int]
         env["PAGER"] = "cat"
         env["GIT_PAGER"] = "cat"
         r = subprocess.run(
-            cmd, shell=True, cwd=cwd, capture_output=True, text=True,
-            timeout=timeout, env=env,
+            cmd,
+            shell=True,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env=env,
         )
         text = r.stdout
         if r.stderr:
@@ -277,6 +294,7 @@ def _run_shell_pty(cmd: str, cwd: str, timeout: float = 30.0) -> tuple[str, int]
 # Callbacks for run_agent_turn
 # ---------------------------------------------------------------------------
 
+
 class StreamCallbacks:
     """Callbacks that stream agent output to Electron via JSON messages."""
 
@@ -297,7 +315,14 @@ class StreamCallbacks:
     def on_tool_start(self, summary: str, parallel: bool = False) -> None:
         send_msg({"type": "tool_start", "summary": summary, "parallel": parallel})
 
-    def on_tool_end(self, ok: bool, detail: str, turn_id: int = 0, diff_preview=None, content: str = "") -> None:
+    def on_tool_end(
+        self,
+        ok: bool,
+        detail: str,
+        turn_id: int = 0,
+        diff_preview=None,
+        content: str = "",
+    ) -> None:
         msg: dict = {"type": "tool_end", "ok": ok, "detail": detail, "content": content}
         if diff_preview:
             msg["diff_preview"] = diff_preview
@@ -308,20 +333,56 @@ class StreamCallbacks:
 
     # -- sub-agent events (wired to _TOOL_CONTEXT._subagent_callback) --
 
-    def on_subagent_start(self, task_id: str, parent_id: str, name: str, desc: str) -> None:
-        send_msg({"type": "subagent_start", "task_id": task_id, "parent_id": parent_id, "name": name, "desc": desc})
+    def on_subagent_start(
+        self, task_id: str, parent_id: str, name: str, desc: str
+    ) -> None:
+        send_msg(
+            {
+                "type": "subagent_start",
+                "task_id": task_id,
+                "parent_id": parent_id,
+                "name": name,
+                "desc": desc,
+            }
+        )
 
     def on_subagent_output(self, task_id: str, line: str) -> None:
         send_msg({"type": "subagent_output", "task_id": task_id, "line": line})
 
     def on_subagent_end(self, task_id: str, ok: bool, content: str) -> None:
-        send_msg({"type": "subagent_end", "task_id": task_id, "ok": ok, "content": content[:500]})
+        send_msg(
+            {
+                "type": "subagent_end",
+                "task_id": task_id,
+                "ok": ok,
+                "content": content[:500],
+            }
+        )
 
-    def on_subagent_tool_start(self, task_id: str, tool_name: str, tool_args: str) -> None:
-        send_msg({"type": "subagent_tool_start", "task_id": task_id, "tool_name": tool_name, "tool_args": tool_args})
+    def on_subagent_tool_start(
+        self, task_id: str, tool_name: str, tool_args: str
+    ) -> None:
+        send_msg(
+            {
+                "type": "subagent_tool_start",
+                "task_id": task_id,
+                "tool_name": tool_name,
+                "tool_args": tool_args,
+            }
+        )
 
-    def on_subagent_tool_end(self, task_id: str, tool_name: str, ok: bool, content: str) -> None:
-        send_msg({"type": "subagent_tool_end", "task_id": task_id, "tool_name": tool_name, "ok": ok, "content": content[:500]})
+    def on_subagent_tool_end(
+        self, task_id: str, tool_name: str, ok: bool, content: str
+    ) -> None:
+        send_msg(
+            {
+                "type": "subagent_tool_end",
+                "task_id": task_id,
+                "tool_name": tool_name,
+                "ok": ok,
+                "content": content[:500],
+            }
+        )
 
     def on_subagent_thought(self, task_id: str, text: str) -> None:
         send_msg({"type": "subagent_thought", "task_id": task_id, "text": text})
@@ -331,6 +392,7 @@ class StreamCallbacks:
 # Agent runner -- runs in a background thread so the main thread can accept
 # cancel messages and new input while a turn is in progress.
 # ---------------------------------------------------------------------------
+
 
 class AgentRunner:
     def __init__(self):
@@ -342,8 +404,11 @@ class AgentRunner:
         # operations (symbol index, LSP) inside init_session so the
         # backend doesn't hang at startup.
         if _is_remote_workspace(workspace):
-            print(f"[server] Remote workspace detected: {workspace} -- using local DB and skipping index scan",
-                  file=sys.stderr, flush=True)
+            print(
+                f"[server] Remote workspace detected: {workspace} -- using local DB and skipping index scan",
+                file=sys.stderr,
+                flush=True,
+            )
 
         cli = parse_args()
         data = init_session(workspace, cli_args=cli)
@@ -396,16 +461,17 @@ class AgentRunner:
         """Send current status to Electron (includes balance, cost, subagent count)."""
         # Derive session name from memory db path
         session_name = "default"
-        db_path = getattr(self.memory, '_db_path', '')
+        db_path = getattr(self.memory, "_db_path", "")
         if db_path:
             import re
-            m = re.search(r'_session_(.+)\\.db$', db_path)
+
+            m = re.search(r"_session_(.+)\\.db$", db_path)
             if m:
                 session_name = m.group(1)
         status = {
             "type": "status",
             "model": self.config.model,
-            "provider": getattr(self.config, 'api_provider', 'deepseek'),
+            "provider": getattr(self.config, "api_provider", "deepseek"),
             "workspace": self.workspace,
             "session_name": session_name,
             "git_branch": self._git_branch,
@@ -423,12 +489,18 @@ class AgentRunner:
         status["session_cost"] = format_cost_cny(sc.total_cost)
         status["session_turns"] = sc.turn_count
         status["session_tokens"] = sc.total_prompt_tokens + sc.total_completion_tokens
-        status["cache_hit_rate"] = round(sc.cache_hit_rate * 100) if sc.cache_hit_rate is not None else None
+        status["cache_hit_rate"] = (
+            round(sc.cache_hit_rate * 100) if sc.cache_hit_rate is not None else None
+        )
         if sc.last_turn:
             status["turn_cost"] = format_cost_cny(sc.last_turn.total_cost)
-            status["turn_tokens"] = sc.last_turn.prompt_tokens + sc.last_turn.completion_tokens
+            status["turn_tokens"] = (
+                sc.last_turn.prompt_tokens + sc.last_turn.completion_tokens
+            )
             last_rate = sc.last_cache_hit_rate
-            status["turn_cache_hit_rate"] = round(last_rate * 100) if last_rate is not None else None
+            status["turn_cache_hit_rate"] = (
+                round(last_rate * 100) if last_rate is not None else None
+            )
 
         # Subagent count
         status["subagent_running"] = self._running_subagent_count
@@ -436,6 +508,7 @@ class AgentRunner:
 
         # Plan state — always send so stale plans don't linger in the UI
         from tools import _TOOL_CONTEXT
+
         plan_steps = getattr(_TOOL_CONTEXT, "_plan_steps", [])
         plan_done = getattr(_TOOL_CONTEXT, "_plan_done", set())
         status["plan_steps"] = list(plan_steps) if plan_steps else []
@@ -450,6 +523,7 @@ class AgentRunner:
         call completes.  Results are stored in self._balance for
         inclusion in the next status message.
         """
+
         def _fetch() -> None:
             try:
                 b = fetch_balance(
@@ -479,13 +553,21 @@ class AgentRunner:
             r = subprocess.run(
                 ["git", "branch", "--show-current"],
                 cwd=self.config.workspace,
-                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=3,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=3,
             )
             self._git_branch = r.stdout.strip()
             r2 = subprocess.run(
                 ["git", "status", "--porcelain"],
                 cwd=self.config.workspace,
-                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=3,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=3,
             )
             self._git_dirty = bool(r2.stdout.strip())
         except Exception:
@@ -520,9 +602,7 @@ class AgentRunner:
         turn's thread could call run_agent_turn concurrently with the
         first, corrupting self.messages.
         """
-        self._turn_thread = threading.Thread(
-            target=self._turn_loop, daemon=True
-        )
+        self._turn_thread = threading.Thread(target=self._turn_loop, daemon=True)
         self._turn_thread.start()
 
     def _turn_loop(self) -> None:
@@ -533,6 +613,7 @@ class AgentRunner:
                     if not self._input_queue:
                         # Check for pending interjections to keep the loop alive.
                         from interject import poll_interjections
+
                         pending = poll_interjections()
                         if pending:
                             self._input_queue.extend(pending)
@@ -577,7 +658,9 @@ class AgentRunner:
         # captures `self` (AgentRunner) which lives for the whole session, so
         # it's safe to keep permanently.
         from tools import _TOOL_CONTEXT
+
         if getattr(_TOOL_CONTEXT, "_subagent_callback", None) is None:
+
             def _sub_cb(event_type: str, data: dict) -> None:
                 if event_type == "start":
                     task_id = data.get("task_id", "")
@@ -585,19 +668,25 @@ class AgentRunner:
                     self._running_subagent_count += 1
                     self._total_subagents += 1
                     self._callbacks.on_subagent_start(
-                        task_id, data.get("parent_id", ""),
-                        data.get("name", ""), data.get("desc", ""))
+                        task_id,
+                        data.get("parent_id", ""),
+                        data.get("name", ""),
+                        data.get("desc", ""),
+                    )
                     self.send_status()  # push updated sub-agent count to UI
                 elif event_type == "output":
                     self._callbacks.on_subagent_output(
-                        data.get("task_id", ""), data.get("line", ""))
+                        data.get("task_id", ""), data.get("line", "")
+                    )
                 elif event_type == "end":
                     task_id = data.get("task_id", "")
                     self._pending_subagents.discard(task_id)
-                    self._running_subagent_count = max(0, self._running_subagent_count - 1)
+                    self._running_subagent_count = max(
+                        0, self._running_subagent_count - 1
+                    )
                     self._callbacks.on_subagent_end(
-                        task_id, data.get("ok", False),
-                        data.get("content", ""))
+                        task_id, data.get("ok", False), data.get("content", "")
+                    )
                     self.send_status()  # push updated sub-agent count to UI
                     # Auto-report: if all sub-agents from this turn
                     # have finished, queue a synthesis prompt so the
@@ -609,13 +698,16 @@ class AgentRunner:
                         results_summary = ""
                         try:
                             from tools import _TOOL_CONTEXT as _ctx
+
                             rt = getattr(_ctx, "_agent_runtime", None)
                             if rt is not None:
                                 # Gather all completed sub-agent results
                                 lines = []
                                 for tid, res in sorted(rt.results.items()):
                                     status = "OK" if res.success else "FAIL"
-                                    preview = (res.content or "")[:200].replace("\n", " ")
+                                    preview = (res.content or "")[:200].replace(
+                                        "\n", " "
+                                    )
                                     lines.append(f"  [{tid}] {status}: {preview}")
                                 if lines:
                                     results_summary = "\n" + "\n".join(lines) + "\n"
@@ -629,21 +721,30 @@ class AgentRunner:
                         )
                 elif event_type == "tool_start":
                     self._callbacks.on_subagent_tool_start(
-                        data.get("task_id", ""), data.get("tool_name", ""),
-                        data.get("tool_args", ""))
+                        data.get("task_id", ""),
+                        data.get("tool_name", ""),
+                        data.get("tool_args", ""),
+                    )
                 elif event_type == "tool_end":
                     self._callbacks.on_subagent_tool_end(
-                        data.get("task_id", ""), data.get("tool_name", ""),
-                        data.get("ok", False), data.get("content", ""))
+                        data.get("task_id", ""),
+                        data.get("tool_name", ""),
+                        data.get("ok", False),
+                        data.get("content", ""),
+                    )
                 elif event_type == "thought":
                     self._callbacks.on_subagent_thought(
-                        data.get("task_id", ""), data.get("text", ""))
+                        data.get("task_id", ""), data.get("text", "")
+                    )
+
             _TOOL_CONTEXT._subagent_callback = _sub_cb
 
         try:
             msg = run_agent_turn(
-                self.messages, self.config,
-                self.write_gate, self.read_gate,
+                self.messages,
+                self.config,
+                self.write_gate,
+                self.read_gate,
                 on_token=self._callbacks.on_token,
                 on_tool_start=self._callbacks.on_tool_start,
                 on_tool_end=self._callbacks.on_tool_end,
@@ -660,22 +761,34 @@ class AgentRunner:
             if not self._cancel_event.is_set():
                 send_msg({"type": "error", "message": str(e)})
             # Always send turn_complete so the renderer resets its loading state
-            send_msg({
-                "type": "turn_complete",
-                "usage": {"total_tokens": self._total_tokens, "prompt_tokens": 0, "completion_tokens": 0},
-                "turn_count": self._total_turns,
-            })
+            send_msg(
+                {
+                    "type": "turn_complete",
+                    "usage": {
+                        "total_tokens": self._total_tokens,
+                        "prompt_tokens": 0,
+                        "completion_tokens": 0,
+                    },
+                    "turn_count": self._total_turns,
+                }
+            )
             return
         # Safety: reset thinking flag so a stuck marker doesn't persist across turns
         self._callbacks._in_thinking = False
 
         if self._cancel_event.is_set():
-            send_msg({
-                "type": "turn_complete",
-                "usage": {"total_tokens": self._total_tokens, "prompt_tokens": 0, "completion_tokens": 0},
-                "turn_count": self._total_turns,
-                "cancelled": True,
-            })
+            send_msg(
+                {
+                    "type": "turn_complete",
+                    "usage": {
+                        "total_tokens": self._total_tokens,
+                        "prompt_tokens": 0,
+                        "completion_tokens": 0,
+                    },
+                    "turn_count": self._total_turns,
+                    "cancelled": True,
+                }
+            )
             return
 
         if msg is not None:
@@ -706,10 +819,14 @@ class AgentRunner:
             "total_tokens": self._total_tokens,
             "prompt_tokens": sc.last_turn.prompt_tokens if sc.last_turn else 0,
             "completion_tokens": sc.last_turn.completion_tokens if sc.last_turn else 0,
-            "turn_cost": format_cost_cny(sc.last_turn.total_cost) if sc.last_turn else "-",
+            "turn_cost": format_cost_cny(sc.last_turn.total_cost)
+            if sc.last_turn
+            else "-",
             "session_cost": format_cost_cny(sc.total_cost),
             "session_turns": sc.turn_count,
-            "cache_hit_rate": round(sc.cache_hit_rate * 100) if sc.cache_hit_rate is not None else None,
+            "cache_hit_rate": round(sc.cache_hit_rate * 100)
+            if sc.cache_hit_rate is not None
+            else None,
             "subagent_running": self._running_subagent_count,
             # Include current cached balance so the status bar updates immediately.
             # The async re-fetch below will push the latest balance when it completes.
@@ -718,13 +835,15 @@ class AgentRunner:
         # Include plan state in turn_complete so the UI updates after each turn
         plan_steps = getattr(_TOOL_CONTEXT, "_plan_steps", [])
         plan_done = getattr(_TOOL_CONTEXT, "_plan_done", set())
-        send_msg({
-            "type": "turn_complete",
-            "usage": turn_usage,
-            "turn_count": self._total_turns,
-            "plan_steps": list(plan_steps) if plan_steps else [],
-            "plan_done": sorted(plan_done) if plan_done else [],
-        })
+        send_msg(
+            {
+                "type": "turn_complete",
+                "usage": turn_usage,
+                "turn_count": self._total_turns,
+                "plan_steps": list(plan_steps) if plan_steps else [],
+                "plan_done": sorted(plan_done) if plan_done else [],
+            }
+        )
 
         # Re-fetch balance after every turn so the wallet display stays current.
         self._fetch_balance_async()
@@ -737,20 +856,32 @@ class AgentRunner:
 
         if cmd == "/clear":
             self._cancel_event.set()
-            knowledge = self.memory.get_top_knowledge(limit=15) if hasattr(self, 'memory') else []
+            knowledge = (
+                self.memory.get_top_knowledge(limit=15)
+                if hasattr(self, "memory")
+                else []
+            )
             self.messages = [
                 {"role": "system", "content": build_system_prompt(self.config)},
                 {"role": "user", "content": build_session_header(self.config)},
-                {"role": "user", "content": build_startup_context(self.config.workspace, knowledge=knowledge)},
+                {
+                    "role": "user",
+                    "content": build_startup_context(
+                        self.config.workspace, knowledge=knowledge
+                    ),
+                },
             ]
             clear_api_cache()
             self.memory.clear()
             # Reset one-time context-injection flags so HANDOFF, STATE,
             # session summary etc. are re-injected on the next turn.
             for attr in (
-                '_handoff_injected', '_state_txt_injected', '_tasks_injected',
-                '_session_summary_injected', '_scratchpad_injected',
-                '_git_diff_injected',
+                "_handoff_injected",
+                "_state_txt_injected",
+                "_tasks_injected",
+                "_session_summary_injected",
+                "_scratchpad_injected",
+                "_git_diff_injected",
             ):
                 try:
                     delattr(_TOOL_CONTEXT, attr)
@@ -779,16 +910,18 @@ class AgentRunner:
             bal = ""
             if self._balance and self._balance.get("available"):
                 bal = f", wallet: {self._balance['display']}"
-            send_msg({
-                "type": "response",
-                "lines": [
-                    f"Model: {self.config.model}  |  Session: {sc.turn_count} turns, "
-                    f"{sc.total_prompt_tokens + sc.total_completion_tokens} tokens, "
-                    f"cost: {format_cost_cny(sc.total_cost)}{bal}",
-                    f"Cache hit: {round(sc.cache_hit_rate * 100) if sc.cache_hit_rate is not None else 'N/A'}%  |  "
-                    f"Sub-agents: {self._total_subagents} total, {self._running_subagent_count} running",
-                ]
-            })
+            send_msg(
+                {
+                    "type": "response",
+                    "lines": [
+                        f"Model: {self.config.model}  |  Session: {sc.turn_count} turns, "
+                        f"{sc.total_prompt_tokens + sc.total_completion_tokens} tokens, "
+                        f"cost: {format_cost_cny(sc.total_cost)}{bal}",
+                        f"Cache hit: {round(sc.cache_hit_rate * 100) if sc.cache_hit_rate is not None else 'N/A'}%  |  "
+                        f"Sub-agents: {self._total_subagents} total, {self._running_subagent_count} running",
+                    ],
+                }
+            )
             return
 
         if cmd.startswith("/session"):
@@ -797,13 +930,19 @@ class AgentRunner:
             arg = parts[2] if len(parts) > 2 else ""
             if sub == "list":
                 from core.config import list_sessions
+
                 sessions = list_sessions(self.workspace)
-                send_msg({
-                    "type": "response",
-                    "lines": [f"Sessions: {', '.join(sessions) if sessions else 'none'}"]
-                })
+                send_msg(
+                    {
+                        "type": "response",
+                        "lines": [
+                            f"Sessions: {', '.join(sessions) if sessions else 'none'}"
+                        ],
+                    }
+                )
             elif sub == "new" and arg:
                 from core.config import switch_session
+
                 sd = switch_session(self.workspace, arg, self.memory, self.config)
                 self.messages = self.memory.save(self.messages)
                 self.memory.close()
@@ -814,6 +953,7 @@ class AgentRunner:
                 send_msg({"type": "response", "lines": [f"Created session '{arg}'."]})
             elif sub == "switch" and arg:
                 from core.config import switch_session
+
                 self.messages = self.memory.save(self.messages)
                 self.memory.close()
                 sd = switch_session(self.workspace, arg, self.memory, self.config)
@@ -824,17 +964,23 @@ class AgentRunner:
                 send_msg({"type": "response", "lines": [f"Switched to '{arg}'."]})
             elif sub == "delete" and arg:
                 from core.config import delete_session
+
                 ok, msg = delete_session(self.workspace, arg)
                 send_msg({"type": "response", "lines": [msg]})
             else:
-                send_msg({
-                    "type": "response",
-                    "lines": ["Usage: /session new <name> | switch <name> | delete <name> | list"]
-                })
+                send_msg(
+                    {
+                        "type": "response",
+                        "lines": [
+                            "Usage: /session new <name> | switch <name> | delete <name> | list"
+                        ],
+                    }
+                )
             return
 
         if cmd == "/export":
             import datetime
+
             ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             fname = f"conversation_{ts}.md"
             path = os.path.join(self.config.workspace, fname)
@@ -862,10 +1008,12 @@ class AgentRunner:
                 "? SVG icon test -- fire",
                 "? SVG icon test -- burst",
             ]
-            send_msg({
-                "type": "response",
-                "lines": [l for l in lines],
-            })
+            send_msg(
+                {
+                    "type": "response",
+                    "lines": [l for l in lines],
+                }
+            )
             return
 
         if cmd == "/demo-tree":
@@ -874,27 +1022,92 @@ class AgentRunner:
 
             def _send_tree_demo():
                 agents = [
-                    ("task_alpha", "orchestrator", "ALPHA", "Search all source files for 'TODO' comments"),
-                    ("task_bravo", "orchestrator", "BRAVO", "Count lines of code in renderer/src/"),
-                    ("task_charlie", "orchestrator", "CHARLIE", "Check package.json for outdated deps"),
-                    ("task_delta", "orchestrator", "DELTA", "Generate a dependency graph from imports"),
+                    (
+                        "task_alpha",
+                        "orchestrator",
+                        "ALPHA",
+                        "Search all source files for 'TODO' comments",
+                    ),
+                    (
+                        "task_bravo",
+                        "orchestrator",
+                        "BRAVO",
+                        "Count lines of code in renderer/src/",
+                    ),
+                    (
+                        "task_charlie",
+                        "orchestrator",
+                        "CHARLIE",
+                        "Check package.json for outdated deps",
+                    ),
+                    (
+                        "task_delta",
+                        "orchestrator",
+                        "DELTA",
+                        "Generate a dependency graph from imports",
+                    ),
                 ]
                 # Start all 4
                 for tid, pid, name, desc in agents:
-                    send_msg({"type": "subagent_start", "task_id": tid, "parent_id": pid, "name": name, "desc": desc})
+                    send_msg(
+                        {
+                            "type": "subagent_start",
+                            "task_id": tid,
+                            "parent_id": pid,
+                            "name": name,
+                            "desc": desc,
+                        }
+                    )
 
                 # Tool calls + thoughts for each
                 tool_data = [
-                    ("task_alpha", "grep_search", 'pattern="TODO" path="."', "Searching renderer/src/ for TODO markers..."),
-                    ("task_bravo", "run_shell", "find renderer/src -name '*.jsx' | xargs wc -l", "Counting JSX files..."),
-                    ("task_charlie", "read_file", "package.json", "Reading dependency manifest..."),
-                    ("task_delta", "run_shell", "pipdeptree --json", "Building import tree..."),
+                    (
+                        "task_alpha",
+                        "grep_search",
+                        'pattern="TODO" path="."',
+                        "Searching renderer/src/ for TODO markers...",
+                    ),
+                    (
+                        "task_bravo",
+                        "run_shell",
+                        "find renderer/src -name '*.jsx' | xargs wc -l",
+                        "Counting JSX files...",
+                    ),
+                    (
+                        "task_charlie",
+                        "read_file",
+                        "package.json",
+                        "Reading dependency manifest...",
+                    ),
+                    (
+                        "task_delta",
+                        "run_shell",
+                        "pipdeptree --json",
+                        "Building import tree...",
+                    ),
                 ]
                 for tid, tool, args, thought in tool_data:
-                    send_msg({"type": "subagent_thought", "task_id": tid, "text": thought})
-                    send_msg({"type": "subagent_tool_start", "task_id": tid, "tool_name": tool, "tool_args": args})
+                    send_msg(
+                        {"type": "subagent_thought", "task_id": tid, "text": thought}
+                    )
+                    send_msg(
+                        {
+                            "type": "subagent_tool_start",
+                            "task_id": tid,
+                            "tool_name": tool,
+                            "tool_args": args,
+                        }
+                    )
                     _time.sleep(0.1)
-                    send_msg({"type": "subagent_tool_end", "task_id": tid, "tool_name": tool, "ok": True, "content": f"Done ({tid})"})
+                    send_msg(
+                        {
+                            "type": "subagent_tool_end",
+                            "task_id": tid,
+                            "tool_name": tool,
+                            "ok": True,
+                            "content": f"Done ({tid})",
+                        }
+                    )
 
                 # More thoughts for agents that are still "thinking"
                 extra_thoughts = [
@@ -904,11 +1117,20 @@ class AgentRunner:
                     ("task_delta", "Generated DOT graph with 23 nodes, 41 edges."),
                 ]
                 for tid, thought in extra_thoughts:
-                    send_msg({"type": "subagent_thought", "task_id": tid, "text": thought})
+                    send_msg(
+                        {"type": "subagent_thought", "task_id": tid, "text": thought}
+                    )
 
                 # End all
                 for tid, _, name, _ in agents:
-                    send_msg({"type": "subagent_end", "task_id": tid, "ok": True, "content": f"{name} completed successfully."})
+                    send_msg(
+                        {
+                            "type": "subagent_end",
+                            "task_id": tid,
+                            "ok": True,
+                            "content": f"{name} completed successfully.",
+                        }
+                    )
 
                 send_msg({"type": "response", "lines": ["--- Demo tree injected ---"]})
 
@@ -917,6 +1139,7 @@ class AgentRunner:
 
         if cmd == "/init":
             from tools.file_ops import _init_rules
+
             rg = ReadSafetyGate(self.config.workspace)
             result = _init_rules({}, None, rg)
             lines = str(result.content).split("\n") if result.content else []
@@ -938,8 +1161,13 @@ class AgentRunner:
                 description="os.path.abspath",
             )
             if not ok_abspath:
-                send_msg({"type": "error", "message": f"Timeout resolving path: {new_path}. "
-                                                       "The remote share may be unavailable."})
+                send_msg(
+                    {
+                        "type": "error",
+                        "message": f"Timeout resolving path: {new_path}. "
+                        "The remote share may be unavailable.",
+                    }
+                )
                 return
 
             ok_isdir, is_dir = _try_with_timeout(
@@ -948,7 +1176,12 @@ class AgentRunner:
                 description="os.path.isdir",
             )
             if not ok_isdir or not is_dir:
-                send_msg({"type": "response", "lines": [f"Not a directory or inaccessible: {new_workspace}"]})
+                send_msg(
+                    {
+                        "type": "response",
+                        "lines": [f"Not a directory or inaccessible: {new_workspace}"],
+                    }
+                )
                 return
 
             # Persist old session before switching
@@ -958,9 +1191,17 @@ class AgentRunner:
             self._shell_cwd = new_workspace
 
             # Notify the UI that we're loading the new workspace
-            send_msg({"type": "status", "workspace": new_workspace, "session_name": "loading...",
-                      "git_branch": "", "git_dirty": False, "restored_count": 0,
-                      "model": self.config.model})
+            send_msg(
+                {
+                    "type": "status",
+                    "workspace": new_workspace,
+                    "session_name": "loading...",
+                    "git_branch": "",
+                    "git_dirty": False,
+                    "restored_count": 0,
+                    "model": self.config.model,
+                }
+            )
 
             # init_session may be slow on remote workspaces.
             # Use a generous 15s timeout for remote paths; 8s for local.
@@ -971,9 +1212,14 @@ class AgentRunner:
                 description="init_session",
             )
             if not ok_init:
-                send_msg({"type": "error", "message": f"Timeout initializing workspace: {new_workspace}. "
-                                                       "The remote share may be too slow. "
-                                                       "Try a local workspace instead."})
+                send_msg(
+                    {
+                        "type": "error",
+                        "message": f"Timeout initializing workspace: {new_workspace}. "
+                        "The remote share may be too slow. "
+                        "Try a local workspace instead.",
+                    }
+                )
                 # Roll back -- keep using old config
                 self.memory = None  # will be recreated below
                 return
@@ -991,7 +1237,12 @@ class AgentRunner:
                 self._total_tokens = 0
                 self._refresh_git_status()
                 self.send_status()
-                send_msg({"type": "response", "lines": [f"Workspace set to: {new_workspace}"]})
+                send_msg(
+                    {
+                        "type": "response",
+                        "lines": [f"Workspace set to: {new_workspace}"],
+                    }
+                )
             except Exception as exc:
                 send_msg({"type": "error", "message": str(exc)})
             return
@@ -1021,7 +1272,9 @@ class AgentRunner:
                 )
 
                 # Parse the sentinel from the end of the output.
-                clean_text = stdout_text.rstrip().replace("\r\n", "\n").replace("\r", "\n")
+                clean_text = (
+                    stdout_text.rstrip().replace("\r\n", "\n").replace("\r", "\n")
+                )
                 cwd_updated = False
                 try:
                     parts = clean_text.rsplit("\n__SHELL_CWD__", 1)
@@ -1047,46 +1300,68 @@ class AgentRunner:
                                         # Notify the frontend that the workspace
                                         # has changed.
                                         session_name = "default"
-                                        db_path = getattr(self.memory, '_db_path', '')
+                                        db_path = getattr(self.memory, "_db_path", "")
                                         if db_path:
-                                            m = re.search(r'_session_(.+)\\.db$', db_path)
+                                            m = re.search(
+                                                r"_session_(.+)\\.db$", db_path
+                                            )
                                             if m:
                                                 session_name = m.group(1)
-                                        send_msg({
-                                            "type": "status",
-                                            "workspace": new_cwd,
-                                            "session_name": session_name,
-                                            "git_branch": "",
-                                            "git_dirty": False,
-                                            "restored_count": 0,
-                                            "model": self.config.model,
-                                        })
+                                        send_msg(
+                                            {
+                                                "type": "status",
+                                                "workspace": new_cwd,
+                                                "session_name": session_name,
+                                                "git_branch": "",
+                                                "git_dirty": False,
+                                                "restored_count": 0,
+                                                "model": self.config.model,
+                                            }
+                                        )
                 except (ValueError, re.error):
                     pass  # malformed sentinel; fall through with raw output
 
                 if not cwd_updated:
                     exit_code = _pty_rc
-                    clean_text = stdout_text.rstrip().replace("\r\n", "\n").replace("\r", "\n")
+                    clean_text = (
+                        stdout_text.rstrip().replace("\r\n", "\n").replace("\r", "\n")
+                    )
 
                 lines = clean_text.split("\n") if clean_text else []
                 if exit_code != 0 and not any(
                     l.strip().startswith("(exit ") for l in lines
                 ):
                     lines.append(f"(exit {exit_code})")
-                send_msg({
-                    "type": "shell_output",
-                    "lines": lines,
-                    "exit_code": exit_code,
-                    "command": shell_cmd,
-                })
+                send_msg(
+                    {
+                        "type": "shell_output",
+                        "lines": lines,
+                        "exit_code": exit_code,
+                        "command": shell_cmd,
+                    }
+                )
             except subprocess.TimeoutExpired:
-                send_msg({"type": "shell_output", "lines": ["(timed out after 30s)"], "exit_code": -1, "command": shell_cmd})
+                send_msg(
+                    {
+                        "type": "shell_output",
+                        "lines": ["(timed out after 30s)"],
+                        "exit_code": -1,
+                        "command": shell_cmd,
+                    }
+                )
             except Exception as e:
-                send_msg({"type": "shell_output", "lines": [f"(error: {e})"], "exit_code": -1, "command": shell_cmd})
+                send_msg(
+                    {
+                        "type": "shell_output",
+                        "lines": [f"(error: {e})"],
+                        "exit_code": -1,
+                        "command": shell_cmd,
+                    }
+                )
             return
 
         if cmd.startswith("/autocomplete "):
-            partial = command[len("/autocomplete "):].strip()
+            partial = command[len("/autocomplete ") :].strip()
             if not partial:
                 send_msg({"type": "autocomplete_result", "completions": []})
                 return
@@ -1113,8 +1388,8 @@ class AgentRunner:
                 "  /session switch <n> Switch to an existing session",
                 "  /session delete <n> Delete a saved session",
                 "",
-                'Type a message to start a conversation with the agent.',
-                'Prefix with /sh to run a shell command directly.',
+                "Type a message to start a conversation with the agent.",
+                "Prefix with /sh to run a shell command directly.",
             ]
             send_msg({"type": "response", "lines": lines})
             return
@@ -1130,14 +1405,14 @@ class AgentRunner:
         import requests
 
         # ── pick the fastest model for this provider ──────────────────────────
-        provider = getattr(self.config, 'api_provider', 'deepseek')
+        provider = getattr(self.config, "api_provider", "deepseek")
         _AUTOCOMPLETE_MODEL = {
-            'deepseek': 'deepseek-chat',     # non-reasoning v3; v4 models burn tokens on thinking
-            'moonshot':  'kimi-k2.6',
-            'claude':    'claude-haiku-4-5',
-            'xai':       'grok-4.1',
-            'qwen':      'qwen-flash',
-            'gemini':    'gemini-3.5-flash',
+            "deepseek": "deepseek-chat",  # non-reasoning v3; v4 models burn tokens on thinking
+            "moonshot": "kimi-k2.6",
+            "claude": "claude-haiku-4-5",
+            "xai": "grok-4.1",
+            "qwen": "qwen-flash",
+            "gemini": "gemini-3.5-flash",
         }
         fast_model = _AUTOCOMPLETE_MODEL.get(provider, self.config.model)
 
@@ -1200,39 +1475,39 @@ class AgentRunner:
         """Switch the LLM model (and provider if needed) on the fly."""
         if not model:
             return
-        provider = getattr(self.config, 'api_provider', '')
+        provider = getattr(self.config, "api_provider", "")
         old_provider = provider
-        prefix = provider + '/'
+        prefix = provider + "/"
 
         # Map of bare model names -> their native provider
         _MODEL_TO_PROVIDER = {
-            'deepseek-v4-pro': 'deepseek',
-            'deepseek-v4-flash': 'deepseek',
-            'deepseek-chat': 'deepseek',
-            'kimi-k2.7-code': 'moonshot',
-            'kimi-k2.6': 'moonshot',
-            'claude-opus-4-8': 'claude',
-            'claude-sonnet-4-5': 'claude',
-            'claude-haiku-4-5': 'claude',
-            'grok-4.3': 'xai',
-            'grok-4.1': 'xai',
-            'qwen-plus': 'qwen',
-            'qwen-flash': 'qwen',
-            'qwen3-max': 'qwen',
-            'qwen3-coder': 'qwen',
-            'gemini-3.5-flash': 'gemini',
-            'gemini-3.5-pro': 'gemini',
-            'qwen3.6:27b': 'ollama',
+            "deepseek-v4-pro": "deepseek",
+            "deepseek-v4-flash": "deepseek",
+            "deepseek-chat": "deepseek",
+            "kimi-k2.7-code": "moonshot",
+            "kimi-k2.6": "moonshot",
+            "claude-opus-4-8": "claude",
+            "claude-sonnet-4-5": "claude",
+            "claude-haiku-4-5": "claude",
+            "grok-4.3": "xai",
+            "grok-4.1": "xai",
+            "qwen-plus": "qwen",
+            "qwen-flash": "qwen",
+            "qwen3-max": "qwen",
+            "qwen3-coder": "qwen",
+            "gemini-3.5-flash": "gemini",
+            "gemini-3.5-pro": "gemini",
+            "qwen3.6:27b": "ollama",
         }
 
         if model.startswith(prefix):
             # Model matches current provider prefix (e.g. "deepseek/deepseek-v4-flash"
             # when provider is "deepseek"). Strip prefix for native API.
-            model = model[len(prefix):]
-        elif '/' in model:
+            model = model[len(prefix) :]
+        elif "/" in model:
             # Model has a different provider prefix (e.g. "moonshotai/kimi-k2.7-code"
             # when provider is "deepseek"). Switch to OpenRouter and keep the prefix.
-            new_provider = 'openrouter'
+            new_provider = "openrouter"
             err = _switch_to_provider(self.config, new_provider)
             if err:
                 send_msg({"type": "response", "lines": [f"Error: {err}"]})
@@ -1253,16 +1528,21 @@ class AgentRunner:
         self.config.model = model
         self.send_status()
         provider_tag = f" (→ {provider})" if provider != old_provider else ""
-        send_msg({"type": "response", "lines": [f"Model: {old} -> {model}{provider_tag}"]})
+        send_msg(
+            {"type": "response", "lines": [f"Model: {old} -> {model}{provider_tag}"]}
+        )
 
 
 # ---------------------------------------------------------------------------
 # Main -- JSON-lines event loop
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
     # Disable Python buffering on stdout
-    sys.stdout.reconfigure(line_buffering=True) if hasattr(sys.stdout, 'reconfigure') else None
+    sys.stdout.reconfigure(line_buffering=True) if hasattr(
+        sys.stdout, "reconfigure"
+    ) else None
 
     runner = AgentRunner()
 
@@ -1298,6 +1578,7 @@ def main() -> None:
             # so it gets injected at the next turn boundary via
             # context_inject._inject_interjections().
             from interject import push_interjection
+
             push_interjection(msg.get("text", ""))
             # If no turn is currently running, start one now so the
             # interjection gets processed immediately.  Otherwise it
@@ -1314,26 +1595,39 @@ def main() -> None:
 
         elif msg_type == "session_list":
             from core.config import list_sessions
+
             sessions = list_sessions(runner.workspace)
             current = ""
-            db_path = getattr(runner.memory, '_db_path', '')
+            db_path = getattr(runner.memory, "_db_path", "")
             if db_path:
                 import re
-                m = re.search(r'_session_(.+)\.db$', db_path)
+
+                m = re.search(r"_session_(.+)\.db$", db_path)
                 current = m.group(1) if m else "default"
             else:
                 current = "default"
-            send_msg({"type": "session_list_result", "sessions": sessions, "current": current})
+            send_msg(
+                {
+                    "type": "session_list_result",
+                    "sessions": sessions,
+                    "current": current,
+                }
+            )
 
         elif msg_type == "session_switch":
             from core.config import switch_session
+
             name = msg.get("name", "")
             if not name:
-                send_msg({"type": "session_list_result", "error": "Session name required."})
+                send_msg(
+                    {"type": "session_list_result", "error": "Session name required."}
+                )
             else:
                 runner.messages = runner.memory.save(runner.messages)
                 runner.memory.close()
-                sd = switch_session(runner.workspace, name, runner.memory, runner.config)
+                sd = switch_session(
+                    runner.workspace, name, runner.memory, runner.config
+                )
                 runner.memory = sd["memory"]
                 runner.messages = sd["messages"]
                 runner._total_turns = 0
@@ -1342,12 +1636,17 @@ def main() -> None:
 
         elif msg_type == "session_new":
             from core.config import switch_session
+
             name = msg.get("name", "")
             if not name:
-                send_msg({"type": "session_list_result", "error": "Session name required."})
+                send_msg(
+                    {"type": "session_list_result", "error": "Session name required."}
+                )
             else:
                 # switch_session creates a new session if it doesn't exist
-                sd = switch_session(runner.workspace, name, runner.memory, runner.config)
+                sd = switch_session(
+                    runner.workspace, name, runner.memory, runner.config
+                )
                 runner.messages = runner.memory.save(runner.messages)
                 runner.memory.close()
                 runner.memory = sd["memory"]
@@ -1358,20 +1657,28 @@ def main() -> None:
 
         elif msg_type == "session_delete":
             from core.config import delete_session
+
             name = msg.get("name", "")
             if not name:
-                send_msg({"type": "session_list_result", "error": "Session name required."})
+                send_msg(
+                    {"type": "session_list_result", "error": "Session name required."}
+                )
             else:
                 ok, msg_text = delete_session(runner.workspace, name)
-                if ok and name == getattr(runner, '_session_name', None):
+                if ok and name == getattr(runner, "_session_name", None):
                     # Deleted the current session -- switch to default
                     from core.config import switch_session
-                    sd = switch_session(runner.workspace, "default", runner.memory, runner.config)
+
+                    sd = switch_session(
+                        runner.workspace, "default", runner.memory, runner.config
+                    )
                     runner.memory = sd["memory"]
                     runner.messages = sd["messages"]
                     runner._total_turns = 0
                     runner._total_tokens = 0
-                send_msg({"type": "session_delete_result", "ok": ok, "message": msg_text})
+                send_msg(
+                    {"type": "session_delete_result", "ok": ok, "message": msg_text}
+                )
                 runner.send_status()
 
         elif msg_type == "shutdown":

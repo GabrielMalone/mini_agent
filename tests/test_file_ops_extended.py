@@ -25,14 +25,15 @@ from tools import (
 # list_directory
 # ---------------------------------------------------------------------------
 
-class TestListDirectory(unittest.TestCase):
 
+class TestListDirectory(unittest.TestCase):
     def setUp(self):
         self.workspace = tempfile.mkdtemp()
         self.write_gate, self.read_gate = _gates(self.workspace)
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.workspace, ignore_errors=True)
 
     def _write(self, relpath: str, content: str) -> str:
@@ -75,6 +76,7 @@ class TestListDirectory(unittest.TestCase):
             self.assertTrue(result.success)
         finally:
             import shutil
+
             shutil.rmtree(outside, ignore_errors=True)
 
     def test_entries_sorted_alphabetically(self):
@@ -108,8 +110,8 @@ class TestListDirectory(unittest.TestCase):
 # restore_file
 # ---------------------------------------------------------------------------
 
-class TestRestoreFile(unittest.TestCase):
 
+class TestRestoreFile(unittest.TestCase):
     def setUp(self):
         self.workspace = tempfile.mkdtemp()
         self.write_gate, self.read_gate = _gates(self.workspace)
@@ -117,6 +119,7 @@ class TestRestoreFile(unittest.TestCase):
     def tearDown(self):
         import shutil
         from tools.file_ops import _BACKUPS
+
         _BACKUPS.clear()
         shutil.rmtree(self.workspace, ignore_errors=True)
 
@@ -156,16 +159,19 @@ class TestRestoreFile(unittest.TestCase):
         path = self._write("twice.txt", "original")
         execute_tool(
             _make_tool_call("write_file", path=path, content="modified"),
-            self.write_gate, self.read_gate,
+            self.write_gate,
+            self.read_gate,
         )
         r1 = execute_tool(
             _make_tool_call("restore_file", path=path),
-            self.write_gate, self.read_gate,
+            self.write_gate,
+            self.read_gate,
         )
         self.assertTrue(r1.success)
         r2 = execute_tool(
             _make_tool_call("restore_file", path=path),
-            self.write_gate, self.read_gate,
+            self.write_gate,
+            self.read_gate,
         )
         self.assertFalse(r2.success)
         self.assertIn("No backup or checkpoint available", r2.content)
@@ -180,6 +186,7 @@ class TestRestoreFile(unittest.TestCase):
             self.assertIsInstance(result, ToolResult)
         finally:
             import shutil
+
             shutil.rmtree(outside, ignore_errors=True)
 
     def test_restore_after_edit(self):
@@ -188,15 +195,20 @@ class TestRestoreFile(unittest.TestCase):
         # Must read before editing (read-before-edit enforcement)
         execute_tool(
             _make_tool_call("read_file", path=path),
-            self.write_gate, self.read_gate,
+            self.write_gate,
+            self.read_gate,
         )
         execute_tool(
-            _make_tool_call("edit_file", path=path, old_string="initial", new_string="changed"),
-            self.write_gate, self.read_gate,
+            _make_tool_call(
+                "edit_file", path=path, old_string="initial", new_string="changed"
+            ),
+            self.write_gate,
+            self.read_gate,
         )
         r = execute_tool(
             _make_tool_call("restore_file", path=path),
-            self.write_gate, self.read_gate,
+            self.write_gate,
+            self.read_gate,
         )
         self.assertTrue(r.success)
         with open(path) as f:
@@ -207,8 +219,8 @@ class TestRestoreFile(unittest.TestCase):
 # plan / plan_status
 # ---------------------------------------------------------------------------
 
-class TestPlan(unittest.TestCase):
 
+class TestPlan(unittest.TestCase):
     def setUp(self):
         self.workspace = tempfile.mkdtemp()
         self.write_gate, self.read_gate = _gates(self.workspace)
@@ -218,6 +230,7 @@ class TestPlan(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         _TOOL_CONTEXT._plan_steps = []
         _TOOL_CONTEXT._plan_done = set()
         shutil.rmtree(self.workspace, ignore_errors=True)
@@ -235,7 +248,8 @@ class TestPlan(unittest.TestCase):
         # First, create a plan
         execute_tool(
             _make_tool_call("plan", steps=["step one", "step two"]),
-            self.write_gate, self.read_gate,
+            self.write_gate,
+            self.read_gate,
         )
         self.assertEqual(len(_TOOL_CONTEXT._plan_steps), 2)
         # Now clear it with an empty steps list
@@ -267,7 +281,8 @@ class TestPlan(unittest.TestCase):
     def test_plan_status_reports_progress(self):
         execute_tool(
             _make_tool_call("plan", steps=["A", "B", "C"]),
-            self.write_gate, self.read_gate,
+            self.write_gate,
+            self.read_gate,
         )
         tc = _make_tool_call("plan_status")
         result = execute_tool(tc, self.write_gate, self.read_gate)
@@ -280,7 +295,8 @@ class TestPlan(unittest.TestCase):
     def test_plan_status_mark_step_complete(self):
         execute_tool(
             _make_tool_call("plan", steps=["A", "B", "C"]),
-            self.write_gate, self.read_gate,
+            self.write_gate,
+            self.read_gate,
         )
         tc = _make_tool_call("plan_status", step=1)
         result = execute_tool(tc, self.write_gate, self.read_gate)
@@ -292,11 +308,13 @@ class TestPlan(unittest.TestCase):
     def test_plan_status_all_steps_complete(self):
         execute_tool(
             _make_tool_call("plan", steps=["A", "B"]),
-            self.write_gate, self.read_gate,
+            self.write_gate,
+            self.read_gate,
         )
         execute_tool(
             _make_tool_call("plan_status", step=1),
-            self.write_gate, self.read_gate,
+            self.write_gate,
+            self.read_gate,
         )
         tc = _make_tool_call("plan_status", step=2)
         result = execute_tool(tc, self.write_gate, self.read_gate)
@@ -306,7 +324,8 @@ class TestPlan(unittest.TestCase):
     def test_plan_status_invalid_step(self):
         execute_tool(
             _make_tool_call("plan", steps=["A", "B"]),
-            self.write_gate, self.read_gate,
+            self.write_gate,
+            self.read_gate,
         )
         tc = _make_tool_call("plan_status", step=99)
         result = execute_tool(tc, self.write_gate, self.read_gate)
@@ -316,7 +335,8 @@ class TestPlan(unittest.TestCase):
     def test_plan_status_zero_step(self):
         execute_tool(
             _make_tool_call("plan", steps=["A"]),
-            self.write_gate, self.read_gate,
+            self.write_gate,
+            self.read_gate,
         )
         tc = _make_tool_call("plan_status", step=0)
         result = execute_tool(tc, self.write_gate, self.read_gate)
@@ -326,7 +346,8 @@ class TestPlan(unittest.TestCase):
     def test_plan_overwrites_previous_plan(self):
         execute_tool(
             _make_tool_call("plan", steps=["old step"]),
-            self.write_gate, self.read_gate,
+            self.write_gate,
+            self.read_gate,
         )
         tc = _make_tool_call("plan", steps=["new step"])
         result = execute_tool(tc, self.write_gate, self.read_gate)
@@ -356,11 +377,16 @@ class TestPlan(unittest.TestCase):
         """Marking a step complete multiple times is harmless."""
         execute_tool(
             _make_tool_call("plan", steps=["A", "B"]),
-            self.write_gate, self.read_gate,
+            self.write_gate,
+            self.read_gate,
         )
-        execute_tool(_make_tool_call("plan_status", step=1), self.write_gate, self.read_gate)
+        execute_tool(
+            _make_tool_call("plan_status", step=1), self.write_gate, self.read_gate
+        )
         # Mark step 1 again -- should succeed without error
-        result = execute_tool(_make_tool_call("plan_status", step=1), self.write_gate, self.read_gate)
+        result = execute_tool(
+            _make_tool_call("plan_status", step=1), self.write_gate, self.read_gate
+        )
         self.assertTrue(result.success)
         self.assertEqual(_TOOL_CONTEXT._plan_done, {0})
 
@@ -369,20 +395,24 @@ class TestPlan(unittest.TestCase):
         _TOOL_CONTEXT._turn_count = 5
         execute_tool(
             _make_tool_call("plan", steps=["A", "B"]),
-            self.write_gate, self.read_gate,
+            self.write_gate,
+            self.read_gate,
         )
         # After plan(), last_advanced_turn should be set to turn_count
         self.assertEqual(_TOOL_CONTEXT._plan_last_advanced_turn, 5)
         # Advance turn and complete a step
         _TOOL_CONTEXT._turn_count = 7
-        execute_tool(_make_tool_call("plan_status", step=1), self.write_gate, self.read_gate)
+        execute_tool(
+            _make_tool_call("plan_status", step=1), self.write_gate, self.read_gate
+        )
         self.assertEqual(_TOOL_CONTEXT._plan_last_advanced_turn, 7)
 
     def test_auto_advance_plan_on_write(self):
         """Auto-advance fires when write_file path matches plan step keyword."""
         execute_tool(
             _make_tool_call("plan", steps=["Create test_config.py", "Verify output"]),
-            self.write_gate, self.read_gate,
+            self.write_gate,
+            self.read_gate,
         )
         self.assertEqual(_TOOL_CONTEXT._plan_done, set())
         # Write a file whose name matches step 1 keyword
@@ -396,62 +426,77 @@ class TestPlan(unittest.TestCase):
         """Auto-advance does NOT fire when file path doesn't match any step."""
         execute_tool(
             _make_tool_call("plan", steps=["Create test_config.py"]),
-            self.write_gate, self.read_gate,
+            self.write_gate,
+            self.read_gate,
         )
         filepath = os.path.join(self.workspace, "unrelated_file.txt")
         tc = _make_tool_call("write_file", path=filepath, content="hello")
         result = execute_tool(tc, self.write_gate, self.read_gate)
         self.assertTrue(result.success)
-        self.assertEqual(_TOOL_CONTEXT._plan_done, set(), "No step should auto-complete")
+        self.assertEqual(
+            _TOOL_CONTEXT._plan_done, set(), "No step should auto-complete"
+        )
 
     def test_auto_advance_read_verb_skipped(self):
         """Auto-advance skips steps whose first word is a read verb."""
         execute_tool(
             _make_tool_call("plan", steps=["Read config.py", "Edit config.py"]),
-            self.write_gate, self.read_gate,
+            self.write_gate,
+            self.read_gate,
         )
         filepath = os.path.join(self.workspace, "config.py")
         tc = _make_tool_call("write_file", path=filepath, content="# updated")
         result = execute_tool(tc, self.write_gate, self.read_gate)
         self.assertTrue(result.success)
         # Step 1 ("Read config.py") should NOT auto-complete from a write
-        self.assertNotIn(0, _TOOL_CONTEXT._plan_done,
-                        "Read-verb step should not auto-complete on write")
+        self.assertNotIn(
+            0,
+            _TOOL_CONTEXT._plan_done,
+            "Read-verb step should not auto-complete on write",
+        )
 
     def test_auto_advance_substring_no_false_match(self):
         """Whole-word matching prevents 'main' matching inside 'domain.py'."""
         execute_tool(
             _make_tool_call("plan", steps=["Create main.py", "Verify output"]),
-            self.write_gate, self.read_gate,
+            self.write_gate,
+            self.read_gate,
         )
         filepath = os.path.join(self.workspace, "domain.py")
         tc = _make_tool_call("write_file", path=filepath, content="# domain")
         result = execute_tool(tc, self.write_gate, self.read_gate)
         self.assertTrue(result.success)
         # 'main' is a substring of 'domain' but should NOT match (whole-word)
-        self.assertNotIn(0, _TOOL_CONTEXT._plan_done,
-                        "'main' should not substring-match inside 'domain.py'")
+        self.assertNotIn(
+            0,
+            _TOOL_CONTEXT._plan_done,
+            "'main' should not substring-match inside 'domain.py'",
+        )
 
     def test_auto_advance_single_content_word_still_works(self):
         """A step like 'Create main.py' (1 content word) should still auto-advance."""
         execute_tool(
             _make_tool_call("plan", steps=["Create main.py"]),
-            self.write_gate, self.read_gate,
+            self.write_gate,
+            self.read_gate,
         )
         filepath = os.path.join(self.workspace, "main.py")
         tc = _make_tool_call("write_file", path=filepath, content="# main")
         result = execute_tool(tc, self.write_gate, self.read_gate)
         self.assertTrue(result.success)
-        self.assertIn(0, _TOOL_CONTEXT._plan_done,
-                      "Single content-word step should still auto-advance")
+        self.assertIn(
+            0,
+            _TOOL_CONTEXT._plan_done,
+            "Single content-word step should still auto-advance",
+        )
 
 
 # ---------------------------------------------------------------------------
 # session_stats plan line
 # ---------------------------------------------------------------------------
 
-class TestSessionStatsPlan(unittest.TestCase):
 
+class TestSessionStatsPlan(unittest.TestCase):
     def setUp(self):
         self.workspace = tempfile.mkdtemp()
         self.write_gate, self.read_gate = _gates(self.workspace)
@@ -460,6 +505,7 @@ class TestSessionStatsPlan(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         _TOOL_CONTEXT._plan_steps = []
         _TOOL_CONTEXT._plan_done = set()
         shutil.rmtree(self.workspace, ignore_errors=True)
@@ -499,6 +545,7 @@ class TestSessionStatsCache(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         if hasattr(_TOOL_CONTEXT, "_cache_stats"):
             del _TOOL_CONTEXT._cache_stats
         _TOOL_CONTEXT._turn_history = {}
@@ -521,8 +568,11 @@ class TestSessionStatsCache(unittest.TestCase):
     def test_cache_hits_only_shows_100_pct_and_savings(self):
         """All cached input -> 100% hit rate, cost savings shown."""
         _TOOL_CONTEXT._cache_stats = {
-            "hits": 50_000, "misses": 0, "calls": 3,
-            "input_tokens": 50_000, "output_tokens": 10_000,
+            "hits": 50_000,
+            "misses": 0,
+            "calls": 3,
+            "input_tokens": 50_000,
+            "output_tokens": 10_000,
         }
         tc = _make_tool_call("session_stats")
         result = execute_tool(tc, self.write_gate, self.read_gate)
@@ -539,8 +589,11 @@ class TestSessionStatsCache(unittest.TestCase):
     def test_cache_misses_only_shows_0_pct_no_savings(self):
         """All cache misses -> 0% hit rate, cost line but no savings."""
         _TOOL_CONTEXT._cache_stats = {
-            "hits": 0, "misses": 30_000, "calls": 2,
-            "input_tokens": 30_000, "output_tokens": 5_000,
+            "hits": 0,
+            "misses": 30_000,
+            "calls": 2,
+            "input_tokens": 30_000,
+            "output_tokens": 5_000,
         }
         tc = _make_tool_call("session_stats")
         result = execute_tool(tc, self.write_gate, self.read_gate)
@@ -556,8 +609,11 @@ class TestSessionStatsCache(unittest.TestCase):
     def test_mixed_cache_shows_partial_hit_rate_and_savings(self):
         """Mixed hits/misses -> correct hit rate, proportional savings."""
         _TOOL_CONTEXT._cache_stats = {
-            "hits": 20_000, "misses": 10_000, "calls": 4,
-            "input_tokens": 30_000, "output_tokens": 8_000,
+            "hits": 20_000,
+            "misses": 10_000,
+            "calls": 4,
+            "input_tokens": 30_000,
+            "output_tokens": 8_000,
         }
         tc = _make_tool_call("session_stats")
         result = execute_tool(tc, self.write_gate, self.read_gate)
@@ -572,8 +628,11 @@ class TestSessionStatsCache(unittest.TestCase):
         """Provider with no pricing -> no Cost line."""
         _TOOL_CONTEXT._provider = "ollama"  # ollama has 0.0 pricing
         _TOOL_CONTEXT._cache_stats = {
-            "hits": 5_000, "misses": 5_000, "calls": 1,
-            "input_tokens": 10_000, "output_tokens": 2_000,
+            "hits": 5_000,
+            "misses": 5_000,
+            "calls": 1,
+            "input_tokens": 10_000,
+            "output_tokens": 2_000,
         }
         tc = _make_tool_call("session_stats")
         result = execute_tool(tc, self.write_gate, self.read_gate)
@@ -584,8 +643,11 @@ class TestSessionStatsCache(unittest.TestCase):
     def test_no_cache_stats_no_api_calls_no_cost(self):
         """Empty _cache_stats with calls=0 -> API/cache lines suppressed."""
         _TOOL_CONTEXT._cache_stats = {
-            "hits": 0, "misses": 0, "calls": 0,
-            "input_tokens": 0, "output_tokens": 0,
+            "hits": 0,
+            "misses": 0,
+            "calls": 0,
+            "input_tokens": 0,
+            "output_tokens": 0,
         }
         tc = _make_tool_call("session_stats")
         result = execute_tool(tc, self.write_gate, self.read_gate)
@@ -597,7 +659,6 @@ class TestSessionStatsCache(unittest.TestCase):
 
 
 class TestTaskStatus(unittest.TestCase):
-
     def setUp(self):
         self.workspace = tempfile.mkdtemp()
         self.write_gate, self.read_gate = _gates(self.workspace)
@@ -605,6 +666,7 @@ class TestTaskStatus(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         _TASK_REGISTRY.clear()
         shutil.rmtree(self.workspace, ignore_errors=True)
 
@@ -623,6 +685,7 @@ class TestTaskStatus(unittest.TestCase):
     def test_running_task(self):
         """A still-running background task reports 'still running'."""
         import sys
+
         proc = subprocess.Popen(
             [sys.executable, "-c", "import time; time.sleep(10)"],
             cwd=self.workspace,
@@ -642,6 +705,7 @@ class TestTaskStatus(unittest.TestCase):
     def test_completed_task(self):
         """A completed task reports its exit code."""
         import sys
+
         proc = subprocess.Popen(
             [sys.executable, "-c", "print('done')"],
             cwd=self.workspace,
@@ -661,6 +725,7 @@ class TestTaskStatus(unittest.TestCase):
     def test_failed_task_reports_exit_code(self):
         """A task that exits non-zero still reports its status."""
         import sys
+
         proc = subprocess.Popen(
             [sys.executable, "-c", "import sys; sys.exit(42)"],
             cwd=self.workspace,
@@ -679,26 +744,31 @@ class TestTaskStatus(unittest.TestCase):
 # find_usages
 # ---------------------------------------------------------------------------
 
-class TestFindUsages(unittest.TestCase):
 
+class TestFindUsages(unittest.TestCase):
     def setUp(self):
         self.workspace = tempfile.mkdtemp()
         self.write_gate, self.read_gate = _gates(self.workspace)
         # Write test files and build index
-        self._write("mod.py", (
-            "def greet(name):\n"
-            "    return f'Hello {name}'\n"
-            "\n"
-            "def main():\n"
-            "    result = greet('world')\n"
-            "    print(result)\n"
-        ))
+        self._write(
+            "mod.py",
+            (
+                "def greet(name):\n"
+                "    return f'Hello {name}'\n"
+                "\n"
+                "def main():\n"
+                "    result = greet('world')\n"
+                "    print(result)\n"
+            ),
+        )
         from tools.search_ops import build_symbol_index
+
         build_symbol_index(self.workspace)
 
     def tearDown(self):
         import shutil
         from tools.search_ops import _SYMBOL_INDEX, _REF_INDEX
+
         _SYMBOL_INDEX = None
         _REF_INDEX = None
         shutil.rmtree(self.workspace, ignore_errors=True)
@@ -739,13 +809,13 @@ class TestFindUsages(unittest.TestCase):
         self.assertIn("main", result.content)
 
     def test_usage_across_multiple_files(self):
-        self._write("caller.py", (
-            "from mod import greet\n"
-            "def call_it():\n"
-            "    return greet('everyone')\n"
-        ))
+        self._write(
+            "caller.py",
+            ("from mod import greet\ndef call_it():\n    return greet('everyone')\n"),
+        )
         # Force a fresh rebuild by clearing all index globals
         import tools.search_ops as so
+
         so._SYMBOL_INDEX = None
         so._REF_INDEX = None
         so._INDEX_MAX_MTIME = 0.0
@@ -760,14 +830,16 @@ class TestFindUsages(unittest.TestCase):
 # verify
 # ---------------------------------------------------------------------------
 
-class TestVerify(unittest.TestCase):
 
+class TestVerify(unittest.TestCase):
     def setUp(self):
         self.workspace = tempfile.mkdtemp()
         self.write_gate, self.read_gate = _gates(self.workspace)
         from tools import _MODIFIED_FILES
+
         _MODIFIED_FILES.clear()
         from tools import _TOOL_CONTEXT
+
         _TOOL_CONTEXT._agent_depth = 0
         # Create a minimal test so pytest has something to run
         test_dir = os.path.join(self.workspace, "tests")
@@ -780,6 +852,7 @@ class TestVerify(unittest.TestCase):
     def tearDown(self):
         import shutil
         from tools import _MODIFIED_FILES
+
         _MODIFIED_FILES.clear()
         shutil.rmtree(self.workspace, ignore_errors=True)
 
@@ -791,6 +864,7 @@ class TestVerify(unittest.TestCase):
 
     def test_with_modified_file_runs_related_tests(self):
         from tools import _MODIFIED_FILES
+
         # Write a source file to trigger test matching
         src_path = os.path.join(self.workspace, "my_module.py")
         with open(src_path, "w") as f:
@@ -812,8 +886,8 @@ class TestVerify(unittest.TestCase):
 # recall_turn
 # ---------------------------------------------------------------------------
 
-class TestRecallTurn(unittest.TestCase):
 
+class TestRecallTurn(unittest.TestCase):
     def setUp(self):
         self.workspace = tempfile.mkdtemp()
         self.write_gate, self.read_gate = _gates(self.workspace)
@@ -821,6 +895,7 @@ class TestRecallTurn(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         _TOOL_CONTEXT._turn_history = {}
         shutil.rmtree(self.workspace, ignore_errors=True)
 
@@ -872,8 +947,8 @@ class TestRecallTurn(unittest.TestCase):
 # write_scratchpad
 # ---------------------------------------------------------------------------
 
-class TestWriteScratchpad(unittest.TestCase):
 
+class TestWriteScratchpad(unittest.TestCase):
     def setUp(self):
         self.workspace = tempfile.mkdtemp()
         self.write_gate, self.read_gate = _gates(self.workspace)
@@ -882,6 +957,7 @@ class TestWriteScratchpad(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         _TOOL_CONTEXT.scratchpad_path = ""
         shutil.rmtree(self.workspace, ignore_errors=True)
 
@@ -909,6 +985,7 @@ class TestWriteScratchpad(unittest.TestCase):
 
         # Verify DB content
         import sqlite3
+
         conn = sqlite3.connect(db_path)
         row = conn.execute("SELECT content FROM scratchpad WHERE id = 1").fetchone()
         conn.close()
@@ -950,6 +1027,7 @@ class TestWriteScratchpad(unittest.TestCase):
 # Hashlines (hash-anchored editing)
 # ---------------------------------------------------------------------------
 
+
 class TestHashlines(unittest.TestCase):
     """Tests for _line_hash, hash_lines read_file option, and edit_lines tool."""
 
@@ -960,6 +1038,7 @@ class TestHashlines(unittest.TestCase):
         # Clear cross-test state
         from tools import file_ops, _TOOL_CACHE
         from tools.idempotency import clear_idempotent
+
         file_ops._READ_FILES.clear()
         file_ops._FILE_CACHE.clear()
         _TOOL_CACHE.clear()
@@ -967,6 +1046,7 @@ class TestHashlines(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.workspace, ignore_errors=True)
 
     def _write(self, name, content):
@@ -978,6 +1058,7 @@ class TestHashlines(unittest.TestCase):
     def test_line_hash_deterministic(self):
         """Same content produces same hash."""
         from tools.file_ops import _line_hash
+
         h1 = _line_hash("import os")
         h2 = _line_hash("import os")
         self.assertEqual(h1, h2)
@@ -986,6 +1067,7 @@ class TestHashlines(unittest.TestCase):
     def test_line_hash_different_content(self):
         """Different content produces different hashes."""
         from tools.file_ops import _line_hash
+
         h1 = _line_hash("import os")
         h2 = _line_hash("import sys")
         self.assertNotEqual(h1, h2)
@@ -993,6 +1075,7 @@ class TestHashlines(unittest.TestCase):
     def test_line_hash_trailing_whitespace_insensitive(self):
         """Trailing whitespace is stripped before hashing."""
         from tools.file_ops import _line_hash
+
         h1 = _line_hash("import os")
         h2 = _line_hash("import os   ")
         h3 = _line_hash("import os\t")
@@ -1024,16 +1107,30 @@ class TestHashlines(unittest.TestCase):
 
     def test_edit_lines_happy_path(self):
         """Basic edit_lines replaces a line range."""
-        self._write("test.py", "#!/usr/bin/env python3\n\nimport os\nimport sys\n\ndef hello():\n    print('hello')\n")
+        self._write(
+            "test.py",
+            "#!/usr/bin/env python3\n\nimport os\nimport sys\n\ndef hello():\n    print('hello')\n",
+        )
         # Read first to mark as read
-        execute_tool(_make_tool_call("read_file", path="test.py", hash_lines=True),
-                    self.write_gate, self.read_gate)
+        execute_tool(
+            _make_tool_call("read_file", path="test.py", hash_lines=True),
+            self.write_gate,
+            self.read_gate,
+        )
 
-        tc = _make_tool_call("edit_lines", path="test.py", edits=[{
-            "from": 3, "from_hash": "de2",  # import os
-            "to": 4, "to_hash": "9e7",      # import sys
-            "new_text": "import os\nimport json"
-        }])
+        tc = _make_tool_call(
+            "edit_lines",
+            path="test.py",
+            edits=[
+                {
+                    "from": 3,
+                    "from_hash": "de2",  # import os
+                    "to": 4,
+                    "to_hash": "9e7",  # import sys
+                    "new_text": "import os\nimport json",
+                }
+            ],
+        )
         result = execute_tool(tc, self.write_gate, self.read_gate)
         self.assertTrue(result.success, f"Expected success, got: {result.content}")
 
@@ -1045,15 +1142,26 @@ class TestHashlines(unittest.TestCase):
     def test_edit_lines_hash_mismatch_rejected(self):
         """An incorrect hash anchor rejects the entire batch."""
         self._write("test.py", "line1\nline2\nline3")
-        execute_tool(_make_tool_call("read_file", path="test.py", hash_lines=True),
-                    self.write_gate, self.read_gate)
+        execute_tool(
+            _make_tool_call("read_file", path="test.py", hash_lines=True),
+            self.write_gate,
+            self.read_gate,
+        )
 
         # Wrong hash for line 1
-        tc = _make_tool_call("edit_lines", path="test.py", edits=[{
-            "from": 1, "from_hash": "xxx",  # wrong!
-            "to": 1, "to_hash": "xxx",
-            "new_text": "replaced"
-        }])
+        tc = _make_tool_call(
+            "edit_lines",
+            path="test.py",
+            edits=[
+                {
+                    "from": 1,
+                    "from_hash": "xxx",  # wrong!
+                    "to": 1,
+                    "to_hash": "xxx",
+                    "new_text": "replaced",
+                }
+            ],
+        )
         result = execute_tool(tc, self.write_gate, self.read_gate)
         self.assertFalse(result.success)
         self.assertIn("hash mismatch", result.content)
@@ -1065,14 +1173,25 @@ class TestHashlines(unittest.TestCase):
     def test_edit_lines_out_of_range_rejected(self):
         """Line numbers beyond file bounds are rejected."""
         self._write("test.py", "line1\nline2")
-        execute_tool(_make_tool_call("read_file", path="test.py", hash_lines=True),
-                    self.write_gate, self.read_gate)
+        execute_tool(
+            _make_tool_call("read_file", path="test.py", hash_lines=True),
+            self.write_gate,
+            self.read_gate,
+        )
 
-        tc = _make_tool_call("edit_lines", path="test.py", edits=[{
-            "from": 5, "from_hash": "xxx",
-            "to": 5, "to_hash": "xxx",
-            "new_text": "nope"
-        }])
+        tc = _make_tool_call(
+            "edit_lines",
+            path="test.py",
+            edits=[
+                {
+                    "from": 5,
+                    "from_hash": "xxx",
+                    "to": 5,
+                    "to_hash": "xxx",
+                    "new_text": "nope",
+                }
+            ],
+        )
         result = execute_tool(tc, self.write_gate, self.read_gate)
         self.assertFalse(result.success)
         self.assertIn("out of range", result.content)
@@ -1080,20 +1199,36 @@ class TestHashlines(unittest.TestCase):
     def test_edit_lines_multiple_edits(self):
         """Multiple edits are applied bottom-up correctly."""
         self._write("test.py", "line1\nline2\nline3\nline4\nline5")
-        execute_tool(_make_tool_call("read_file", path="test.py", hash_lines=True),
-                    self.write_gate, self.read_gate)
+        execute_tool(
+            _make_tool_call("read_file", path="test.py", hash_lines=True),
+            self.write_gate,
+            self.read_gate,
+        )
 
         from tools.file_ops import _line_hash
+
         lines = ["line1", "line2", "line3", "line4", "line5"]
 
-        tc = _make_tool_call("edit_lines", path="test.py", edits=[
-            {"from": 5, "from_hash": _line_hash(lines[4]),
-            "to": 5, "to_hash": _line_hash(lines[4]),
-            "new_text": "line5-new"},
-            {"from": 2, "from_hash": _line_hash(lines[1]),
-            "to": 2, "to_hash": _line_hash(lines[1]),
-            "new_text": "line2-new"},
-        ])
+        tc = _make_tool_call(
+            "edit_lines",
+            path="test.py",
+            edits=[
+                {
+                    "from": 5,
+                    "from_hash": _line_hash(lines[4]),
+                    "to": 5,
+                    "to_hash": _line_hash(lines[4]),
+                    "new_text": "line5-new",
+                },
+                {
+                    "from": 2,
+                    "from_hash": _line_hash(lines[1]),
+                    "to": 2,
+                    "to_hash": _line_hash(lines[1]),
+                    "new_text": "line2-new",
+                },
+            ],
+        )
         result = execute_tool(tc, self.write_gate, self.read_gate)
         self.assertTrue(result.success, f"Got: {result.content}")
 
@@ -1104,11 +1239,19 @@ class TestHashlines(unittest.TestCase):
     def test_edit_lines_read_before_edit_guard(self):
         """edit_lines rejects edits if file hasn't been read first."""
         self._write("test.py", "content")
-        tc = _make_tool_call("edit_lines", path="test.py", edits=[{
-            "from": 1, "from_hash": "xxx",
-            "to": 1, "to_hash": "xxx",
-            "new_text": "nope"
-        }])
+        tc = _make_tool_call(
+            "edit_lines",
+            path="test.py",
+            edits=[
+                {
+                    "from": 1,
+                    "from_hash": "xxx",
+                    "to": 1,
+                    "to_hash": "xxx",
+                    "new_text": "nope",
+                }
+            ],
+        )
         result = execute_tool(tc, self.write_gate, self.read_gate)
         self.assertFalse(result.success)
         self.assertIn("has not been read", result.content)
@@ -1116,18 +1259,30 @@ class TestHashlines(unittest.TestCase):
     def test_edit_lines_insert_lines(self):
         """edit_lines can insert lines (to < from is rejected, but to=from works)."""
         self._write("test.py", "line1\nline2")
-        execute_tool(_make_tool_call("read_file", path="test.py", hash_lines=True),
-                    self.write_gate, self.read_gate)
+        execute_tool(
+            _make_tool_call("read_file", path="test.py", hash_lines=True),
+            self.write_gate,
+            self.read_gate,
+        )
 
         from tools.file_ops import _line_hash
+
         lines = ["line1", "line2"]
 
         # Replace line 2 with 3 lines (effectively insert)
-        tc = _make_tool_call("edit_lines", path="test.py", edits=[{
-            "from": 2, "from_hash": _line_hash(lines[1]),
-            "to": 2, "to_hash": _line_hash(lines[1]),
-            "new_text": "line2a\nline2b\nline2c"
-        }])
+        tc = _make_tool_call(
+            "edit_lines",
+            path="test.py",
+            edits=[
+                {
+                    "from": 2,
+                    "from_hash": _line_hash(lines[1]),
+                    "to": 2,
+                    "to_hash": _line_hash(lines[1]),
+                    "new_text": "line2a\nline2b\nline2c",
+                }
+            ],
+        )
         result = execute_tool(tc, self.write_gate, self.read_gate)
         self.assertTrue(result.success, f"Got: {result.content}")
 
@@ -1140,12 +1295,14 @@ class TestHashlines(unittest.TestCase):
 # Storm-breaker
 # ---------------------------------------------------------------------------
 
+
 class TestStormBreaker(unittest.TestCase):
     """Tests for the storm-breaker synthesized response on repeated failures."""
 
     def test_check_storm_breaker_no_failures(self):
         """No failures -> not triggered."""
         from core.llm import _check_storm_breaker, _STORM_FAILURES, _STORM_LOCK
+
         with _STORM_LOCK:
             _STORM_FAILURES.clear()
         triggered, name, error = _check_storm_breaker()
@@ -1154,6 +1311,7 @@ class TestStormBreaker(unittest.TestCase):
     def test_check_storm_breaker_one_failure(self):
         """One failure -> not triggered."""
         from core.llm import _check_storm_breaker, _STORM_FAILURES, _STORM_LOCK
+
         with _STORM_LOCK:
             _STORM_FAILURES.clear()
             _STORM_FAILURES.append(("read_file", "path is empty"))
@@ -1162,7 +1320,13 @@ class TestStormBreaker(unittest.TestCase):
 
     def test_check_storm_breaker_three_same_failures(self):
         """Three identical failures -> triggered."""
-        from core.llm import _check_storm_breaker, _STORM_FAILURES, _STORM_LOCK, _STORM_THRESHOLD
+        from core.llm import (
+            _check_storm_breaker,
+            _STORM_FAILURES,
+            _STORM_LOCK,
+            _STORM_THRESHOLD,
+        )
+
         with _STORM_LOCK:
             _STORM_FAILURES.clear()
             for _ in range(_STORM_THRESHOLD):
@@ -1177,6 +1341,7 @@ class TestStormBreaker(unittest.TestCase):
     def test_check_storm_breaker_mixed_failures(self):
         """Different failures -> not triggered."""
         from core.llm import _check_storm_breaker, _STORM_FAILURES, _STORM_LOCK
+
         with _STORM_LOCK:
             _STORM_FAILURES.clear()
             _STORM_FAILURES.append(("read_file", "path is empty"))
@@ -1188,6 +1353,7 @@ class TestStormBreaker(unittest.TestCase):
     def test_synthesize_storm_breaker_message(self):
         """Message is coherent and includes tool name + error."""
         from core.llm import _synthesize_storm_breaker_message
+
         msg = _synthesize_storm_breaker_message("read_file", "path argument is empty")
         self.assertIn("read_file", msg)
         self.assertIn("path argument is empty", msg)

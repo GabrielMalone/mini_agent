@@ -33,7 +33,7 @@ _log = get_logger("memory_consolidation")
 _CONSOLIDATION_LOCK = threading.Lock()
 _LAST_CONSOLIDATION_TIME: float = 0.0
 _MIN_CONSOLIDATION_INTERVAL: float = 5.0  # seconds between consolidations
-_MAX_CONSOLIDATION_TURNS: int = 3         # consolidate every N turns
+_MAX_CONSOLIDATION_TURNS: int = 3  # consolidate every N turns
 
 _consolidation_turn_counter: int = 0
 
@@ -42,6 +42,7 @@ def _get_memory_store() -> Any | None:
     """Get the MemoryStore from the tool context."""
     try:
         from tools import _TOOL_CONTEXT
+
         return getattr(_TOOL_CONTEXT, "_memory_store", None)
     except Exception:
         return None
@@ -54,6 +55,7 @@ def _get_consolidation_model(config: Any) -> str:
     All models are assumed compatible with the configured provider.
     """
     import os
+
     env_model = os.environ.get("CONSOLIDATION_MODEL") or os.environ.get("FAST_MODEL")
     if env_model:
         return env_model
@@ -82,6 +84,7 @@ def _get_api_key(config: Any) -> str:
         return key
     # Provider-specific env vars (in priority order)
     import os as _os
+
     provider = getattr(config, "api_provider", "deepseek")
     provider_env_map = {
         "deepseek": ("DEEPSEEK_API_KEY",),
@@ -169,6 +172,7 @@ Recent conversation to extract facts from:
 # Extract facts via a cheap LLM call
 # ---------------------------------------------------------------------------
 
+
 def _extract_facts(
     conversation_snippet: str,
     existing_memory: str,
@@ -197,6 +201,7 @@ def _extract_facts(
     # Use an isolated Session (not the main agent's connection pool) to
     # avoid connection collision when consolidation fires mid-turn.
     import requests
+
     _session = requests.Session()
     try:
         resp = _session.post(
@@ -240,6 +245,7 @@ def _extract_facts(
 # Apply extracted facts to core memory
 # ---------------------------------------------------------------------------
 
+
 def _apply_facts_to_core(new_facts: str) -> bool:
     """Merge extracted facts into core memory via the memory_core tool."""
     try:
@@ -248,6 +254,7 @@ def _apply_facts_to_core(new_facts: str) -> bool:
 
         # Create minimal safety gates
         import os
+
         wg = WriteSafetyGate(
             allow_overwrites=True,
             unrestricted=True,
@@ -272,6 +279,7 @@ def _apply_facts_to_core(new_facts: str) -> bool:
 # ---------------------------------------------------------------------------
 # Main consolidation entry point
 # ---------------------------------------------------------------------------
+
 
 def consolidate_if_needed(
     messages: list[dict],

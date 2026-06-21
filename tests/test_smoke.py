@@ -20,6 +20,7 @@ class TestStartupSessionNoCrash(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def test_init_session_does_not_crash(self):
@@ -46,6 +47,7 @@ class TestSystemPromptBuilds(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def test_prompt_builds_with_default_config(self):
@@ -70,6 +72,7 @@ class TestBuildStartupContext(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def test_startup_context_builds(self):
@@ -85,8 +88,16 @@ class TestBuildStartupContext(unittest.TestCase):
         from core.prompt import build_startup_context
 
         knowledge = [
-            {"category": "pattern", "summary": "Test pattern", "detail": "Details here"},
-            {"category": "session_summary", "summary": "Last session summary", "detail": ""},
+            {
+                "category": "pattern",
+                "summary": "Test pattern",
+                "detail": "Details here",
+            },
+            {
+                "category": "session_summary",
+                "summary": "Last session summary",
+                "detail": "",
+            },
         ]
         ctx = build_startup_context(self.tmp, knowledge=knowledge)
         self.assertIn("Last session summary", ctx)
@@ -110,28 +121,41 @@ class TestAllToolsDispatchable(unittest.TestCase):
 
         for tool_def in TOOLS:
             name = tool_def["function"]["name"]
-            self.assertIn(name, _TOOL_DISPATCH,
-                          f"Tool '{name}' has no dispatch handler in _TOOL_DISPATCH")
-            self.assertIn(name, _TOOL_SUMMARIES,
-                          f"Tool '{name}' has no summary handler in _TOOL_SUMMARIES")
+            self.assertIn(
+                name,
+                _TOOL_DISPATCH,
+                f"Tool '{name}' has no dispatch handler in _TOOL_DISPATCH",
+            )
+            self.assertIn(
+                name,
+                _TOOL_SUMMARIES,
+                f"Tool '{name}' has no summary handler in _TOOL_SUMMARIES",
+            )
 
     def test_tool_count_matches_state_txt(self):
         """Sanity check: verify core tool count (schema.py + use_skill injection)."""
         import tools  # noqa: F401
         from tools.schema import TOOLS
+
         # Base count from schema.py (static) + 3 skill schemas injected by __init__.py
         # (use_skill, skill_list, skill_view).
         # MCP schemas are injected dynamically by init_session() if MCP servers configured.
         # So we assert a minimum, not an exact count.
         min_expected = 75  # static TOOLS from schema.py (includes use_skill, skill_list, skill_view)
         actual = len(TOOLS)
-        self.assertGreaterEqual(actual, min_expected,
+        self.assertGreaterEqual(
+            actual,
+            min_expected,
             f"Expected at least {min_expected} tools, got {actual}. "
-            f"Dynamic schemas (MCP) may add more.")
+            f"Dynamic schemas (MCP) may add more.",
+        )
         # Also assert not too many (catches accidental double-injection)
-        self.assertLess(actual, min_expected + 5,
+        self.assertLess(
+            actual,
+            min_expected + 5,
             f"Too many tools: {actual}. Max expected: {min_expected + 4}. "
-            f"Check for accidental duplicate schema injection.")
+            f"Check for accidental duplicate schema injection.",
+        )
 
 
 class TestProjectKnowledgeMethods(unittest.TestCase):
@@ -142,6 +166,7 @@ class TestProjectKnowledgeMethods(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def test_memory_has_session_summary_methods(self):
@@ -151,16 +176,25 @@ class TestProjectKnowledgeMethods(unittest.TestCase):
         db_path = os.path.join(self.tmp, ".mini_agent_memory.db")
         store = MemoryStore(db_path, max_messages=500)
 
-        self.assertTrue(hasattr(store, "get_latest_session_summary"),
-                        "MemoryStore missing get_latest_session_summary method")
-        self.assertTrue(hasattr(store, "capture_session_summary"),
-                        "MemoryStore missing capture_session_summary method")
-        self.assertTrue(hasattr(store, "add_knowledge"),
-                        "MemoryStore missing add_knowledge method")
-        self.assertTrue(hasattr(store, "get_top_knowledge"),
-                        "MemoryStore missing get_top_knowledge method")
-        self.assertTrue(hasattr(store, "bump_knowledge"),
-                        "MemoryStore missing bump_knowledge method")
+        self.assertTrue(
+            hasattr(store, "get_latest_session_summary"),
+            "MemoryStore missing get_latest_session_summary method",
+        )
+        self.assertTrue(
+            hasattr(store, "capture_session_summary"),
+            "MemoryStore missing capture_session_summary method",
+        )
+        self.assertTrue(
+            hasattr(store, "add_knowledge"), "MemoryStore missing add_knowledge method"
+        )
+        self.assertTrue(
+            hasattr(store, "get_top_knowledge"),
+            "MemoryStore missing get_top_knowledge method",
+        )
+        self.assertTrue(
+            hasattr(store, "bump_knowledge"),
+            "MemoryStore missing bump_knowledge method",
+        )
 
     def test_session_summary_methods_work(self):
         """get_latest_session_summary should return None for empty DB."""
@@ -177,7 +211,9 @@ class TestProjectKnowledgeMethods(unittest.TestCase):
 
         db_path = os.path.join(self.tmp, ".mini_agent_memory.db")
         store = MemoryStore(db_path, max_messages=500)
-        store.add_knowledge("Test learning", category="test", detail="for roundtrip test")
+        store.add_knowledge(
+            "Test learning", category="test", detail="for roundtrip test"
+        )
         entries = store.get_top_knowledge(limit=5)
         self.assertGreaterEqual(len(entries), 1)
         self.assertEqual(entries[0]["summary"], "Test learning")

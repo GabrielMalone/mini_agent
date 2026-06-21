@@ -11,7 +11,6 @@ from terminal import GREEN
 
 
 class TestColorEnabled(unittest.TestCase):
-
     def test_color_enabled_tty_no_flag(self):
         """Colour on when stderr is a TTY and --no-color absent."""
         with patch.object(sys.stderr, "isatty", return_value=True):
@@ -38,7 +37,6 @@ class TestColorEnabled(unittest.TestCase):
 
 
 class TestC(unittest.TestCase):
-
     def setUp(self):
         # Force colours on for these tests
         patcher_tty = patch.object(sys.stderr, "isatty", return_value=True)
@@ -85,7 +83,6 @@ class TestC(unittest.TestCase):
 
 
 class TestFormatTable(unittest.TestCase):
-
     def test_format_table_empty_rows(self):
         result = format_table(["Col", "Desc"], [])
         self.assertIn("Col", result)

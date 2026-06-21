@@ -8,12 +8,14 @@ passes ``--no-color``.
 On Windows, ``ctypes`` is used to enable virtual terminal processing so
 ANSI escape sequences work in cmd.exe / PowerShell (Windows 10+).
 """
+
 from __future__ import annotations
 
 import os
 import sys
 
 _WINDOWS_ANSI_ENABLED = False
+
 
 def _enable_windows_ansi() -> None:
     """Enable ANSI escape code processing on Windows consoles.
@@ -28,6 +30,7 @@ def _enable_windows_ansi() -> None:
     _WINDOWS_ANSI_ENABLED = True
     try:
         import ctypes
+
         kernel32 = ctypes.windll.kernel32
         # STD_OUTPUT_HANDLE = -11, STD_ERROR_HANDLE = -12
         for handle_id in (-11, -12):
@@ -44,22 +47,25 @@ def _enable_windows_ansi() -> None:
     except Exception:
         pass  # best-effort; ANSI will simply not render on unsupported consoles
 
+
 _enable_windows_ansi()
+
 
 def _color_enabled() -> bool:
     """Lazily check if ANSI colour output is enabled.
-    
+
     Evaluated at call time, not import time, so TUI takeover of stderr
     doesn't affect the result.
     """
     return sys.stderr.isatty() and "--no-color" not in sys.argv
 
-_RESET  = "\033[0m"
-DIM     = "\033[2m"
-GREEN   = "\033[32m"
-_RED    = "\033[31m"
+
+_RESET = "\033[0m"
+DIM = "\033[2m"
+GREEN = "\033[32m"
+_RED = "\033[31m"
 _YELLOW = "\033[33m"
-_CYAN   = "\033[36m"
+_CYAN = "\033[36m"
 
 
 def c(text: str, code: str) -> str:

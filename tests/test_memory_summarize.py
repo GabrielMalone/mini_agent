@@ -17,6 +17,7 @@ from memory.memory import (
 # _summarize_pruned
 # ---------------------------------------------------------------------------
 
+
 class TestSummarizePruned(unittest.TestCase):
     """Tests for _summarize_pruned."""
 
@@ -60,14 +61,20 @@ class TestSummarizePruned(unittest.TestCase):
                 "content": "",
                 "tool_calls": [
                     {
-                        "id": "c1", "type": "function",
-                        "function": {"name": "read_file",
-                                     "arguments": '{"path": "/src/main.py"}'},
+                        "id": "c1",
+                        "type": "function",
+                        "function": {
+                            "name": "read_file",
+                            "arguments": '{"path": "/src/main.py"}',
+                        },
                     },
                     {
-                        "id": "c2", "type": "function",
-                        "function": {"name": "read_file",
-                                     "arguments": '{"path": "/src/utils.py"}'},
+                        "id": "c2",
+                        "type": "function",
+                        "function": {
+                            "name": "read_file",
+                            "arguments": '{"path": "/src/utils.py"}',
+                        },
                     },
                 ],
             },
@@ -83,8 +90,9 @@ class TestSummarizePruned(unittest.TestCase):
             {
                 "role": "tool",
                 "tool_call_id": "c1",
-                "content": json.dumps({"success": True,
-                                       "content": "OK: wrote 50 bytes to /out/data.txt"}),
+                "content": json.dumps(
+                    {"success": True, "content": "OK: wrote 50 bytes to /out/data.txt"}
+                ),
             },
         ]
         summary = _summarize_pruned(pruned)
@@ -97,8 +105,12 @@ class TestSummarizePruned(unittest.TestCase):
             {
                 "role": "tool",
                 "tool_call_id": "c1",
-                "content": json.dumps({"success": True,
-                                       "content": "OK: replaced 1 occurrence in /src/app.py"}),
+                "content": json.dumps(
+                    {
+                        "success": True,
+                        "content": "OK: replaced 1 occurrence in /src/app.py",
+                    }
+                ),
             },
         ]
         summary = _summarize_pruned(pruned)
@@ -113,9 +125,12 @@ class TestSummarizePruned(unittest.TestCase):
                 "content": "",
                 "tool_calls": [
                     {
-                        "id": "c1", "type": "function",
-                        "function": {"name": "run_shell",
-                                     "arguments": '{"command": "pytest -v"}'},
+                        "id": "c1",
+                        "type": "function",
+                        "function": {
+                            "name": "run_shell",
+                            "arguments": '{"command": "pytest -v"}',
+                        },
                     },
                 ],
             },
@@ -132,9 +147,12 @@ class TestSummarizePruned(unittest.TestCase):
                 "content": "",
                 "tool_calls": [
                     {
-                        "id": "c1", "type": "function",
-                        "function": {"name": "web_search",
-                                     "arguments": '{"query": "Python asyncio"}'},
+                        "id": "c1",
+                        "type": "function",
+                        "function": {
+                            "name": "web_search",
+                            "arguments": '{"query": "Python asyncio"}',
+                        },
                     },
                 ],
             },
@@ -150,18 +168,28 @@ class TestSummarizePruned(unittest.TestCase):
                 "role": "assistant",
                 "content": "",
                 "tool_calls": [
-                    {"id": "c1", "type": "function",
-                     "function": {"name": "read_file",
-                                  "arguments": '{"path": "/src/main.py"}'}},
+                    {
+                        "id": "c1",
+                        "type": "function",
+                        "function": {
+                            "name": "read_file",
+                            "arguments": '{"path": "/src/main.py"}',
+                        },
+                    },
                 ],
             },
             {
                 "role": "assistant",
                 "content": "",
                 "tool_calls": [
-                    {"id": "c2", "type": "function",
-                     "function": {"name": "read_file",
-                                  "arguments": '{"path": "/src/main.py"}'}},
+                    {
+                        "id": "c2",
+                        "type": "function",
+                        "function": {
+                            "name": "read_file",
+                            "arguments": '{"path": "/src/main.py"}',
+                        },
+                    },
                 ],
             },
         ]
@@ -178,10 +206,12 @@ class TestSummarizePruned(unittest.TestCase):
             {
                 "role": "tool",
                 "tool_call_id": "c1",
-                "content": json.dumps({
-                    "success": True,
-                    "content": f"OK: wrote 50 bytes to {very_long_path}"
-                }),
+                "content": json.dumps(
+                    {
+                        "success": True,
+                        "content": f"OK: wrote 50 bytes to {very_long_path}",
+                    }
+                ),
             },
         ]
         summary = _summarize_pruned(pruned)
@@ -198,6 +228,7 @@ class TestSummarizePruned(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # _prune_by_tokens with token budgets
 # ---------------------------------------------------------------------------
+
 
 def _msg(role, content):
     return {"role": role, "content": content}
@@ -216,7 +247,7 @@ class TestPruneByTokens(unittest.TestCase):
         # Create messages where each is ~100 tokens
         msgs = []
         for i in range(20):
-            msgs.append(_msg("user", "x" * 400))   # ~100 tokens
+            msgs.append(_msg("user", "x" * 400))  # ~100 tokens
             msgs.append(_msg("assistant", "y" * 400))  # ~100 tokens
         # Total ~4000 tokens. Budget ~500 to force pruning after first turn.
         # (First turn is 2 msgs * 100 tokens = 200 tokens, kept)
@@ -244,8 +275,11 @@ class TestPruneByTokens(unittest.TestCase):
                 "role": "assistant",
                 "content": "",
                 "tool_calls": [
-                    {"id": "c1", "type": "function",
-                     "function": {"name": "f", "arguments": "{}"}},
+                    {
+                        "id": "c1",
+                        "type": "function",
+                        "function": {"name": "f", "arguments": "{}"},
+                    },
                 ],
             },
             {
@@ -290,6 +324,7 @@ class TestPruneByTokens(unittest.TestCase):
 # MemoryStore token accounting
 # ---------------------------------------------------------------------------
 
+
 class TestMemoryStoreTokenAccounting(unittest.TestCase):
     """Tests for MemoryStore token_count and pruning integration."""
 
@@ -299,6 +334,7 @@ class TestMemoryStoreTokenAccounting(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def test_token_count_reflects_saved_messages(self):
@@ -334,7 +370,7 @@ class TestMemoryStoreTokenAccounting(unittest.TestCase):
         contents = [m["content"] for m in loaded]
         self.assertTrue(
             any("Earlier in this conversation" in c for c in contents),
-            "Summary injection missing from loaded messages"
+            "Summary injection missing from loaded messages",
         )
 
 

@@ -3,11 +3,13 @@ Integration smoke test for the self-improvement optimisations implemented in
 2026-06-14 session: two-tier cache, adaptive thresholds, two-tier pruning,
 system prompt preservation, and prompt cache key.
 """
+
 from __future__ import annotations
 
 import json
 import sys
 import unittest
+
 
 # ---------------------------------------------------------------------------
 # Test 1: Two-tier semantic cache (exact + semantic)
@@ -19,6 +21,7 @@ class TestTwoTierCache(unittest.TestCase):
     def setUpClass(cls):
         """Warm up the sentence-transformers model once for all tests."""
         from tools.semantic_cache import get_semantic_cache
+
         cache = get_semantic_cache()
         # Warm the model by doing a dummy embed (loads model on first use)
         cache._embed("Warm up the sentence transformer model")
@@ -68,13 +71,18 @@ class TestTwoTierCache(unittest.TestCase):
             stats = self.cache.stats()
             self.assertEqual(stats["semantic_hits"], 1)
         else:
-            self.skipTest("Model embeddings not close enough -- may need lower threshold")
+            self.skipTest(
+                "Model embeddings not close enough -- may need lower threshold"
+            )
 
     def test_adaptive_threshold_feedback(self):
         """Report feedback and verify threshold adjustment."""
 
         query = "Explain recursion in programming"
-        response = {"role": "assistant", "content": "Recursion is when a function calls itself..."}
+        response = {
+            "role": "assistant",
+            "content": "Recursion is when a function calls itself...",
+        }
         self.cache.store(query, response, model="test-model")
 
         # Hit multiple times to drive threshold down
@@ -101,14 +109,19 @@ class TestTwoTierCache(unittest.TestCase):
         stats = self.cache.stats()
         self.assertEqual(stats["exact_hits"], 1, "Should show exact hit")
         self.assertEqual(stats["semantic_hits"], 0, "No semantic hits yet")
-        self.assertIn("avg_adaptive_threshold", stats, "Should include adaptive threshold stat")
+        self.assertIn(
+            "avg_adaptive_threshold", stats, "Should include adaptive threshold stat"
+        )
         self.assertIn("feedback_correct", stats)
         self.assertIn("feedback_wrong", stats)
 
     def test_no_cache_for_tool_calls(self):
         """Responses with tool_calls should NOT be cached."""
         query = "Read file x"
-        response = {"role": "assistant", "tool_calls": [{"id": "t1", "function": {"name": "read"}}]}
+        response = {
+            "role": "assistant",
+            "tool_calls": [{"id": "t1", "function": {"name": "read"}}],
+        }
 
         self.cache.store(query, response, model="test-model")
         hit, _ = self.cache.lookup(query)
@@ -143,14 +156,22 @@ class TestTwoTierPruning(unittest.TestCase):
         from memory.memory_prune import _compress_tool_results
 
         messages = [
-            self._make_msg("system", "You are an AI assistant." * 500),  # large system msg
+            self._make_msg(
+                "system", "You are an AI assistant." * 500
+            ),  # large system msg
         ]
         # Add enough tool messages to push system into aggressive zone
         for i in range(30):
             messages.append(
-                self._make_msg("assistant", tool_calls=[
-                    {"id": f"tc{i}", "function": {"name": "read", "arguments": "{}"}}
-                ])
+                self._make_msg(
+                    "assistant",
+                    tool_calls=[
+                        {
+                            "id": f"tc{i}",
+                            "function": {"name": "read", "arguments": "{}"},
+                        }
+                    ],
+                )
             )
             messages.append(
                 self._make_tool_result("result " * 2000, tool_call_id=f"tc{i}")
@@ -158,10 +179,15 @@ class TestTwoTierPruning(unittest.TestCase):
 
         original_system = messages[0]["content"]
         result, changed = _compress_tool_results(
-            messages, keep_recent=1, gentle_recent=20,
+            messages,
+            keep_recent=1,
+            gentle_recent=20,
         )
-        self.assertEqual(result[0]["content"], original_system,
-                         "System prompt at index 0 must never be compressed")
+        self.assertEqual(
+            result[0]["content"],
+            original_system,
+            "System prompt at index 0 must never be compressed",
+        )
 
     def test_gentle_zone_truncation_only(self):
         """Messages in gentle zone get hard truncation, not type-aware compression."""
@@ -171,18 +197,31 @@ class TestTwoTierPruning(unittest.TestCase):
         # Build messages such that some tool results land in the gentle zone
         for i in range(25):
             messages.append(
-                self._make_msg("assistant", tool_calls=[
-                    {"id": f"tc{i}", "function": {"name": "read_file", "arguments": json.dumps({"path": f"file{i}.py"})}}
-                ])
+                self._make_msg(
+                    "assistant",
+                    tool_calls=[
+                        {
+                            "id": f"tc{i}",
+                            "function": {
+                                "name": "read_file",
+                                "arguments": json.dumps({"path": f"file{i}.py"}),
+                            },
+                        }
+                    ],
+                )
             )
             # Large result:
-            messages.append(self._make_tool_result(
-                "\n".join([f"{j}: line {j} of file output" for j in range(100)]),
-                tool_call_id=f"tc{i}"
-            ))
+            messages.append(
+                self._make_tool_result(
+                    "\n".join([f"{j}: line {j} of file output" for j in range(100)]),
+                    tool_call_id=f"tc{i}",
+                )
+            )
 
         _, changed = _compress_tool_results(
-            messages, keep_recent=5, gentle_recent=20,
+            messages,
+            keep_recent=5,
+            gentle_recent=20,
         )
 
         # Gentle zone (idx 5-19 messages, which are message indices 5-19
@@ -192,8 +231,11 @@ class TestTwoTierPruning(unittest.TestCase):
             if messages[idx].get("role") == "tool":
                 content = json.loads(messages[idx]["content"])["content"]
                 # Should still have output lines, just maybe truncated
-                self.assertIn("output", content.lower() or "",
-                              f"Gentle zone tool msg {idx} lost all content")
+                self.assertIn(
+                    "output",
+                    content.lower() or "",
+                    f"Gentle zone tool msg {idx} lost all content",
+                )
 
     def test_backward_compat_no_gentle(self):
         """gentle_recent=None uses old single-tier behaviour."""
@@ -202,9 +244,15 @@ class TestTwoTierPruning(unittest.TestCase):
         messages = [self._make_msg("system", "system")]
         for i in range(15):
             messages.append(
-                self._make_msg("assistant", tool_calls=[
-                    {"id": f"tc{i}", "function": {"name": "search_files", "arguments": "{}"}}
-                ])
+                self._make_msg(
+                    "assistant",
+                    tool_calls=[
+                        {
+                            "id": f"tc{i}",
+                            "function": {"name": "search_files", "arguments": "{}"},
+                        }
+                    ],
+                )
             )
             messages.append(self._make_tool_result("x" * 12000, tool_call_id=f"tc{i}"))
 
@@ -226,8 +274,9 @@ class TestTwoTierPruning(unittest.TestCase):
         ]
 
         kept, pruned = _prune_by_tokens(messages, max_tokens=50, max_messages=100)
-        self.assertEqual(kept[0]["role"], "system",
-                         "System prompt must survive tight token budgets")
+        self.assertEqual(
+            kept[0]["role"], "system", "System prompt must survive tight token budgets"
+        )
         self.assertGreater(len(kept), 0)
 
     def test_prune_all_preserves_system(self):
@@ -245,8 +294,11 @@ class TestTwoTierPruning(unittest.TestCase):
         ]
 
         kept, pruned = _prune_by_tokens(messages, max_tokens=10000, max_messages=4)
-        self.assertEqual(kept[0]["role"], "system",
-                         "System prompt must be present even with small max_messages")
+        self.assertEqual(
+            kept[0]["role"],
+            "system",
+            "System prompt must be present even with small max_messages",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -275,8 +327,9 @@ class TestPromptCacheKey(unittest.TestCase):
 
         config = self._make_config(provider="deepseek")
         payload = _build_payload(config, [], [])
-        self.assertIn("prompt_cache_key", payload,
-                      "DeepSeek payload should have prompt_cache_key")
+        self.assertIn(
+            "prompt_cache_key", payload, "DeepSeek payload should have prompt_cache_key"
+        )
 
     def test_no_cache_key_for_other_providers(self):
         """Other providers should NOT get prompt_cache_key."""
@@ -284,8 +337,11 @@ class TestPromptCacheKey(unittest.TestCase):
 
         config = self._make_config(provider="claude")
         payload = _build_payload(config, [], [])
-        self.assertNotIn("prompt_cache_key", payload,
-                         "Claude payload should NOT have prompt_cache_key")
+        self.assertNotIn(
+            "prompt_cache_key",
+            payload,
+            "Claude payload should NOT have prompt_cache_key",
+        )
 
     def test_cache_key_has_tool_count(self):
         """The cache key includes the tool count for cache-busting on skill changes."""
@@ -308,9 +364,11 @@ class TestEndToEnd(unittest.TestCase):
     def test_semantic_cache_import_works(self):
         """Module imports and singleton is available."""
         from tools.semantic_cache import (
-            get_semantic_cache, semantic_cache_stats,
+            get_semantic_cache,
+            semantic_cache_stats,
             SemanticCache,
         )
+
         cache = get_semantic_cache()
         self.assertIsInstance(cache, SemanticCache)
         stats = semantic_cache_stats()
@@ -323,6 +381,7 @@ class TestEndToEnd(unittest.TestCase):
             _COMPRESSION_GENTLE_MAX_LINES,
             _TOOL_RESULT_GENTLE_CHARS,
         )
+
         self.assertGreater(_COMPRESSION_GENTLE_RECENT, 0)
         self.assertGreater(_COMPRESSION_GENTLE_MAX_LINES, 0)
         self.assertGreater(_TOOL_RESULT_GENTLE_CHARS, 0)
@@ -330,6 +389,7 @@ class TestEndToEnd(unittest.TestCase):
     def test_memory_imports_gentle_constant(self):
         """memory.py re-exports gentle constant."""
         from memory.memory import _COMPRESSION_GENTLE_RECENT
+
         self.assertGreater(_COMPRESSION_GENTLE_RECENT, 0)
 
 
@@ -342,6 +402,7 @@ class TestDeadToolPruning(unittest.TestCase):
     def setUp(self):
         from tools import reset_tool_usage
         from tools.skills import reset_skills
+
         reset_tool_usage()
         reset_skills()
 
@@ -372,12 +433,16 @@ class TestDeadToolPruning(unittest.TestCase):
 
         unused = tmod.get_unused_tools(min_turns=5)
         self.assertNotIn("read_file", unused, "Used tools should not be unused")
-        self.assertNotIn("run_shell", unused, "Essential tools should not be reportable as unused")
+        self.assertNotIn(
+            "run_shell", unused, "Essential tools should not be reportable as unused"
+        )
 
     def test_prune_unused_skills_deactivates(self):
         """prune_unused_skills deactivates skills with zero tool usage."""
         from tools.skills import (
-            prune_unused_skills, active_skills, activate_skill,
+            prune_unused_skills,
+            active_skills,
+            activate_skill,
             _get_skills_tool_map,
         )
 
@@ -395,8 +460,11 @@ class TestDeadToolPruning(unittest.TestCase):
     def test_prune_unused_skills_partial_usage_preserves(self):
         """Skill stays active if at least one tool was used."""
         from tools.skills import (
-            prune_unused_skills, active_skills, activate_skill,
-            _get_skills_tool_map, reset_skills,
+            prune_unused_skills,
+            active_skills,
+            activate_skill,
+            _get_skills_tool_map,
+            reset_skills,
         )
         from tools import reset_tool_usage
 
@@ -415,6 +483,7 @@ class TestDeadToolPruning(unittest.TestCase):
     def test_prune_empty_set_noop(self):
         """prune_unused_skills with empty set is a no-op."""
         from tools.skills import prune_unused_skills
+
         self.assertEqual(prune_unused_skills(set()), 0)
 
 

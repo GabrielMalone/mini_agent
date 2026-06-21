@@ -39,16 +39,20 @@ _UNSET = object()
 
 class _FakeStdin:
     """Minimal file-like for disconnect() to write shutdown/exit messages."""
+
     def write(self, data: bytes) -> int:
         return len(data)
+
     def flush(self) -> None:
         pass
+
     def close(self) -> None:
         pass
 
 
 class FakeProcess:
     """Minimal stand-in for subprocess.Popen so disconnect() doesn't crash."""
+
     stdin: _FakeStdin = _FakeStdin()
     stdout = None
     stderr = None
@@ -179,6 +183,7 @@ def _make_fake_connection(
 # Test: _uri_from_path
 # ====================================================================
 
+
 class TestUriFromPath(unittest.TestCase):
     def test_simple_path(self) -> None:
         uri = _uri_from_path("/home/user/test.py")
@@ -200,6 +205,7 @@ class TestUriFromPath(unittest.TestCase):
 # ====================================================================
 # Test: detect_language
 # ====================================================================
+
 
 class TestDetectLanguage(unittest.TestCase):
     def test_python_file(self) -> None:
@@ -239,6 +245,7 @@ class TestDetectLanguage(unittest.TestCase):
 # Test: uri_to_path
 # ====================================================================
 
+
 class TestUriToPath(unittest.TestCase):
     def test_file_uri_to_path(self) -> None:
         uri = _uri_from_path("/tmp/test.py")
@@ -250,6 +257,7 @@ class TestUriToPath(unittest.TestCase):
 # ====================================================================
 # Test: _severity_name
 # ====================================================================
+
 
 class TestSeverityName(unittest.TestCase):
     def test_error(self) -> None:
@@ -271,6 +279,7 @@ class TestSeverityName(unittest.TestCase):
 # ====================================================================
 # Test: _location_to_line
 # ====================================================================
+
 
 class TestLocationToLine(unittest.TestCase):
     def test_standard_location(self) -> None:
@@ -303,6 +312,7 @@ class TestLocationToLine(unittest.TestCase):
 # ====================================================================
 # Test: LspConnection lifecycle
 # ====================================================================
+
 
 class TestLspConnectionLifecycle(unittest.TestCase):
     def test_connect_success(self) -> None:
@@ -337,6 +347,7 @@ class TestLspConnectionLifecycle(unittest.TestCase):
 # ====================================================================
 # Test: LspConnection.definition
 # ====================================================================
+
 
 class TestLspConnectionDefinition(unittest.TestCase):
     def test_definition_returns_location(self) -> None:
@@ -386,6 +397,7 @@ class TestLspConnectionDefinition(unittest.TestCase):
 # Test: LspConnection.references
 # ====================================================================
 
+
 class TestLspConnectionReferences(unittest.TestCase):
     def test_references_returns_locations(self) -> None:
         conn = _make_fake_connection()
@@ -414,6 +426,7 @@ class TestLspConnectionReferences(unittest.TestCase):
 # Test: LspConnection.hover
 # ====================================================================
 
+
 class TestLspConnectionHover(unittest.TestCase):
     def test_hover_returns_contents(self) -> None:
         conn = _make_fake_connection()
@@ -441,6 +454,7 @@ class TestLspConnectionHover(unittest.TestCase):
 # ====================================================================
 # Test: LspConnection.get_diagnostics
 # ====================================================================
+
 
 class TestLspConnectionDiagnostics(unittest.TestCase):
     def test_get_diagnostics_with_data(self) -> None:
@@ -492,6 +506,7 @@ class TestLspConnectionDiagnostics(unittest.TestCase):
 # Test: LspClientManager
 # ====================================================================
 
+
 class TestLspClientManager(unittest.TestCase):
     def test_get_connection_returns_none_for_unsupported_file(self) -> None:
         mgr = LspClientManager()
@@ -536,6 +551,7 @@ class TestLspClientManager(unittest.TestCase):
 # ====================================================================
 # Test: Error types
 # ====================================================================
+
 
 class TestErrorTypes(unittest.TestCase):
     def test_lsp_rpc_error(self) -> None:

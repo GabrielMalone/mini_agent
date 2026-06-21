@@ -196,7 +196,8 @@ class TestSkillDiscovery(unittest.TestCase):
             os.makedirs(skill_dir)
             skill_md = os.path.join(skill_dir, "SKILL.md")
             with open(skill_md, "w", encoding="utf-8") as f:
-                f.write(textwrap.dedent("""\
+                f.write(
+                    textwrap.dedent("""\
                     ---
                     name: my-skill
                     description: My custom skill
@@ -204,7 +205,8 @@ class TestSkillDiscovery(unittest.TestCase):
                     ---
                     # My Skill
                     Skill body here.
-                """))
+                """)
+                )
 
             skill = skills._load_skill(skill_md)
             self.assertIsNotNone(skill)
@@ -219,12 +221,14 @@ class TestSkillDiscovery(unittest.TestCase):
             os.makedirs(skill_dir)
             skill_md = os.path.join(skill_dir, "SKILL.md")
             with open(skill_md, "w", encoding="utf-8") as f:
-                f.write(textwrap.dedent("""\
+                f.write(
+                    textwrap.dedent("""\
                     ---
                     description: Missing name
                     ---
                     Body.
-                """))
+                """)
+                )
 
             skill = skills._load_skill(skill_md)
             self.assertIsNone(skill)
@@ -236,8 +240,11 @@ class TestSkillDiscovery(unittest.TestCase):
             for name in ["skill-a", "skill-b"]:
                 skill_dir = os.path.join(skills_root, name)
                 os.makedirs(skill_dir)
-                with open(os.path.join(skill_dir, "SKILL.md"), "w", encoding="utf-8") as f:
-                    f.write(textwrap.dedent(f"""\
+                with open(
+                    os.path.join(skill_dir, "SKILL.md"), "w", encoding="utf-8"
+                ) as f:
+                    f.write(
+                        textwrap.dedent(f"""\
                         ---
                         name: {name}
                         description: Skill {name}
@@ -245,7 +252,8 @@ class TestSkillDiscovery(unittest.TestCase):
                         ---
                         # {name}
                         Body for {name}.
-                    """))
+                    """)
+                    )
 
             os.environ["MINI_AGENT_WORKSPACE"] = tmp
             skills.reload_skills()

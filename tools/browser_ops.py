@@ -48,6 +48,7 @@ def _get_playwright():
     if _PLAYWRIGHT is None:
         try:
             from playwright.sync_api import sync_playwright
+
             _PLAYWRIGHT = sync_playwright
         except ImportError:
             raise ImportError(
@@ -119,9 +120,7 @@ def _get_page():
             return _PAGE
         except Exception as exc:
             msg = str(exc)
-            if attempt == 1 or not any(
-                sig in msg for sig in _BROWSER_DEAD_SIGNATURES
-            ):
+            if attempt == 1 or not any(sig in msg for sig in _BROWSER_DEAD_SIGNATURES):
                 raise
             _force_reset_browser_globals()
 
@@ -145,6 +144,7 @@ def _close_browser():
     # Stop the asyncio event loop Playwright spun up
     try:
         import asyncio
+
         loop = asyncio.get_event_loop()
         if loop.is_running():
             loop.stop()
@@ -156,6 +156,7 @@ def _close_browser():
 # ---------------------------------------------------------------------------
 # open_url -- trivial, no deps beyond stdlib webbrowser
 # ---------------------------------------------------------------------------
+
 
 @_register("open_url")
 def _open_url(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
@@ -170,18 +171,19 @@ def _open_url(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResul
         return ToolResult(success=False, content="Missing required parameter: 'url'.")
 
     if not (url.startswith("http://") or url.startswith("https://")):
-        return ToolResult(success=False,
-                          content="URL must start with http:// or https://")
+        return ToolResult(
+            success=False, content="URL must start with http:// or https://"
+        )
 
     try:
         opened = _webbrowser.open(url, new=2)  # new=2 -> new tab if possible
         if opened:
-            return ToolResult(success=True,
-                              content=f"Opened {url} in default browser.")
+            return ToolResult(success=True, content=f"Opened {url} in default browser.")
         else:
-            return ToolResult(success=False,
-                              content=f"Browser failed to open {url} -- "
-                                      "no suitable browser found.")
+            return ToolResult(
+                success=False,
+                content=f"Browser failed to open {url} -- no suitable browser found.",
+            )
     except Exception as exc:
         return ToolResult(success=False, content=f"Failed to open {url}: {exc}")
 
@@ -197,9 +199,11 @@ def _open_url_summary(args: dict) -> str:
 # browser_navigate -- headless Playwright
 # ---------------------------------------------------------------------------
 
+
 @_register("browser_navigate")
-def _browser_navigate(args: dict, _wg: WriteSafetyGate,
-                      _rg: ReadSafetyGate) -> ToolResult:
+def _browser_navigate(
+    args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate
+) -> ToolResult:
     """Navigate a headless browser to a URL.
 
     Returns the page title and final URL after redirects.
@@ -209,8 +213,9 @@ def _browser_navigate(args: dict, _wg: WriteSafetyGate,
         return ToolResult(success=False, content="Missing required parameter: 'url'.")
 
     if not (url.startswith("http://") or url.startswith("https://")):
-        return ToolResult(success=False,
-                          content="URL must start with http:// or https://")
+        return ToolResult(
+            success=False, content="URL must start with http:// or https://"
+        )
 
     try:
         page = _get_page()
@@ -218,12 +223,10 @@ def _browser_navigate(args: dict, _wg: WriteSafetyGate,
         title = page.title()
         final_url = page.url
         return ToolResult(
-            success=True,
-            content=f"Navigated to {final_url}\nTitle: {title}"
+            success=True, content=f"Navigated to {final_url}\nTitle: {title}"
         )
     except Exception as exc:
-        return ToolResult(success=False,
-                          content=f"Failed to navigate to {url}: {exc}")
+        return ToolResult(success=False, content=f"Failed to navigate to {url}: {exc}")
 
 
 @_summarize("browser_navigate")
@@ -236,9 +239,11 @@ def _browser_navigate_summary(args: dict) -> str:
 # browser_snapshot -- accessibility tree (LLM-friendly)
 # ---------------------------------------------------------------------------
 
+
 @_register("browser_snapshot")
-def _browser_snapshot(args: dict, _wg: WriteSafetyGate,
-                      _rg: ReadSafetyGate) -> ToolResult:
+def _browser_snapshot(
+    args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate
+) -> ToolResult:
     """Capture a structured view of the current page's interactive elements.
 
     Returns a text listing of buttons, links, inputs, and other
@@ -255,17 +260,20 @@ def _browser_snapshot(args: dict, _wg: WriteSafetyGate,
             # Fall back to page text
             body_text = page.inner_text("body").strip()
             if body_text:
-                return ToolResult(success=True,
-                                  content=f"(page text)\n{body_text[:4000]}")
-            return ToolResult(success=True,
-                              content="(empty page -- no interactive elements)")
+                return ToolResult(
+                    success=True, content=f"(page text)\n{body_text[:4000]}"
+                )
+            return ToolResult(
+                success=True, content="(empty page -- no interactive elements)"
+            )
         text = _format_interactive_elements(elements)
         if len(text) > 8000:
             text = text[:8000] + "\n... (truncated)"
         return ToolResult(success=True, content=text)
     except Exception as exc:
-        return ToolResult(success=False,
-                          content=f"Failed to capture page snapshot: {exc}")
+        return ToolResult(
+            success=False, content=f"Failed to capture page snapshot: {exc}"
+        )
 
 
 def _extract_interactive_elements(page) -> list[dict]:
@@ -378,9 +386,9 @@ def _browser_snapshot_summary(args: dict) -> str:
 # browser_click -- click by role + name
 # ---------------------------------------------------------------------------
 
+
 @_register("browser_click")
-def _browser_click(args: dict, _wg: WriteSafetyGate,
-                   _rg: ReadSafetyGate) -> ToolResult:
+def _browser_click(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
     """Click an element identified by its accessibility role and name.
 
     Args:
@@ -403,13 +411,11 @@ def _browser_click(args: dict, _wg: WriteSafetyGate,
         # Playwright's get_by_role uses the accessibility tree internally
         locator = page.get_by_role(role, name=name)
         locator.click(timeout=10000)
-        return ToolResult(
-            success=True,
-            content=f"Clicked {role} \"{name}\"."
-        )
+        return ToolResult(success=True, content=f'Clicked {role} "{name}".')
     except Exception as exc:
-        return ToolResult(success=False,
-                          content=f"Failed to click {role} \"{name}\": {exc}")
+        return ToolResult(
+            success=False, content=f'Failed to click {role} "{name}": {exc}'
+        )
 
 
 @_summarize("browser_click")
@@ -423,9 +429,9 @@ def _browser_click_summary(args: dict) -> str:
 # browser_type -- type text into an input
 # ---------------------------------------------------------------------------
 
+
 @_register("browser_type")
-def _browser_type(args: dict, _wg: WriteSafetyGate,
-                  _rg: ReadSafetyGate) -> ToolResult:
+def _browser_type(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
     """Type text into an input element identified by role and name.
 
     Args:
@@ -446,13 +452,11 @@ def _browser_type(args: dict, _wg: WriteSafetyGate,
         page = _get_page()
         locator = page.get_by_role(role, name=name)
         locator.fill(text, timeout=10000)
-        return ToolResult(
-            success=True,
-            content=f"Typed \"{text}\" into {role} \"{name}\"."
-        )
+        return ToolResult(success=True, content=f'Typed "{text}" into {role} "{name}".')
     except Exception as exc:
-        return ToolResult(success=False,
-                          content=f"Failed to type into {role} \"{name}\": {exc}")
+        return ToolResult(
+            success=False, content=f'Failed to type into {role} "{name}": {exc}'
+        )
 
 
 @_summarize("browser_type")
@@ -466,9 +470,11 @@ def _browser_type_summary(args: dict) -> str:
 # browser_screenshot -- PNG capture
 # ---------------------------------------------------------------------------
 
+
 @_register("browser_screenshot")
-def _browser_screenshot(args: dict, wg: WriteSafetyGate,
-                        _rg: ReadSafetyGate) -> ToolResult:
+def _browser_screenshot(
+    args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate
+) -> ToolResult:
     """Capture a full-page PNG screenshot of the current browser page.
 
     Saves to the workspace so it can be inspected with read_image.
@@ -485,16 +491,19 @@ def _browser_screenshot(args: dict, wg: WriteSafetyGate,
     if wg is not None:
         safety_result = wg.check(path)
         if not safety_result.allowed:
-            return ToolResult(success=False,
-                              content=f"Screenshot blocked by safety layer: "
-                                      f"{safety_result.reason}")
+            return ToolResult(
+                success=False,
+                content=f"Screenshot blocked by safety layer: {safety_result.reason}",
+            )
     else:
         from core.safety import WriteSafetyGate
+
         safety_result = WriteSafetyGate(os.getcwd()).check(path)
         if not safety_result.allowed:
-            return ToolResult(success=False,
-                              content=f"Screenshot blocked by safety layer: "
-                                      f"{safety_result.reason}")
+            return ToolResult(
+                success=False,
+                content=f"Screenshot blocked by safety layer: {safety_result.reason}",
+            )
 
     resolved = safety_result.resolved_path
     try:
@@ -503,11 +512,10 @@ def _browser_screenshot(args: dict, wg: WriteSafetyGate,
         return ToolResult(
             success=True,
             content=f"Screenshot saved to {path} "
-                    f"({'full page' if full_page else 'viewport'})."
+            f"({'full page' if full_page else 'viewport'}).",
         )
     except Exception as exc:
-        return ToolResult(success=False,
-                          content=f"Failed to capture screenshot: {exc}")
+        return ToolResult(success=False, content=f"Failed to capture screenshot: {exc}")
 
 
 @_summarize("browser_screenshot")

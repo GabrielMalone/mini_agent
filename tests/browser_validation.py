@@ -83,23 +83,32 @@ def main():
     # 1. open_url (mock -- don't open real browser)
     print("--- open_url ---")
     from unittest.mock import patch
+
     with patch("webbrowser.open", return_value=True):
-        all_pass &= test("Opens valid URL",
-                         _open_url({"url": "https://example.com"}, None, None))
-    all_pass &= test("Rejects missing url",
-                     _open_url({}, None, None), expect_success=False)
-    all_pass &= test("Rejects bad scheme",
-                     _open_url({"url": "ftp://x.com"}, None, None), expect_success=False)
+        all_pass &= test(
+            "Opens valid URL", _open_url({"url": "https://example.com"}, None, None)
+        )
+    all_pass &= test(
+        "Rejects missing url", _open_url({}, None, None), expect_success=False
+    )
+    all_pass &= test(
+        "Rejects bad scheme",
+        _open_url({"url": "ftp://x.com"}, None, None),
+        expect_success=False,
+    )
     print()
 
     # 2. browser_navigate
     print("--- browser_navigate ---")
-    all_pass &= test("Navigates to homepage",
-                     _browser_navigate({"url": url}, None, None))
-    all_pass &= test("Navigates to page 2",
-                     _browser_navigate({"url": f"{url}/page2"}, None, None))
-    all_pass &= test("Rejects missing url",
-                     _browser_navigate({}, None, None), expect_success=False)
+    all_pass &= test(
+        "Navigates to homepage", _browser_navigate({"url": url}, None, None)
+    )
+    all_pass &= test(
+        "Navigates to page 2", _browser_navigate({"url": f"{url}/page2"}, None, None)
+    )
+    all_pass &= test(
+        "Rejects missing url", _browser_navigate({}, None, None), expect_success=False
+    )
     print()
 
     # 3. browser_snapshot
@@ -114,21 +123,31 @@ def main():
     print("--- browser_click ---")
     # Re-navigate to reset page state
     _browser_navigate({"url": url}, None, None)
-    all_pass &= test("Clicks button 'Login'",
-                     _browser_click({"role": "button", "name": "Login"}, None, None))
-    all_pass &= test("Rejects missing role",
-                     _browser_click({"name": "X"}, None, None), expect_success=False)
+    all_pass &= test(
+        "Clicks button 'Login'",
+        _browser_click({"role": "button", "name": "Login"}, None, None),
+    )
+    all_pass &= test(
+        "Rejects missing role",
+        _browser_click({"name": "X"}, None, None),
+        expect_success=False,
+    )
     print()
 
     # 5. browser_type
     print("--- browser_type ---")
     _browser_navigate({"url": url}, None, None)
-    all_pass &= test("Types into textbox 'Search'",
-                     _browser_type(
-                         {"role": "textbox", "name": "Search", "text": "hello world"},
-                         None, None))
-    all_pass &= test("Rejects missing name",
-                     _browser_type({"text": "hi"}, None, None), expect_success=False)
+    all_pass &= test(
+        "Types into textbox 'Search'",
+        _browser_type(
+            {"role": "textbox", "name": "Search", "text": "hello world"}, None, None
+        ),
+    )
+    all_pass &= test(
+        "Rejects missing name",
+        _browser_type({"text": "hi"}, None, None),
+        expect_success=False,
+    )
     print()
 
     # 6. browser_screenshot
@@ -140,7 +159,7 @@ def main():
     if result.success and os.path.exists(shot_path):
         size = os.path.getsize(shot_path)
         print(f"       File size: {size} bytes")
-        all_pass &= (size > 0)
+        all_pass &= size > 0
         if size > 0:
             print("  [OK] PASS: Screenshot > 0 bytes")
         else:

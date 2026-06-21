@@ -33,6 +33,7 @@ def _get_model():
     if _model is None:
         try:
             from sentence_transformers import SentenceTransformer
+
             _model = SentenceTransformer(_MODEL_NAME)
         except Exception:
             return None
@@ -66,7 +67,7 @@ def embed_and_store_new(store: MemoryStore, batch_size: int = 20) -> int:
 
     # Combine summary + detail for richer embedding
     texts = [
-        f"{e['summary']}\n{e['detail']}" if e.get('detail') else e['summary']
+        f"{e['summary']}\n{e['detail']}" if e.get("detail") else e["summary"]
         for e in entries
     ]
 
@@ -112,7 +113,9 @@ def query_and_format(
         return None
 
     lines = ["## SEMANTIC MEMORY (from project_knowledge)\n"]
-    lines.append("The following learnings are semantically relevant to the current task:\n")
+    lines.append(
+        "The following learnings are semantically relevant to the current task:\n"
+    )
     for r in relevant:
         sim = r.get("similarity", 0)
         cat = r.get("category", "general")

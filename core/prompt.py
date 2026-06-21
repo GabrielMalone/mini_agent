@@ -79,7 +79,9 @@ def build_session_header(config: "AgentConfig") -> str:
     if config.unrestricted:
         safety_lines.append("  unrestricted = True  (NO workspace boundary checks)")
     else:
-        safety_lines.append("  unrestricted = False (reads/writes restricted to workspace)")
+        safety_lines.append(
+            "  unrestricted = False (reads/writes restricted to workspace)"
+        )
     safety_lines.append(f"  allow_overwrites = {config.allow_overwrites}")
     safety_lines.append(f"  approve_write_ops = {config.approve_write_ops}")
 
@@ -93,8 +95,8 @@ def build_session_header(config: "AgentConfig") -> str:
         f"  UI          : {frontend}\n"
         f"  WORKSPACE   : {workspace}\n"
         f"  SAFETY FLAGS:\n"
-        + "\n".join(safety_lines) +
-        "\n=========================================================="
+        + "\n".join(safety_lines)
+        + "\n=========================================================="
     )
 
     parts = [header]
@@ -124,21 +126,28 @@ def build_session_header(config: "AgentConfig") -> str:
     # --- Git context ---
     try:
         import subprocess
+
         branch = subprocess.check_output(
-            ["git", "branch", "--show-current"], cwd=config.workspace,
-            stderr=subprocess.DEVNULL, text=True
+            ["git", "branch", "--show-current"],
+            cwd=config.workspace,
+            stderr=subprocess.DEVNULL,
+            text=True,
         ).strip()
         if branch:
             git_info = [f"Current branch: {branch}"]
             status = subprocess.check_output(
-                ["git", "status", "--porcelain"], cwd=config.workspace,
-                stderr=subprocess.DEVNULL, text=True
+                ["git", "status", "--porcelain"],
+                cwd=config.workspace,
+                stderr=subprocess.DEVNULL,
+                text=True,
             ).strip()
             if status:
                 changed = status.split("\n")[:15]
                 git_info.append("\n".join(changed))
                 if len(status.split("\n")) > 15:
-                    git_info.append(f"... and {len(status.split(chr(10))) - 15} more files")
+                    git_info.append(
+                        f"... and {len(status.split(chr(10))) - 15} more files"
+                    )
             else:
                 git_info.append("(working tree clean)")
             parts.append("REPOSITORY STATUS (git):\n" + "\n".join(git_info))
@@ -151,6 +160,7 @@ def build_session_header(config: "AgentConfig") -> str:
 # ---------------------------------------------------------------------------
 # Core memory snapshot builder (Hermes-style frozen-at-load pattern)
 # ---------------------------------------------------------------------------
+
 
 def build_memory_snapshot(core_memory_content: str) -> str:
     """Build the frozen core memory snapshot injected at session start.
@@ -175,9 +185,7 @@ def build_memory_snapshot(core_memory_content: str) -> str:
         "The following is your persistent memory. It survives across sessions.\n"
         "It does NOT change during this session. Use the memory_core tool to\n"
         "add, replace, or remove entries (changes appear next session).\n"
-        "\n"
-        + content
-        + "\n"
+        "\n" + content + "\n"
         "\n[END CORE MEMORY]\n"
     )
 
@@ -201,7 +209,7 @@ STATIC_PROMPT = _STATIC_PROMPT = (
     "unless a tool tells you the read was stale.\n"
     "\n"
     "TOOLS & SKILLS:\n"
-    "- 21 core tools. Activate more with use_skill(\"name\"):\n"
+    '- 21 core tools. Activate more with use_skill("name"):\n'
     "  bootstrap, desktop, image, lsp, search, tasks, test, web\n"
     "- Each skill adds 2-15 tools. Only core + active skills are sent in the API "
     "tools parameter (not all 138).\n"
@@ -233,7 +241,7 @@ STATIC_PROMPT = _STATIC_PROMPT = (
     "AMBIGUITY & SCOPE:\n"
     "- Broad/vague request: ask ONE clarifying question before investigating.\n"
     "- Codebase review: start with README.md, .mini_agent.rules, git log --oneline.\n"
-    "- State scope upfront: \"I'll review X, Y, Z -- does that match?\"\n"
+    '- State scope upfront: "I\'ll review X, Y, Z -- does that match?"\n'
     "- Triage with find_symbol/search_files/git log before reading files.\n"
     "\n"
     "MEMORY & STATE:\n"
@@ -265,8 +273,11 @@ STATIC_PROMPT = _STATIC_PROMPT = (
 # Startup context builder (moved from config.py)
 # ---------------------------------------------------------------------------
 
+
 def build_startup_context(
-    workspace: str, *, knowledge: list[dict] | None = None,
+    workspace: str,
+    *,
+    knowledge: list[dict] | None = None,
 ) -> str:
     """Generate a one-shot system message describing the workspace at startup.
 
@@ -284,18 +295,33 @@ def build_startup_context(
     parts.append("[WORKSPACE CONTEXT -- injected once at session start]")
 
     # 1. File tree (skip hidden dirs, __pycache__, .git, venv, node_modules)
-    SKIP = {".git", "__pycache__", ".venv", "venv", "node_modules", ".mypy_cache",
-            ".pytest_cache", ".ruff_cache", "dist", "build", ".tox"}
+    SKIP = {
+        ".git",
+        "__pycache__",
+        ".venv",
+        "venv",
+        "node_modules",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        "dist",
+        "build",
+        ".tox",
+    }
     tree_lines: list[str] = []
     try:
         walk = list(os.walk(workspace))
     except OSError:
         walk = []
     for dirpath, dirnames, filenames in walk:
-        dirnames[:] = sorted(d for d in dirnames if d not in SKIP and not d.startswith("."))
-        depth = dirpath[len(workspace):].count(os.sep)
+        dirnames[:] = sorted(
+            d for d in dirnames if d not in SKIP and not d.startswith(".")
+        )
+        depth = dirpath[len(workspace) :].count(os.sep)
         indent = "  " * depth
-        label = os.path.basename(dirpath) or workspace.rstrip(os.sep).rsplit(os.sep, 1)[-1]
+        label = (
+            os.path.basename(dirpath) or workspace.rstrip(os.sep).rsplit(os.sep, 1)[-1]
+        )
         tree_lines.append(f"{indent}[d] {label}/")
         for fname in sorted(filenames):
             if fname.startswith("."):
@@ -310,14 +336,19 @@ def build_startup_context(
     #    Generated via AST/regex -- compact ~2K token map so the agent
     #    knows what lives where without exploratory tool calls.
     from core.codebase_map import build_codebase_map
+
     codebase_map = build_codebase_map(workspace)
     if codebase_map:
         parts.append("\n" + codebase_map)
 
     # 3. Recent git log (last 5 commits, if this is a git repo)
     try:
-        r = _sp.run(["git", "-C", workspace, "log", "--oneline", f"-{GIT_LOG_COUNT}"],
-                    capture_output=True, text=True, timeout=GIT_LOG_TIMEOUT)
+        r = _sp.run(
+            ["git", "-C", workspace, "log", "--oneline", f"-{GIT_LOG_COUNT}"],
+            capture_output=True,
+            text=True,
+            timeout=GIT_LOG_TIMEOUT,
+        )
         if r.returncode == 0 and r.stdout.strip():
             parts.append("\n## Recent git log\n```\n" + r.stdout.rstrip() + "\n```")
     except (OSError, _sp.TimeoutExpired):
@@ -326,7 +357,9 @@ def build_startup_context(
     # 4. Project knowledge (cross-session learnings, grouped by category)
     if knowledge:
         lines = []
-        session_entries = [e for e in knowledge if e.get("category") == "session_summary"]
+        session_entries = [
+            e for e in knowledge if e.get("category") == "session_summary"
+        ]
         other_entries = [e for e in knowledge if e.get("category") != "session_summary"]
         if session_entries:
             lines.append("## Past Session Summaries")

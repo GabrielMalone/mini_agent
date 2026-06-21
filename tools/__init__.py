@@ -35,7 +35,12 @@ from dataclasses import dataclass
 
 from core.safety import ReadSafetyGate, WriteSafetyGate
 from tools.schema import TOOLS
-from logging_setup import get_logger, log_tool_failure, log_tool_success, log_error_trace
+from logging_setup import (
+    get_logger,
+    log_tool_failure,
+    log_tool_success,
+    log_error_trace,
+)
 
 _log = get_logger("tools")
 
@@ -43,22 +48,34 @@ _log = get_logger("tools")
 # Bootstrap guard: if the canonical "remember" schema is missing from schema.py
 # (e.g. corrupted install), insert a minimal fallback so the tool still works.
 if not any(td["function"]["name"] == "remember" for td in TOOLS):
-    TOOLS.insert(0, {
-        "type": "function",
-        "function": {
-            "name": "remember",
-            "description": "Manually capture a learning or observation to project_knowledge for cross-session persistence.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "topic": {"type": "string", "description": "Short topic label for this learning."},
-                    "detail": {"type": "string", "description": "The learning itself."},
-                    "category": {"type": "string", "description": "Optional: category hint. Auto-detected if omitted."},
+    TOOLS.insert(
+        0,
+        {
+            "type": "function",
+            "function": {
+                "name": "remember",
+                "description": "Manually capture a learning or observation to project_knowledge for cross-session persistence.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "topic": {
+                            "type": "string",
+                            "description": "Short topic label for this learning.",
+                        },
+                        "detail": {
+                            "type": "string",
+                            "description": "The learning itself.",
+                        },
+                        "category": {
+                            "type": "string",
+                            "description": "Optional: category hint. Auto-detected if omitted.",
+                        },
+                    },
+                    "required": ["topic", "detail"],
                 },
-                "required": ["topic", "detail"]
-            }
-        }
-    })
+            },
+        },
+    )
 
 # ---------------------------------------------------------------------------
 # TOOL_SCHEMA_MAP -- O(1) name->schema lookup for execute_tool() validation
@@ -69,6 +86,7 @@ if not any(td["function"]["name"] == "remember" for td in TOOLS):
 _TOOL_SCHEMA_MAP: dict[str, dict] = {}
 _TOOL_SCHEMA_MAP_LEN: int = 0
 
+
 def _get_tool_schema(name: str) -> dict | None:
     """Look up a tool's parameter schema from TOOLS at runtime.
 
@@ -78,11 +96,11 @@ def _get_tool_schema(name: str) -> dict | None:
     global _TOOL_SCHEMA_MAP, _TOOL_SCHEMA_MAP_LEN
     if len(TOOLS) != _TOOL_SCHEMA_MAP_LEN:
         _TOOL_SCHEMA_MAP = {
-            td["function"]["name"]: td["function"].get("parameters", {})
-            for td in TOOLS
+            td["function"]["name"]: td["function"].get("parameters", {}) for td in TOOLS
         }
         _TOOL_SCHEMA_MAP_LEN = len(TOOLS)
     return _TOOL_SCHEMA_MAP.get(name)
+
 
 # ---------------------------------------------------------------------------
 # Structured tool result (extracted to tools/result.py)
@@ -123,11 +141,14 @@ from tools.context import (  # noqa: E402, F401
 # Value: (timestamp, ToolResult) with 30-second TTL.
 _TOOL_CACHE: dict[str, tuple[float, "ToolResult"]] = {}
 _TOOL_CACHE_MAX_SIZE = 256
-_TOOL_CACHE_TTL: float = 3600.0  # seconds (1 hour) -- safety net; primary invalidation is write-driven
+_TOOL_CACHE_TTL: float = (
+    3600.0  # seconds (1 hour) -- safety net; primary invalidation is write-driven
+)
 _TOOL_CACHE_PATH_MAP: dict[str, set[str]] = {}  # file path -> set of cache keys
 _TOOL_CACHE_HITS: int = 0
 _TOOL_CACHE_MISSES: int = 0
 _TOOL_CACHE_LOCK = threading.Lock()
+
 
 def get_tool_cache_stats() -> dict:
     """Return cache hit/miss/size stats for observability."""
@@ -138,8 +159,11 @@ def get_tool_cache_stats() -> dict:
             "ttl_s": _TOOL_CACHE_TTL,
             "hits": _TOOL_CACHE_HITS,
             "misses": _TOOL_CACHE_MISSES,
-            "hit_rate": (_TOOL_CACHE_HITS / max(_TOOL_CACHE_HITS + _TOOL_CACHE_MISSES, 1)),
+            "hit_rate": (
+                _TOOL_CACHE_HITS / max(_TOOL_CACHE_HITS + _TOOL_CACHE_MISSES, 1)
+            ),
         }
+
 
 # Files modified by write/edit -- used by verify
 _MODIFIED_FILES: set[str] = set()
@@ -154,15 +178,18 @@ _TASK_REGISTRY: dict[str, subprocess.Popen] = {}  # background shell task regist
 _TOOL_USAGE_COUNT: dict[str, int] = {}
 _TOOL_USAGE_LOCK = threading.Lock()
 
+
 def reset_tool_usage() -> None:
     """Reset per-session tool usage counters (called at session init)."""
     with _TOOL_USAGE_LOCK:
         _TOOL_USAGE_COUNT.clear()
 
+
 def get_tool_usage() -> dict[str, int]:
     """Return a snapshot of tool usage counts (thread-safe)."""
     with _TOOL_USAGE_LOCK:
         return dict(_TOOL_USAGE_COUNT)
+
 
 def get_unused_tools(min_turns: int = 5) -> set[str]:
     """Return tool names that have never been called after *min_turns* turns.
@@ -172,39 +199,67 @@ def get_unused_tools(min_turns: int = 5) -> set[str]:
     excluded from pruning.
     """
     from tools.skills import get_active_tool_names
+
     active = frozenset(get_active_tool_names())
     with _TOOL_USAGE_LOCK:
         used = frozenset(_TOOL_USAGE_COUNT)
     # Never prune these — they're essential scaffolding
-    _UNPRUNABLE = frozenset({
-        "read_file", "write_file", "edit_file", "run_shell",
-        "search_files", "list_directory", "file_info", "find_symbol",
-        "remember", "memory_core", "use_skill", "plan", "plan_status",
-        "todo_write", "todo_read", "write_scratchpad",
-    })
+    _UNPRUNABLE = frozenset(
+        {
+            "read_file",
+            "write_file",
+            "edit_file",
+            "run_shell",
+            "search_files",
+            "list_directory",
+            "file_info",
+            "find_symbol",
+            "remember",
+            "memory_core",
+            "use_skill",
+            "plan",
+            "plan_status",
+            "todo_write",
+            "todo_read",
+            "write_scratchpad",
+        }
+    )
     unused = active - used - _UNPRUNABLE
     return unused
+
 
 # ---------------------------------------------------------------------------
 # File reservation system (removed -- was in tools/reservations.py)
 # ---------------------------------------------------------------------------
-_CACHEABLE = frozenset({
-    "read_file", "file_info", "list_directory",
-    "search_files", "find_symbol", "semantic_search", "web_search",
-    "lsp_definition", "lsp_references", "lsp_hover", "lsp_diagnostics",
-})
+_CACHEABLE = frozenset(
+    {
+        "read_file",
+        "file_info",
+        "list_directory",
+        "search_files",
+        "find_symbol",
+        "semantic_search",
+        "web_search",
+        "lsp_definition",
+        "lsp_references",
+        "lsp_hover",
+        "lsp_diagnostics",
+    }
+)
 _TOOL_TIMEOUT = 120  # P3.1: per-tool execution timeout (seconds)
 
 # --- Auto-observation capture (claude-mem inspired) ---
 # Tools in this set automatically generate structured observations on success.
 # These are tools that meaningfully modify state or produce notable output.
-_AUTO_OBSERVE_TOOLS = frozenset({
-    "write_file",
-    "edit_file",
-    "run_shell",       # may run git, tests, lint, etc.
-    "web_search",      # discoveries from web research
-    "remember",        # explicit knowledge capture
-})
+_AUTO_OBSERVE_TOOLS = frozenset(
+    {
+        "write_file",
+        "edit_file",
+        "run_shell",  # may run git, tests, lint, etc.
+        "web_search",  # discoveries from web research
+        "remember",  # explicit knowledge capture
+    }
+)
 
 # Map tool name -> default observation type for auto-capture
 _AUTO_OBSERVE_TYPE: dict[str, str] = {
@@ -248,6 +303,7 @@ def _auto_capture_observation(
     session_id = getattr(_TOOL_CONTEXT, "scratchpad_path", None)
     if session_id:
         import os
+
         session_id = os.path.basename(session_id).replace(".db", "")
 
     memory_store.record_observation(
@@ -263,7 +319,9 @@ def _auto_capture_observation(
 
 
 def _build_observation_title(
-    tool_name: str, args: dict, result: ToolResult,
+    tool_name: str,
+    args: dict,
+    result: ToolResult,
 ) -> str:
     """Build a compact title from the tool call."""
     if tool_name == "write_file":
@@ -286,7 +344,9 @@ def _build_observation_title(
 
 
 def _build_observation_narrative(
-    tool_name: str, args: dict, result: ToolResult,
+    tool_name: str,
+    args: dict,
+    result: ToolResult,
 ) -> str | None:
     """Build a narrative description from the result."""
     # Use first line of result content as narrative
@@ -297,7 +357,8 @@ def _build_observation_narrative(
 
 
 def _extract_observation_files(
-    tool_name: str, args: dict,
+    tool_name: str,
+    args: dict,
 ) -> tuple[list[str], list[str]]:
     """Extract file paths read and modified from the tool call."""
     files_read: list[str] = []
@@ -319,7 +380,8 @@ def _extract_observation_files(
 
 
 def _extract_observation_concepts(
-    tool_name: str, args: dict,
+    tool_name: str,
+    args: dict,
 ) -> list[str]:
     """Extract relevant concepts/tags from the tool call."""
     concepts: list[str] = []
@@ -349,8 +411,11 @@ def add_modified_file(path: str) -> None:
     # Incrementally update the codebase map so agent context stays current
     try:
         root = _TOOL_CONTEXT.workspace if _TOOL_CONTEXT else None
-        if root and path.endswith((".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs")):
+        if root and path.endswith(
+            (".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs")
+        ):
             from core.codebase_map import update_file_in_map
+
             update_file_in_map(path, root)
     except Exception:
         pass  # best-effort; never block the write on map update failure
@@ -364,22 +429,28 @@ def get_modified_files() -> list[str]:
 
 def _register(name: str):
     """Decorator: register an implementation function in the dispatch table."""
+
     def decorator(fn):
         _TOOL_DISPATCH[name] = fn
         return fn
+
     return decorator
 
 
 def _summarize(name: str):
     """Decorator: register a summary function for verbose logging."""
+
     def decorator(fn):
         _TOOL_SUMMARIES[name] = fn
         return fn
+
     return decorator
 
 
 # ---------------------------------------------------------------------------
-def _write_session_handoff(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
+def _write_session_handoff(
+    args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate
+) -> ToolResult:
     """Auto-generate and write HANDOFF.md for session continuity."""
     workspace = _TOOL_CONTEXT.workspace
     if not workspace:
@@ -392,18 +463,23 @@ def _write_session_handoff(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate)
     if store is None:
         # Fallback: use static method directly
         from memory.memory import MemoryStore
+
         try:
             path = MemoryStore.write_session_handoff(
-                workspace, start_head=start_head,
-                pending=pending, notes=notes,
+                workspace,
+                start_head=start_head,
+                pending=pending,
+                notes=notes,
             )
             return ToolResult(True, f"HANDOFF.md written to {path}")
         except OSError as e:
             return ToolResult(False, "", str(e))
     try:
         path = store.write_session_handoff(
-            workspace, start_head=start_head,
-            pending=pending, notes=notes,
+            workspace,
+            start_head=start_head,
+            pending=pending,
+            notes=notes,
         )
         return ToolResult(True, f"HANDOFF.md written to {path}")
     except OSError as e:
@@ -411,9 +487,8 @@ def _write_session_handoff(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate)
 
 
 _TOOL_DISPATCH["write_session_handoff"] = _write_session_handoff
-_TOOL_SUMMARIES["write_session_handoff"] = (
-    lambda args: "write_session_handoff()"
-)
+_TOOL_SUMMARIES["write_session_handoff"] = lambda args: "write_session_handoff()"
+
 
 # -- discord_search: search Discord server message history --
 def _discord_search(args: dict, wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
@@ -423,7 +498,9 @@ def _discord_search(args: dict, wg: WriteSafetyGate, rg: ReadSafetyGate) -> Tool
     token = _TOOL_CONTEXT.discord_token
     guild_id = _TOOL_CONTEXT.discord_guild_id
     if not token or not guild_id:
-        return ToolResult(False, "", "Discord not connected (no guild/token in context).")
+        return ToolResult(
+            False, "", "Discord not connected (no guild/token in context)."
+        )
 
     query = (args.get("query") or "").strip()
     if not query:
@@ -439,9 +516,13 @@ def _discord_search(args: dict, wg: WriteSafetyGate, rg: ReadSafetyGate) -> Tool
 
     try:
         # Get all text channels
-        resp = _requests.get(f"{base}/guilds/{guild_id}/channels", headers=headers, timeout=10)
+        resp = _requests.get(
+            f"{base}/guilds/{guild_id}/channels", headers=headers, timeout=10
+        )
         if resp.status_code != 200:
-            return ToolResult(False, "", f"Discord API error: {resp.status_code} {resp.text[:200]}")
+            return ToolResult(
+                False, "", f"Discord API error: {resp.status_code} {resp.text[:200]}"
+            )
         channels = resp.json()
     except Exception as e:
         return ToolResult(False, "", f"Failed to list channels: {e}")
@@ -454,7 +535,8 @@ def _discord_search(args: dict, wg: WriteSafetyGate, rg: ReadSafetyGate) -> Tool
         try:
             resp = _requests.get(
                 f"{base}/channels/{ch['id']}/messages?limit=100",
-                headers=headers, timeout=10,
+                headers=headers,
+                timeout=10,
             )
             if resp.status_code != 200:
                 continue
@@ -462,13 +544,15 @@ def _discord_search(args: dict, wg: WriteSafetyGate, rg: ReadSafetyGate) -> Tool
             for m in messages:
                 content = m.get("content", "")
                 if query_lower in content.lower():
-                    results.append({
-                        "channel": ch.get("name", f"#{ch['id']}"),
-                        "author": m["author"]["username"],
-                        "timestamp": m.get("timestamp", ""),
-                        "content": content[:400],
-                        "jump_url": f"https://discord.com/channels/{guild_id}/{ch['id']}/{m['id']}",
-                    })
+                    results.append(
+                        {
+                            "channel": ch.get("name", f"#{ch['id']}"),
+                            "author": m["author"]["username"],
+                            "timestamp": m.get("timestamp", ""),
+                            "content": content[:400],
+                            "jump_url": f"https://discord.com/channels/{guild_id}/{ch['id']}/{m['id']}",
+                        }
+                    )
                     if len(results) >= limit:
                         break
         except Exception:
@@ -477,7 +561,7 @@ def _discord_search(args: dict, wg: WriteSafetyGate, rg: ReadSafetyGate) -> Tool
     if not results:
         return ToolResult(True, f"No Discord messages found matching **{query}**.")
 
-    out_lines = [f"**{len(results)} Discord match(es) for \"{query}\":**\n"]
+    out_lines = [f'**{len(results)} Discord match(es) for "{query}":**\n']
     for r in results:
         ts = r["timestamp"][:16].replace("T", " ") if r["timestamp"] else "?"
         out_lines.append(
@@ -488,11 +572,21 @@ def _discord_search(args: dict, wg: WriteSafetyGate, rg: ReadSafetyGate) -> Tool
 
     return ToolResult(True, "\n".join(out_lines))
 
+
 _TOOL_DISPATCH["discord_search"] = _discord_search
-_TOOL_SUMMARIES["discord_search"] = lambda args: f"discord_search({args.get('query', '?')})"
+_TOOL_SUMMARIES["discord_search"] = lambda args: (
+    f"discord_search({args.get('query', '?')})"
+)
 
 # -- use_skill gate: lazy tool loading --
-from tools.skills import USE_SKILL_SCHEMA, SKILL_LIST_SCHEMA, SKILL_VIEW_SCHEMA, _use_skill, _skill_list, _skill_view  # noqa: E402
+from tools.skills import (
+    USE_SKILL_SCHEMA,
+    SKILL_LIST_SCHEMA,
+    SKILL_VIEW_SCHEMA,
+    _use_skill,
+    _skill_list,
+    _skill_view,
+)  # noqa: E402
 
 _TOOL_DISPATCH["use_skill"] = _use_skill
 _TOOL_SUMMARIES["use_skill"] = lambda args: f"use_skill({args.get('name', '?')})"
@@ -545,7 +639,7 @@ def _repair_json(raw: str) -> tuple[object, bool]:
                 # Find end of string (handle backslash escapes)
                 j = i + 1
                 while j < len(text):
-                    if text[j] == '\\' and j + 1 < len(text):
+                    if text[j] == "\\" and j + 1 < len(text):
                         j += 2
                         continue
                     if text[j] == '"':
@@ -565,18 +659,18 @@ def _repair_json(raw: str) -> tuple[object, bool]:
         # Use [A-Za-z_]\w* instead of \w+ to avoid matching numeric keys
         # like '1:' which would produce '"1":}' instead of leaving '1:' alone.
         for idx in range(0, len(result), 2):
-            result[idx] = re.sub(r'([A-Za-z_]\w*)(\s*:)', r'"\1"\2', result[idx])
-        return ''.join(result)
+            result[idx] = re.sub(r"([A-Za-z_]\w*)(\s*:)", r'"\1"\2', result[idx])
+        return "".join(result)
 
     # Individual fixes
-    fix1 = re.sub(r',\s*([}\]])', r'\1', raw)
+    fix1 = re.sub(r",\s*([}\]])", r"\1", raw)
 
     fix2 = raw
     if "'" in raw:
         fix2 = raw.replace("'", '"')
 
     fix3 = raw
-    if not raw.strip().startswith('['):
+    if not raw.strip().startswith("["):
         fix3 = _fix_unquoted_keys(raw)
 
     # Combinations -- apply fixes in sequence on copies
@@ -584,11 +678,11 @@ def _repair_json(raw: str) -> tuple[object, bool]:
         s = base
         for i in indices:
             if i == 1:
-                s = re.sub(r',\s*([}\]])', r'\1', s)
+                s = re.sub(r",\s*([}\]])", r"\1", s)
             elif i == 2:
                 s = s.replace("'", '"')
             elif i == 3:
-                if not s.strip().startswith('['):
+                if not s.strip().startswith("["):
                     s = _fix_unquoted_keys(s)
         return s
 
@@ -633,8 +727,9 @@ from tools.error_hints import (  # noqa: E402, F401
 # Uses ContextVar so parallel tool execution in ThreadPoolExecutor
 # doesn't race on the global -- each thread gets its own event.
 _CURRENT_CANCEL_EVENT: contextvars.ContextVar[threading.Event | None] = (
-    contextvars.ContextVar('_CURRENT_CANCEL_EVENT', default=None)
+    contextvars.ContextVar("_CURRENT_CANCEL_EVENT", default=None)
 )
+
 
 def execute_tool(
     tool_call: dict,
@@ -660,6 +755,7 @@ def execute_tool(
     name = fn["name"]
     raw_args = fn["arguments"]
     import sys as _sys
+
     try:
         args, _repaired = _repair_json(raw_args)
     except json.JSONDecodeError as exc:
@@ -710,12 +806,13 @@ def execute_tool(
                 hint_parts = []
                 if unknown:
                     hint_parts.append(
-                        f"Unknown parameter(s): {', '.join(sorted(unknown))}")
+                        f"Unknown parameter(s): {', '.join(sorted(unknown))}"
+                    )
                 if missing:
-                    hint_parts.append(
-                        f"Missing required: {', '.join(sorted(missing))}")
+                    hint_parts.append(f"Missing required: {', '.join(sorted(missing))}")
                 hint_parts.append(
-                    f"Valid parameters: {', '.join(sorted(valid_params))}")
+                    f"Valid parameters: {', '.join(sorted(valid_params))}"
+                )
                 return ToolResult(
                     success=False,
                     content=f"Invalid arguments: {'; '.join(hint_parts[:2])}",
@@ -732,7 +829,11 @@ def execute_tool(
         )
 
     # Approval gate for write/destructive tools
-    if approve_callback is not None and name in ("write_file", "edit_file", "run_shell"):
+    if approve_callback is not None and name in (
+        "write_file",
+        "edit_file",
+        "run_shell",
+    ):
         if not approve_callback(name, args):
             return ToolResult(
                 success=False,
@@ -742,6 +843,7 @@ def execute_tool(
 
     # --- Idempotency check: return cached result for repeated write ops ---
     from tools.idempotency import check_idempotent
+
     cached_idem = check_idempotent(name, args)
     if cached_idem is not None:
         return cached_idem
@@ -753,7 +855,10 @@ def execute_tool(
             accepts_on_output = _DISPATCH_SIGNATURES.get(name)
             if accepts_on_output is None:
                 import inspect
-                accepts_on_output = "on_output" in inspect.signature(dispatch).parameters
+
+                accepts_on_output = (
+                    "on_output" in inspect.signature(dispatch).parameters
+                )
                 _DISPATCH_SIGNATURES[name] = accepts_on_output
 
     # P3.1: Per-tool execution timeout via background thread
@@ -765,7 +870,9 @@ def execute_tool(
         _t0 = _time.monotonic()
         try:
             if accepts_on_output:
-                _result_container.append(dispatch(args, write_gate, read_gate, on_output=on_output))
+                _result_container.append(
+                    dispatch(args, write_gate, read_gate, on_output=on_output)
+                )
             else:
                 _result_container.append(dispatch(args, write_gate, read_gate))
         except Exception as exc:
@@ -773,10 +880,12 @@ def execute_tool(
         _elapsed = _time.monotonic() - _t0
         # (dispatch timing collected but no longer logged to console)
 
-    import sys as _sys
     import time as _time
-    _turn = getattr(_TOOL_CONTEXT, '_turn_count', 0)
-    _sys.stderr.write(f"[turn {_turn}] dispatching '{name}' (timeout={_TOOL_TIMEOUT}s)\n")
+
+    _turn = getattr(_TOOL_CONTEXT, "_turn_count", 0)
+    _sys.stderr.write(
+        f"[turn {_turn}] dispatching '{name}' (timeout={_TOOL_TIMEOUT}s)\n"
+    )
     _sys.stderr.flush()
     _t_dispatch_start = _time.monotonic()
     _t_start = _time.monotonic()
@@ -787,6 +896,7 @@ def execute_tool(
     if name in ("write_file", "edit_file", "edit_lines", "replace_symbol"):
         try:
             from core.checkpoint import checkpoint_before_risky
+
             checkpoint_before_risky(write_gate.workspace_root, f"pre-{name}")
         except Exception:
             pass  # Non-critical: checkpoint is best-effort
@@ -805,7 +915,9 @@ def execute_tool(
             _last_hb = _t_dispatch_start
             while t.is_alive() and _time.monotonic() < _deadline:
                 if cancel_event.is_set():
-                    _sys.stderr.write(f"[turn {_turn}] cancelled '{name}' thread (elapsed={_time.monotonic() - _t_dispatch_start:.2f}s)\n")
+                    _sys.stderr.write(
+                        f"[turn {_turn}] cancelled '{name}' thread (elapsed={_time.monotonic() - _t_dispatch_start:.2f}s)\n"
+                    )
                     _sys.stderr.flush()
                     # Kill any active process trees immediately to unblock
                     # tool threads waiting on subprocess I/O (e.g. _run_shell
@@ -813,6 +925,7 @@ def execute_tool(
                     # / cmd.exe from accumulating.
                     try:
                         from tools.shell_ops import _cleanup_all_procs
+
                         _cleanup_all_procs()
                     except Exception:
                         pass
@@ -824,7 +937,9 @@ def execute_tool(
                 # Heartbeat: log every 5s so we can tell if thread is stuck
                 _now = _time.monotonic()
                 if _now - _last_hb >= 5.0:
-                    _sys.stderr.write(f"[turn {_turn}] '{name}' still running ({_now - _t_dispatch_start:.1f}s elapsed)...\n")
+                    _sys.stderr.write(
+                        f"[turn {_turn}] '{name}' still running ({_now - _t_dispatch_start:.1f}s elapsed)...\n"
+                    )
                     _sys.stderr.flush()
                     _last_hb = _now
         else:
@@ -841,6 +956,7 @@ def execute_tool(
         # process multiplication (e.g. thousands of bash.exe).
         try:
             from tools.shell_ops import _cleanup_all_procs
+
             _cleanup_all_procs()
         except Exception:
             pass
@@ -860,14 +976,17 @@ def execute_tool(
     # so the LLM can choose the right recovery strategy without guessing.
     if not result.success:
         from tools.error_hints import _classify_result
+
         _classify_result(result, name)
 
     # --- console: success / failure status ---
-    _turn = getattr(_TOOL_CONTEXT, '_turn_count', 0)
+    _turn = getattr(_TOOL_CONTEXT, "_turn_count", 0)
     if result.success:
         _sys.stderr.write(f"[turn {_turn}] '{name}' OK\n")
     else:
-        _sys.stderr.write(f"[turn {_turn}] '{name}' ERR [{result.error_class.value if result.error_class else '?'}] -- {result.content[:120]}\n")
+        _sys.stderr.write(
+            f"[turn {_turn}] '{name}' ERR [{result.error_class.value if result.error_class else '?'}] -- {result.content[:120]}\n"
+        )
     _sys.stderr.flush()
 
     # Normalize: every failed result gets a _build_error_hint so the LLM
@@ -890,6 +1009,7 @@ def execute_tool(
         log_tool_success(name)
         # --- Store idempotent result for write tools (2026 best practice) ---
         from tools.idempotency import store_idempotent, _IDEMPOTENT_TOOLS as _IDEM_TOOLS
+
         if name in _IDEM_TOOLS:
             store_idempotent(name, args, result)
         # Only record success when this tool has known failure patterns;
@@ -901,7 +1021,9 @@ def execute_tool(
                 try:
                     pattern_store.record_success(name, args)
                 except Exception:
-                    _log.warning("FailurePatternStore.record_success failed", exc_info=True)
+                    _log.warning(
+                        "FailurePatternStore.record_success failed", exc_info=True
+                    )
             # Clear in-memory counters on success -- the agent recovered
             _TOOL_CONTEXT.__dict__.pop("_failure_patterns", None)
 
@@ -927,17 +1049,28 @@ def execute_tool(
             file_path = args.get("path", "")
             if file_path:
                 from tools.lsp import _lsp_diagnostics
-                diag_result = _lsp_diagnostics({"file_path": file_path}, write_gate, read_gate)
+
+                diag_result = _lsp_diagnostics(
+                    {"file_path": file_path}, write_gate, read_gate
+                )
                 if diag_result.success and diag_result.content:
-                    result.content += "\n\n[auto-verify] LSP diagnostics:\n" + diag_result.content[:500]
+                    result.content += (
+                        "\n\n[auto-verify] LSP diagnostics:\n"
+                        + diag_result.content[:500]
+                    )
         except Exception:
-            _log.warning("auto-verify LSP diagnostics failed for %s", file_path, exc_info=True)
+            _log.warning(
+                "auto-verify LSP diagnostics failed for %s", file_path, exc_info=True
+            )
 
     # Cache successful read-only results (only when not streaming).
     # Session-level LRU with TTL: evict oldest entry when over _TOOL_CACHE_MAX_SIZE.
     if cache_key and result.success:
         with _TOOL_CACHE_LOCK:
-            if cache_key not in _TOOL_CACHE and len(_TOOL_CACHE) >= _TOOL_CACHE_MAX_SIZE:
+            if (
+                cache_key not in _TOOL_CACHE
+                and len(_TOOL_CACHE) >= _TOOL_CACHE_MAX_SIZE
+            ):
                 # Evict oldest entry (Python 3.7+ dicts are insertion-ordered)
                 _TOOL_CACHE.pop(next(iter(_TOOL_CACHE)), None)
             _TOOL_CACHE[cache_key] = (time.monotonic(), result)
@@ -991,17 +1124,17 @@ def tool_summary(tc: dict) -> str:
 # won't appear in TOOLS until the skill is activated via use_skill.
 # ---------------------------------------------------------------------------
 
-from tools import file_ops        # noqa: E402, F401  -- read_file, write_file, edit_file, etc.
-from tools import ast_tools       # noqa: E402, F401  -- get_file_skeleton, get_function, replace_symbol
-from tools import shell_ops       # noqa: E402, F401  -- run_shell, search_files, run_tests, etc.
-from tools import search_ops      # noqa: E402, F401  -- find_symbol, web_search, semantic_search
-from tools import browser_ops     # noqa: E402, F401  -- browser automation (web skill)
-from tools import desktop_ops     # noqa: E402, F401  -- desktop automation (desktop skill)
-from tools import macos_ops       # noqa: E402, F401  -- macOS-specific APIs (desktop skill)
-from tools import agent_ops       # noqa: E402, F401  -- restore_file, session_stats, recall_turn, remember, read_image
-from tools import memory_core     # noqa: E402, F401  -- memory_core, session_search (core)
-from tools import agent_todos     # noqa: E402, F401  -- todo_write, todo_read (planning skill)
-from tools import lsp             # noqa: E402, F401  -- LSP tools (lsp skill)
+from tools import file_ops  # noqa: E402, F401  -- read_file, write_file, edit_file, etc.
+from tools import ast_tools  # noqa: E402, F401  -- get_file_skeleton, get_function, replace_symbol
+from tools import shell_ops  # noqa: E402, F401  -- run_shell, search_files, run_tests, etc.
+from tools import search_ops  # noqa: E402, F401  -- find_symbol, web_search, semantic_search
+from tools import browser_ops  # noqa: E402, F401  -- browser automation (web skill)
+from tools import desktop_ops  # noqa: E402, F401  -- desktop automation (desktop skill)
+from tools import macos_ops  # noqa: E402, F401  -- macOS-specific APIs (desktop skill)
+from tools import agent_ops  # noqa: E402, F401  -- restore_file, session_stats, recall_turn, remember, read_image
+from tools import memory_core  # noqa: E402, F401  -- memory_core, session_search (core)
+from tools import agent_todos  # noqa: E402, F401  -- todo_write, todo_read (planning skill)
+from tools import lsp  # noqa: E402, F401  -- LSP tools (lsp skill)
 from tools.search_ops import build_symbol_index  # noqa: E402, F401
 from tools.mcp_client import get_mcp_manager, init_mcp_servers, shutdown_mcp  # noqa: E402, F401
 
@@ -1073,6 +1206,7 @@ def _cleanup_resources() -> None:
     # Close browser (Playwright)
     try:
         from tools.browser_ops import _close_browser as _close_browser_fn
+
         _close_browser_fn()
     except Exception:
         pass
@@ -1080,6 +1214,7 @@ def _cleanup_resources() -> None:
     # Shutdown LSP connections
     try:
         from tools.lsp import shutdown_lsp as _shutdown_lsp_fn
+
         _shutdown_lsp_fn()
     except Exception:
         pass

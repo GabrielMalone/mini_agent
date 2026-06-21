@@ -21,6 +21,7 @@ class TestKnowledgeGraphDataStructures(unittest.TestCase):
 
     def test_edge_creation(self):
         from core.knowledge_graph import Edge
+
         e = Edge(source="foo", target="bar", kind="calls", filepath="a.py", line=10)
         self.assertEqual(e.source, "foo")
         self.assertEqual(e.target, "bar")
@@ -30,12 +31,14 @@ class TestKnowledgeGraphDataStructures(unittest.TestCase):
 
     def test_edge_defaults(self):
         from core.knowledge_graph import Edge
+
         e = Edge(source="a", target="b", kind="imports")
         self.assertIsNone(e.filepath)
         self.assertIsNone(e.line)
 
     def test_entity_creation(self):
         from core.knowledge_graph import Entity
+
         ent = Entity(name="my_func", kind="def", filepath="mod.py", line=42)
         self.assertEqual(ent.name, "my_func")
         self.assertEqual(ent.kind, "def")
@@ -46,6 +49,7 @@ class TestKnowledgeGraphDataStructures(unittest.TestCase):
 
     def test_entity_edges_are_independent(self):
         from core.knowledge_graph import Entity, Edge
+
         ent = Entity(name="X", kind="class")
         e1 = Edge("X", "Y", "calls")
         e2 = Edge("Z", "X", "inherits")
@@ -65,6 +69,7 @@ class TestKnowledgeGraphBuild(unittest.TestCase):
 
     def setUp(self):
         import core.knowledge_graph as kg
+
         self._kg = kg
         self._orig_graph = dict(kg._GRAPH)
         self._orig_built = kg._GRAPH_BUILT
@@ -108,8 +113,14 @@ class TestKnowledgeGraphBuild(unittest.TestCase):
     def test_build_finds_function_definitions(self):
         kg = self._kg
         kg.build_knowledge_graph(self.root)
-        found = {name for name in kg._GRAPH if "helper" in name or "process" in name or "Worker" in name}
-        self.assertTrue(len(found) > 0, f"Should find helper/process/Worker, got: {found}")
+        found = {
+            name
+            for name in kg._GRAPH
+            if "helper" in name or "process" in name or "Worker" in name
+        }
+        self.assertTrue(
+            len(found) > 0, f"Should find helper/process/Worker, got: {found}"
+        )
 
     def test_build_adds_module_entities(self):
         kg = self._kg
@@ -167,8 +178,11 @@ class TestKnowledgeGraphBuild(unittest.TestCase):
             for e in ent.edges_out:
                 if e.target in builtins:
                     edges_to_builtins.append(e)
-        self.assertEqual(len(edges_to_builtins), 0,
-                         f"Builtins should not create call edges: {edges_to_builtins}")
+        self.assertEqual(
+            len(edges_to_builtins),
+            0,
+            f"Builtins should not create call edges: {edges_to_builtins}",
+        )
 
     def test_python_graph_extracts_class_methods(self):
         kg = self._kg
@@ -192,6 +206,7 @@ class TestCodebaseMapDataStructures(unittest.TestCase):
 
     def test_file_symbols_creation(self):
         from core.codebase_map import FileSymbols
+
         fs = FileSymbols(
             path="src/main.py",
             classes=["MyClass"],
@@ -212,6 +227,7 @@ class TestCodebaseMapDataStructures(unittest.TestCase):
 
     def test_file_symbols_defaults(self):
         from core.codebase_map import FileSymbols
+
         fs = FileSymbols(path="x.py")
         self.assertEqual(fs.classes, [])
         self.assertEqual(fs.functions, [])
@@ -221,6 +237,7 @@ class TestCodebaseMapDataStructures(unittest.TestCase):
 
     def test_module_group_creation(self):
         from core.codebase_map import ModuleGroup, FileSymbols
+
         fs = FileSymbols(path="a/b.py", functions=["f1"])
         mg = ModuleGroup(prefix="a", files=[fs])
         self.assertEqual(mg.prefix, "a")
@@ -256,6 +273,7 @@ class TestCodebaseMapExtraction(unittest.TestCase):
 
     def test_extract_python_symbols_finds_functions(self):
         from core.codebase_map import _extract_python_symbols
+
         filepath = os.path.join(self.root, "mypkg", "core.py")
         fs = _extract_python_symbols(filepath, "mypkg/core.py", {"mypkg"})
         self.assertIsNotNone(fs)
@@ -264,31 +282,38 @@ class TestCodebaseMapExtraction(unittest.TestCase):
 
     def test_extract_python_symbols_finds_imports(self):
         from core.codebase_map import _extract_python_symbols
+
         filepath = os.path.join(self.root, "mypkg", "core.py")
         fs = _extract_python_symbols(filepath, "mypkg/core.py", {"mypkg"})
         self.assertIsNotNone(fs)
-        self.assertTrue(any("os" in imp or "json" in imp for imp in fs.imports_external))
+        self.assertTrue(
+            any("os" in imp or "json" in imp for imp in fs.imports_external)
+        )
         self.assertTrue(any("mypkg" in imp for imp in fs.imports_internal))
 
     def test_extract_python_symbols_returns_none_for_missing(self):
         from core.codebase_map import _extract_python_symbols
+
         fs = _extract_python_symbols("/nonexistent/path.py", "path.py", set())
         self.assertIsNone(fs)
 
     def test_build_codebase_map(self):
         from core.codebase_map import build_codebase_map
+
         result = build_codebase_map(self.root)
         self.assertIsNotNone(result)
         self.assertTrue(len(result) > 0)
 
     def test_build_codebase_map_handles_empty(self):
         from core.codebase_map import build_codebase_map
+
         empty = tempfile.mkdtemp()
         result = build_codebase_map(empty)
         self.assertIsNotNone(result)
 
     def test_is_internal_import(self):
         from core.codebase_map import _is_internal_import
+
         self.assertTrue(_is_internal_import("mypkg.core", {"mypkg"}))
         self.assertTrue(_is_internal_import("mypkg", {"mypkg"}))
         self.assertFalse(_is_internal_import("os", {"mypkg"}))
@@ -297,12 +322,15 @@ class TestCodebaseMapExtraction(unittest.TestCase):
 
     def test_map_cache_populated_after_build(self):
         import core.codebase_map as cm
+
         with cm._MAP_CACHE_LOCK:
             cm._MAP_CACHE.clear()
         cm.build_codebase_map(self.root)
         with cm._MAP_CACHE_LOCK:
-            self.assertTrue(len(cm._MAP_CACHE) > 0,
-                            f"Cache should be populated after build, got {len(cm._MAP_CACHE)} entries")
+            self.assertTrue(
+                len(cm._MAP_CACHE) > 0,
+                f"Cache should be populated after build, got {len(cm._MAP_CACHE)} entries",
+            )
 
 
 if __name__ == "__main__":

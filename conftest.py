@@ -17,10 +17,12 @@ import pytest
 def pytest_configure(config):
     """Register custom markers."""
     config.addinivalue_line(
-        "markers", "integration: marks tests as integration tests (may require external services)"
+        "markers",
+        "integration: marks tests as integration tests (may require external services)",
     )
     config.addinivalue_line(
-        "markers", "benchmark: marks tests as benchmarks (excluded by default, use --run-benchmarks)"
+        "markers",
+        "benchmark: marks tests as benchmarks (excluded by default, use --run-benchmarks)",
     )
     config.addinivalue_line(
         "markers", "slow: marks tests as slow-running (>10s per test)"
@@ -173,6 +175,7 @@ def make_mock_config(**overrides) -> object:
 def _mock_log_api_error():
     """Prevent tests from writing MagicMock strings into the real api_error.log."""
     from unittest.mock import patch
+
     with patch("api.log_api_error") as mock:
         yield mock
 

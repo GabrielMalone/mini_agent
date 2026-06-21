@@ -16,19 +16,25 @@ from tools import execute_tool
 
 
 class TestGitTool(unittest.TestCase):
-
     def setUp(self):
         self.workspace = tempfile.mkdtemp()
         self.write_gate, self.read_gate = _gates(self.workspace)
         subprocess.run(["git", "init"], cwd=self.workspace, capture_output=True)
-        subprocess.run(["git", "config", "user.email", "test@test"],
-                       cwd=self.workspace, capture_output=True)
-        subprocess.run(["git", "config", "user.name", "Test"],
-                       cwd=self.workspace, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@test"],
+            cwd=self.workspace,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test"],
+            cwd=self.workspace,
+            capture_output=True,
+        )
         self._write("readme.md", "# test")
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.workspace, ignore_errors=True)
 
     def _write(self, relpath: str, content: str) -> str:
@@ -120,7 +126,9 @@ class TestGitTool(unittest.TestCase):
         self.assertTrue(result.success)
         check = subprocess.run(
             ["git", "diff", "--cached", "--name-only"],
-            cwd=self.workspace, capture_output=True, text=True,
+            cwd=self.workspace,
+            capture_output=True,
+            text=True,
         )
         self.assertIn("staged.txt", check.stdout)
 
@@ -171,10 +179,10 @@ class TestGitTool(unittest.TestCase):
     def test_restore_restores_everything(self):
         """Without args, restore reverts all modified files to last commit."""
         self._git("add", "readme.md")
-        self._git("commit", "-m", "init")    # readme.md = "# test"
+        self._git("commit", "-m", "init")  # readme.md = "# test"
         self._write("readme.md", "# v2")
         self._git("add", "readme.md")
-        self._git("commit", "-m", "v2")       # readme.md = "# v2"
+        self._git("commit", "-m", "v2")  # readme.md = "# v2"
         self._write("other.txt", "other")
         self._git("add", "other.txt")
         self._git("commit", "-m", "add other")

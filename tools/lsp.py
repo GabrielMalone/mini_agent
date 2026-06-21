@@ -27,8 +27,10 @@ from tools._json_rpc_shared import drain_stderr
 # Error types
 # ---------------------------------------------------------------------------
 
+
 class LspRpcError(Exception):
     """A JSON-RPC error returned by the LSP server."""
+
     def __init__(self, error: dict):
         self.code = error.get("code", -1)
         self.message = error.get("message", "unknown")
@@ -77,6 +79,7 @@ def _uri_from_path(file_path: str) -> str:
 # LspConnection -- one per language server
 # ---------------------------------------------------------------------------
 
+
 class LspConnection:
     """Manages one LSP server over stdio subprocess transport.
 
@@ -92,8 +95,12 @@ class LspConnection:
     ``select.select`` is used directly for efficiency.
     """
 
-    def __init__(self, language_id: str, server_command: str,
-                 server_args: list[str] | None = None):
+    def __init__(
+        self,
+        language_id: str,
+        server_command: str,
+        server_args: list[str] | None = None,
+    ):
         self.language_id = language_id
         self.server_command = server_command
         self.server_args = server_args or []
@@ -140,16 +147,29 @@ class LspConnection:
         with self._lock:
             try:
                 if proc.stdin:
-                    shutdown = json.dumps({
-                        "jsonrpc": "2.0", "id": self._request_id + 1,
-                        "method": "shutdown", "params": {},
-                    }) + "\n"
+                    shutdown = (
+                        json.dumps(
+                            {
+                                "jsonrpc": "2.0",
+                                "id": self._request_id + 1,
+                                "method": "shutdown",
+                                "params": {},
+                            }
+                        )
+                        + "\n"
+                    )
                     proc.stdin.write(shutdown.encode("utf-8"))
                     proc.stdin.flush()
-                    exit_notif = json.dumps({
-                        "jsonrpc": "2.0",
-                        "method": "exit", "params": {},
-                    }) + "\n"
+                    exit_notif = (
+                        json.dumps(
+                            {
+                                "jsonrpc": "2.0",
+                                "method": "exit",
+                                "params": {},
+                            }
+                        )
+                        + "\n"
+                    )
                     proc.stdin.write(exit_notif.encode("utf-8"))
                     proc.stdin.flush()
             except (BrokenPipeError, OSError):
@@ -202,6 +222,7 @@ class LspConnection:
         else:
             # Unix -- select + readline
             import select
+
             ready, _, _ = select.select([self.process.stdout], [], [], timeout)
             if not ready:
                 self._connected = False
@@ -219,7 +240,7 @@ class LspConnection:
     def _stdout_reader_thread(self) -> None:
         """Background thread: read stdout lines into _stdout_queue (Windows)."""
         try:
-            for raw_line in iter(self.process.stdout.readline, b''):
+            for raw_line in iter(self.process.stdout.readline, b""):
                 self._stdout_queue.put(raw_line)
         except (OSError, ValueError, AttributeError):
             pass
@@ -230,7 +251,7 @@ class LspConnection:
         """Launch the LSP server subprocess."""
         cmd = [self.server_command] + list(self.server_args)
         creationflags = 0
-        if os.name == 'nt':
+        if os.name == "nt":
             # Prevent conhost.exe spam on Windows
             creationflags = subprocess.CREATE_NO_WINDOW
         self.process = subprocess.Popen(
@@ -244,11 +265,12 @@ class LspConnection:
             env={**os.environ, "PYTHONUNBUFFERED": "1"},
         )
         # On Windows, start a background reader thread since select doesn't work on pipes
-        if os.name == 'nt':
+        if os.name == "nt":
             self._stdout_queue = queue.Queue()
             threading.Thread(
-                target=self._stdout_reader_thread, daemon=True,
-                name=f"lsp-stdout-{self.language_id}"
+                target=self._stdout_reader_thread,
+                daemon=True,
+                name=f"lsp-stdout-{self.language_id}",
             ).start()
         drain_stderr(self.process, f"lsp-stderr-{self.language_id}")
 
@@ -485,8 +507,13 @@ class LspConnection:
                 content=f"LSP server disconnected: {exc}",
             )
 
-    def references(self, file_path: str, line: int, character: int,
-                   include_declaration: bool = True) -> ToolResult:
+    def references(
+        self,
+        file_path: str,
+        line: int,
+        character: int,
+        include_declaration: bool = True,
+    ) -> ToolResult:
         """Find all references to the symbol at position."""
         uri = _uri_from_path(file_path)
         self._ensure_document_open(uri)
@@ -550,8 +577,7 @@ class LspConnection:
             if range_info:
                 start = range_info.get("start", {})
                 prefix = (
-                    f"Lines {start.get('line', '?')}:{start.get('character', '?')} "
-                    f"-- "
+                    f"Lines {start.get('line', '?')}:{start.get('character', '?')} -- "
                 )
             return ToolResult(success=True, content=f"{prefix}{text}")
         except LspRpcError as exc:
@@ -613,6 +639,7 @@ class LspConnection:
 # LspClientManager -- orchestrates all LSP connections
 # ---------------------------------------------------------------------------
 
+
 class LspClientManager:
     """Manages LSP server connections per language.
 
@@ -661,9 +688,11 @@ class LspClientManager:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def uri_to_path(uri: str) -> str:
     """Convert a file:// URI to a platform-native path."""
     from urllib.parse import urlparse, unquote
+
     parsed = urlparse(uri)
     return os.path.abspath(unquote(parsed.path))
 
@@ -691,8 +720,9 @@ def _location_to_line(loc: dict) -> str:
     return f"{path}:{line}:{col}"
 
 
-def _definition_to_tool_result(result: dict | list | None,
-                                language_id: str) -> ToolResult:
+def _definition_to_tool_result(
+    result: dict | list | None, language_id: str
+) -> ToolResult:
     """Convert a textDocument/definition result to ToolResult."""
     if result is None:
         return ToolResult(success=True, content="(no definition found)")
@@ -748,6 +778,7 @@ def shutdown_lsp() -> None:
 # ---------------------------------------------------------------------------
 # Tool implementations -- registered via @_register in __init__.py
 # ---------------------------------------------------------------------------
+
 
 @_register("lsp_definition")
 def _lsp_definition(args: dict, _write_gate, _read_gate) -> ToolResult:
@@ -835,6 +866,7 @@ def _lsp_diagnostics(args: dict, _write_gate, _read_gate) -> ToolResult:
 # ---------------------------------------------------------------------------
 # Summaries
 # ---------------------------------------------------------------------------
+
 
 @_summarize("lsp_definition")
 def _lsp_definition_summary(args: dict) -> str:

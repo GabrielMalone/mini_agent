@@ -5,6 +5,7 @@ Extracted from config.py to keep the config module focused on
 configuration loading.  This module ties together config, safety,
 memory, tools, LSP, semantic search, and the requests session.
 """
+
 from __future__ import annotations
 
 import os
@@ -24,7 +25,12 @@ from .config import (
 )
 from .safety import ReadSafetyGate, WriteSafetyGate
 from memory.memory import MemoryStore
-from .prompt import build_system_prompt, build_startup_context, build_session_header, build_memory_snapshot
+from .prompt import (
+    build_system_prompt,
+    build_startup_context,
+    build_session_header,
+    build_memory_snapshot,
+)
 
 
 # MCP tool schemas -- injected into TOOLS lazily when config.mcp_servers is non-empty.
@@ -34,12 +40,8 @@ _MCP_SCHEMAS = [
         "function": {
             "name": "mcp_discover",
             "description": "Discover tools from all configured MCP (Model Context Protocol) servers. Lists every tool available across all connected servers with their descriptions. Use this before mcp_call to see what tools are available.",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
-        }
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
     },
     {
         "type": "function",
@@ -51,21 +53,21 @@ _MCP_SCHEMAS = [
                 "properties": {
                     "server": {
                         "type": "string",
-                        "description": "MCP server name (as configured in .mini_agent.toml)."
+                        "description": "MCP server name (as configured in .mini_agent.toml).",
                     },
                     "tool": {
                         "type": "string",
-                        "description": "Tool name to call on the server."
+                        "description": "Tool name to call on the server.",
                     },
                     "arguments": {
                         "type": "object",
-                        "description": "Optional: arguments to pass to the MCP tool as a JSON object."
-                    }
+                        "description": "Optional: arguments to pass to the MCP tool as a JSON object.",
+                    },
                 },
-                "required": ["server", "tool"]
-            }
-        }
-    }
+                "required": ["server", "tool"],
+            },
+        },
+    },
 ]
 
 
@@ -84,6 +86,7 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
     # cause the first tool call to appear hung while the warning writes to
     # stderr (especially on Windows where I/O is synchronous).
     import os as _os_bootstrap
+
     _os_bootstrap.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
     _os_bootstrap.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
 
@@ -91,21 +94,31 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
     from tools.skills import reset_skills
 
     config = AgentConfig.load(workspace, cli_args=cli_args)
-    write_gate = WriteSafetyGate(workspace, allow_overwrites=config.allow_overwrites,
-                                 unrestricted=config.unrestricted)
+    write_gate = WriteSafetyGate(
+        workspace,
+        allow_overwrites=config.allow_overwrites,
+        unrestricted=config.unrestricted,
+    )
     read_gate = ReadSafetyGate(workspace, unrestricted=config.unrestricted)
     memory_path = os.path.join(workspace or os.getcwd(), config.memory_filename)
-    memory = MemoryStore(memory_path, max_messages=config.max_messages,
-                         max_tokens=config.context_window)
+    memory = MemoryStore(
+        memory_path, max_messages=config.max_messages, max_tokens=config.context_window
+    )
     import uuid as _uuid
+
     session_id = _uuid.uuid4().hex[:12]
-    set_context(exa_api_key=config.exa_api_key, openai_api_key=config.openai_api_key,
-                scratchpad_path=memory._db_path, _memory_store=memory,
-                _session_id=session_id)
+    set_context(
+        exa_api_key=config.exa_api_key,
+        openai_api_key=config.openai_api_key,
+        scratchpad_path=memory._db_path,
+        _memory_store=memory,
+        _session_id=session_id,
+    )
 
     # Restore persisted plan state from previous session
     try:
         from tools import _TOOL_CONTEXT
+
         saved_steps, saved_done = memory.get_plan()
         if saved_steps:
             _TOOL_CONTEXT._plan_steps = saved_steps
@@ -117,6 +130,7 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
     # Initialize self-learning systems (FailurePatternStore + SelfCritique)
     try:
         from tools.failure_learning import FailurePatternStore, SelfCritique
+
         fps = FailurePatternStore(memory._db_path)
         fps.init_schema()
         sc = SelfCritique()
@@ -139,6 +153,7 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
     try:
         from tools.tool_graph import ToolGraph
         from tools.failure_learning import MistakeNotebook
+
         tg = ToolGraph(memory._db_path)
         tg.init_schema()
         mn = MistakeNotebook(memory._db_path)
@@ -149,11 +164,15 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
 
     # Capture git HEAD at session start for auto-handoff diff
     from tools import _TOOL_CONTEXT
+
     try:
         import subprocess as _sp
+
         r = _sp.run(
             ["git", "-C", workspace, "rev-parse", "HEAD"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         if r.returncode == 0:
             _TOOL_CONTEXT._session_start_head = r.stdout.strip()
@@ -163,7 +182,7 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
     # Warmup: run a trivial cmd.exe call to absorb any first-invocation
     # antivirus scan delay (Windows Defender is known to pause first
     # cmd.exe / conhost.exe launches for behavioral analysis).
-    if os.name == 'nt':
+    if os.name == "nt":
         try:
             _sp.run(["cmd.exe", "/c", "rem"], capture_output=True, timeout=10)
         except Exception:
@@ -177,7 +196,10 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
     _warmup_path = os.path.join(workspace, "CHANGELOG.md")
     try:
         if not os.path.isfile(_warmup_path):
-            _warmup_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "CHANGELOG.md")
+            _warmup_path = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                "CHANGELOG.md",
+            )
         if os.path.isfile(_warmup_path):
             with open(_warmup_path, "r", encoding="utf-8", errors="replace") as _wf:
                 _wf.read(4096)  # read a small chunk to warm the FS cache
@@ -195,24 +217,34 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
     # We warm up MULTIPLE files because the first tool call typically
     # reads a different file than CHANGELOG.md, and some filter drivers
     # trigger per-file scanning on first access.
-    if os.name == 'nt':
+    if os.name == "nt":
         import threading as _thr
+
         _thr_warmup_done = _thr.Event()
         # Files the LLM is likely to read on its first turn (based on
         # system prompt rules and startup context).
         _warmup_files = []
-        for _wf_name in ("CHANGELOG.md", "STATE.txt", "README.md",
-                         ".mini_agent.rules", "HANDOFF.md"):
+        for _wf_name in (
+            "CHANGELOG.md",
+            "STATE.txt",
+            "README.md",
+            ".mini_agent.rules",
+            "HANDOFF.md",
+        ):
             _wp = os.path.join(workspace, _wf_name)
             if os.path.isfile(_wp):
                 _warmup_files.append(_wp)
+
         def _warmup_thread_io():
             try:
                 import sys as _sys_warmup
+
                 _sys_warmup.stderr.write("[warmup] thread started\n")
                 _sys_warmup.stderr.flush()
                 for _wp in _warmup_files:
-                    _sys_warmup.stderr.write(f"[warmup] reading {os.path.basename(_wp)}\n")
+                    _sys_warmup.stderr.write(
+                        f"[warmup] reading {os.path.basename(_wp)}\n"
+                    )
                     _sys_warmup.stderr.flush()
                     with open(_wp, "r", encoding="utf-8", errors="replace") as _wtf:
                         _wtf.read(4096)
@@ -224,8 +256,7 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
                 try:
                     _sys_warmup.stderr.write("[warmup] spawning cmd.exe\n")
                     _sys_warmup.stderr.flush()
-                    _sp.run(["cmd.exe", "/c", "rem"],
-                            capture_output=True, timeout=10)
+                    _sp.run(["cmd.exe", "/c", "rem"], capture_output=True, timeout=10)
                 except Exception:
                     pass
                 # Also warm sys.executable (python.exe) -- tool calls like
@@ -235,8 +266,9 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
                 try:
                     _sys_warmup.stderr.write("[warmup] spawning python.exe\n")
                     _sys_warmup.stderr.flush()
-                    _sp.run([sys.executable, "-c", "print"],
-                            capture_output=True, timeout=10)
+                    _sp.run(
+                        [sys.executable, "-c", "print"], capture_output=True, timeout=10
+                    )
                 except Exception:
                     pass
                 # SentenceTransformer warmup is handled on the main thread
@@ -250,6 +282,7 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
                 pass
             finally:
                 _thr_warmup_done.set()
+
         _tw = _thr.Thread(target=_warmup_thread_io, daemon=True)
         _tw.start()
         _thr_warmup_done.wait(timeout=30)
@@ -258,6 +291,7 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
     reset_skills()
     # Reset per-session tool usage tracking for dead-tool pruning
     from tools import reset_tool_usage
+
     reset_tool_usage()
 
     set_context(_agent_config=config)
@@ -272,13 +306,16 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
     # is emitted via X-HF-Warning response headers for public model downloads.
     # It is harmless for our use case (all-MiniLM-L6-v2 is public).
     import os as _os
+
     _os.environ.setdefault("HF_HUB_VERBOSITY", "error")
     import logging as _logging
+
     _logging.getLogger("huggingface_hub").setLevel(_logging.ERROR)
 
     _sem_preload_event = None
     try:
         from tools.search_ops import _sem_preload, _SEM_PRELOAD_EVENT
+
         _sem_preload()
         _sem_preload_event = _SEM_PRELOAD_EVENT  # snapshot: set atomically
     except Exception:
@@ -290,12 +327,15 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
     if not remote:
         build_symbol_index(workspace)
     else:
-        print(f"  WARNING: Remote workspace detected ({workspace}) -- skipping symbol index scan",
-              file=sys.stderr)
+        print(
+            f"  WARNING: Remote workspace detected ({workspace}) -- skipping symbol index scan",
+            file=sys.stderr,
+        )
 
     # Initialize LSP (pylsp) with workspace root so LSP tools work.
     # Skip on remote workspaces -- LSP scanning over SMB can hang.
     from tools.lsp import set_lsp_root, shutdown_lsp as _shutdown_lsp
+
     if not remote:
         set_lsp_root(workspace)
 
@@ -303,11 +343,13 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
     if config.mcp_servers:
         try:
             from tools.mcp_client import init_mcp_servers, shutdown_mcp as _shutdown_mcp
+
             init_mcp_servers(config.mcp_servers)
             atexit.register(_shutdown_mcp)
             # Lazily inject mcp_discover / mcp_call schemas into TOOLS
             # only when MCP servers are actually configured.
             from tools.schema import TOOLS
+
             if not any(td["function"]["name"] == "mcp_discover" for td in TOOLS):
                 TOOLS.extend(_MCP_SCHEMAS)
         except Exception:
@@ -328,6 +370,7 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
         _sem_preload_event.wait(timeout=120)
     try:
         from tools.search_ops import _sem_get_model
+
         model = _sem_get_model()
         if model is not None:
             model.encode("warmup", show_progress_bar=False)
@@ -341,6 +384,7 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
         if not os.path.isfile(rules_path):
             try:
                 from tools.file_ops import _init_rules
+
                 result = _init_rules({}, None, read_gate)
                 if result.success:
                     print(f"  (*) Auto-init: {result.content[:120]}", file=sys.stderr)
@@ -350,9 +394,16 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
     saved = memory.load()
     # Prune loaded conversation to avoid massive first-turn payload
     if saved:
-        from memory.memory import _compress_tool_results, _prune_by_tokens, _summarize_pruned
+        from memory.memory import (
+            _compress_tool_results,
+            _prune_by_tokens,
+            _summarize_pruned,
+        )
+
         saved, _ = _compress_tool_results(saved, keep_recent=20)
-        saved, pruned = _prune_by_tokens(saved, config.context_window, config.max_messages)
+        saved, pruned = _prune_by_tokens(
+            saved, config.context_window, config.max_messages
+        )
         if pruned:
             summary = _summarize_pruned(pruned)
             if summary:
@@ -384,6 +435,7 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
     # invalidate DeepSeek's prefix cache).
     from core.prefix import get_session_prefix_cache
     from tools.skills import get_active_tools
+
     prefix_cache = get_session_prefix_cache()
     prefix_cache.establish(
         system=system_prompt,
@@ -402,14 +454,21 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
     _TOOL_CONTEXT._session_summary_injected = False
     # Reset pattern rules for new session
     from core.context_inject import _reset_pattern_rules
+
     _reset_pattern_rules()
 
     session = _requests.Session()
     # Set default timeout (connect, read) for every request.
-    session.request = functools.partial(session.request, timeout=(HTTP_CONNECT_TIMEOUT, HTTP_READ_TIMEOUT))
+    session.request = functools.partial(
+        session.request, timeout=(HTTP_CONNECT_TIMEOUT, HTTP_READ_TIMEOUT)
+    )
     # Limit connection pool to avoid resource waste on long-running sessions.
-    session.mount("https://", _requests.adapters.HTTPAdapter(
-        pool_connections=HTTP_POOL_CONNECTIONS, pool_maxsize=HTTP_POOL_MAXSIZE))
+    session.mount(
+        "https://",
+        _requests.adapters.HTTPAdapter(
+            pool_connections=HTTP_POOL_CONNECTIONS, pool_maxsize=HTTP_POOL_MAXSIZE
+        ),
+    )
 
     # Combined exit handler -- runs in correct order: summary capture -> LSP
     # shutdown -> HTTP session close.  Wrapped in broad try/except so no
@@ -420,6 +479,7 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
         try:
             import warnings as _wrn
             from tools import _TOOL_CONTEXT
+
             with _wrn.catch_warnings():
                 _wrn.simplefilter("ignore")
                 scratchpad = memory.get_scratchpad()
@@ -428,9 +488,11 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
             pending = ""
             if scratchpad:
                 import re as _re
+
                 m = _re.search(
                     r"(?:##\s*Pending|##\s*TODO|##\s*What.s Pending)(.*?)(?:##|$)",
-                    scratchpad, _re.DOTALL | _re.IGNORECASE,
+                    scratchpad,
+                    _re.DOTALL | _re.IGNORECASE,
                 )
                 if m:
                     pending = m.group(1).strip()[:500]
@@ -442,23 +504,33 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
             modified_files = getattr(_TOOL_CONTEXT, "_modified_files", None)
             if modified_files:
                 from tools import get_modified_files
+
                 mf = get_modified_files()
                 if mf:
                     changes_parts.append("Files touched: " + ", ".join(mf[:20]))
             if start_head:
                 try:
                     import subprocess as _sp2
+
                     r = _sp2.run(
                         ["git", "-C", workspace, "diff", "--stat", start_head],
-                        capture_output=True, text=True, timeout=5,
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
                     )
                     if r.returncode == 0 and r.stdout.strip():
                         changes_parts.append("Git diff:\n" + r.stdout.strip()[:500])
                 except Exception:
                     pass
-            changes = "\n".join(changes_parts) if changes_parts else "(no tracked changes)"
-            modified_str = ", ".join(get_modified_files()) if get_modified_files() else ""
-            memory.write_handoff(changes=changes, pending=pending, modified_files=modified_str)
+            changes = (
+                "\n".join(changes_parts) if changes_parts else "(no tracked changes)"
+            )
+            modified_str = (
+                ", ".join(get_modified_files()) if get_modified_files() else ""
+            )
+            memory.write_handoff(
+                changes=changes, pending=pending, modified_files=modified_str
+            )
         except Exception:
             pass
 
@@ -467,6 +539,7 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
         try:
             import warnings as _wrn
             from tools import _TOOL_CONTEXT
+
             with _wrn.catch_warnings():
                 _wrn.simplefilter("ignore")
                 scratchpad = memory.get_scratchpad()
@@ -476,7 +549,9 @@ def init_session(workspace: str, cli_args: object | None = None) -> dict:
                 recent_turns.append(_TOOL_CONTEXT._turn_history.get(k, ""))
             turn_text = "\n".join(recent_turns)
             summary = scratchpad[:300] if scratchpad else turn_text[:300]
-            detail = f"Scratchpad:\n{scratchpad[:500]}\n\nTurn history:\n{turn_text[:500]}"
+            detail = (
+                f"Scratchpad:\n{scratchpad[:500]}\n\nTurn history:\n{turn_text[:500]}"
+            )
             if summary.strip():
                 session_id = getattr(_TOOL_CONTEXT, "_session_id", "unknown")
                 memory.store_session_summary(

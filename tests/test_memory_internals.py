@@ -34,6 +34,7 @@ from memory.memory import (
 # _clean_messages
 # ---------------------------------------------------------------------------
 
+
 class TestCleanMessages(unittest.TestCase):
     """Tests for _clean_messages -- stripping transient, orphaned, incomplete."""
 
@@ -209,6 +210,7 @@ class TestCleanMessages(unittest.TestCase):
 # _migrate_old_paths / _migrate_json
 # ---------------------------------------------------------------------------
 
+
 class TestMigration(unittest.TestCase):
     """Tests for _migrate_old_paths and _migrate_json."""
 
@@ -217,6 +219,7 @@ class TestMigration(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     # --- old .json.db path scheme migration ---
@@ -251,7 +254,9 @@ class TestMigration(unittest.TestCase):
 
         # Verify content survived migration
         conn2 = sqlite3.connect(new_db)
-        rows = conn2.execute("SELECT role, content FROM messages ORDER BY id").fetchall()
+        rows = conn2.execute(
+            "SELECT role, content FROM messages ORDER BY id"
+        ).fetchall()
         conn2.close()
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0][0], "user")
@@ -343,6 +348,7 @@ class TestMigration(unittest.TestCase):
 # export_conversation_markdown
 # ---------------------------------------------------------------------------
 
+
 class TestExportMarkdown(unittest.TestCase):
     """Tests for export_conversation_markdown."""
 
@@ -428,6 +434,7 @@ class TestExportMarkdown(unittest.TestCase):
 # Incremental save
 # ---------------------------------------------------------------------------
 
+
 class TestIncrementalSave(unittest.TestCase):
     """Tests for incremental insert vs full rewrite in MemoryStore.save()."""
 
@@ -439,6 +446,7 @@ class TestIncrementalSave(unittest.TestCase):
     def tearDown(self):
         self.store.close()
         import shutil
+
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def _raw_messages_count(self):
@@ -501,7 +509,11 @@ class TestIncrementalSave(unittest.TestCase):
             store2.save(msgs)
             loaded = store2.load()
             # Should have <= 10 non-summary messages + possibly a summary
-            non_summary = [m for m in loaded if "Earlier in this conversation" not in m.get("content", "")]
+            non_summary = [
+                m
+                for m in loaded
+                if "Earlier in this conversation" not in m.get("content", "")
+            ]
             self.assertLessEqual(len(non_summary), 10)
         finally:
             store2.close()
@@ -524,6 +536,7 @@ class TestIncrementalSave(unittest.TestCase):
 # Scratchpad
 # ---------------------------------------------------------------------------
 
+
 class TestScratchpad(unittest.TestCase):
     """Tests for MemoryStore scratchpad persistence."""
 
@@ -535,6 +548,7 @@ class TestScratchpad(unittest.TestCase):
     def tearDown(self):
         self.store.close()
         import shutil
+
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def test_get_scratchpad_fresh_store_returns_empty(self):
@@ -560,6 +574,7 @@ class TestScratchpad(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # Message caches (_TOOL_PARSE_CACHE, _TOKEN_EST_CACHE)
 # ---------------------------------------------------------------------------
+
 
 class TestMessageCaches(unittest.TestCase):
     """Tests for per-save message caches."""
@@ -619,6 +634,7 @@ class TestMessageCaches(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # _total_tokens accumulator
 # ---------------------------------------------------------------------------
+
 
 class TestTotalTokens(unittest.TestCase):
     """Tests for _total_tokens accumulator (_ACCUM_COUNT, _ACCUM_TOTAL)."""

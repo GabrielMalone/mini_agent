@@ -20,6 +20,7 @@ class TestMistakeNotebook:
             path = f.name
         yield path
         from memory.memory import _close_shared_conn
+
         _close_shared_conn(path)
         os.unlink(path)
 
@@ -30,24 +31,31 @@ class TestMistakeNotebook:
         fps.init_schema()
 
         # Record same fingerprint with different args signatures (cluster)
-        fps.record_failure("edit_file", "String not found in file",
-                           args={"path": "a.py", "old_string": "foo"})
-        fps.record_failure("edit_file", "String not found in file",
-                           args={"path": "b.py", "old_string": "bar"})
-        fps.record_failure("edit_file", "String not found in file",
-                           args={"path": "c.py", "old_string": "baz"})
+        fps.record_failure(
+            "edit_file",
+            "String not found in file",
+            args={"path": "a.py", "old_string": "foo"},
+        )
+        fps.record_failure(
+            "edit_file",
+            "String not found in file",
+            args={"path": "b.py", "old_string": "bar"},
+        )
+        fps.record_failure(
+            "edit_file",
+            "String not found in file",
+            args={"path": "c.py", "old_string": "baz"},
+        )
 
         # Different fingerprint, not enough for cluster
-        fps.record_failure("edit_file", "Whitespace mismatch detected",
-                           args={"path": "d.py"})
+        fps.record_failure(
+            "edit_file", "Whitespace mismatch detected", args={"path": "d.py"}
+        )
 
         # Enough for cluster with different tool
-        fps.record_failure("read_file", "No such file: foo.py",
-                           args={"path": "x.py"})
-        fps.record_failure("read_file", "No such file: bar.py",
-                           args={"path": "y.py"})
-        fps.record_failure("read_file", "No such file: baz.py",
-                           args={"path": "z.py"})
+        fps.record_failure("read_file", "No such file: foo.py", args={"path": "x.py"})
+        fps.record_failure("read_file", "No such file: bar.py", args={"path": "y.py"})
+        fps.record_failure("read_file", "No such file: baz.py", args={"path": "z.py"})
 
         mn = MistakeNotebook(db_path)
         mn.init_schema()
@@ -78,9 +86,11 @@ class TestMistakeNotebook:
         fps, mn = populated_stores
         mn.distill(10)
 
-        entries = mn.get_injectable_entries([
-            {"function": {"name": "edit_file", "arguments": '{}'}},
-        ])
+        entries = mn.get_injectable_entries(
+            [
+                {"function": {"name": "edit_file", "arguments": "{}"}},
+            ]
+        )
         # May not meet confidence threshold yet
         # But at least the entry should exist
         stats = mn.stats()
@@ -94,7 +104,7 @@ class TestMistakeNotebook:
         mn._last_injection_turn = -10
 
         ctx = mn.build_notebook_context(
-            [{"function": {"name": "edit_file", "arguments": '{}'}}],
+            [{"function": {"name": "edit_file", "arguments": "{}"}}],
             turn_count=20,
         )
         # May return None if confidence not met
@@ -132,6 +142,7 @@ class TestExperienceContext:
     def memory_store(self):
         """Create a MemoryStore with some knowledge entries."""
         from memory.memory import MemoryStore
+
         with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
             db_path = f.name
         ms = MemoryStore(db_path)
@@ -181,7 +192,12 @@ class TestExperienceContext:
 
     def test_build_experience_context_batch(self, memory_store):
         pending = [
-            {"function": {"name": "edit_file", "arguments": '{"path":"test.py","old_string":"hello"}'}},
+            {
+                "function": {
+                    "name": "edit_file",
+                    "arguments": '{"path":"test.py","old_string":"hello"}',
+                }
+            },
             {"function": {"name": "read_file", "arguments": '{"path":"test.py"}'}},
         ]
         ctx = build_experience_context_batch(memory_store, pending)
@@ -193,14 +209,26 @@ class TestExperienceContext:
         assert ctx is None
 
     def test_build_experience_context_batch_none_store(self):
-        ctx = build_experience_context_batch(None, [{"function": {"name": "edit_file"}}])
+        ctx = build_experience_context_batch(
+            None, [{"function": {"name": "edit_file"}}]
+        )
         assert ctx is None
 
     def test_build_experience_context_deduplicates(self, memory_store):
         # Add a knowledge entry that matches both tool calls
         pending = [
-            {"function": {"name": "edit_file", "arguments": '{"path":"a.py","old_string":"x"}'}},
-            {"function": {"name": "edit_file", "arguments": '{"path":"b.py","old_string":"y"}'}},
+            {
+                "function": {
+                    "name": "edit_file",
+                    "arguments": '{"path":"a.py","old_string":"x"}',
+                }
+            },
+            {
+                "function": {
+                    "name": "edit_file",
+                    "arguments": '{"path":"b.py","old_string":"y"}',
+                }
+            },
         ]
         ctx = build_experience_context_batch(memory_store, pending)
         if ctx:

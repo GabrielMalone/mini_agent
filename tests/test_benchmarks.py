@@ -34,7 +34,7 @@ import pytest
 
 BASELINE_FILE = ".benchmark_baseline.json"
 DEFAULT_REGRESSION_THRESHOLD = 2.0  # 2x slower = regression
-MEMORY_REGRESSION_THRESHOLD = 2.0   # 2x memory = regression
+MEMORY_REGRESSION_THRESHOLD = 2.0  # 2x memory = regression
 
 
 def _should_run_slow() -> bool:
@@ -53,6 +53,7 @@ def _should_baseline() -> bool:
 # ---------------------------------------------------------------------------
 # Baseline storage
 # ---------------------------------------------------------------------------
+
 
 def load_baseline() -> dict[str, dict]:
     """Load stored baseline, or empty dict if none exists."""
@@ -100,6 +101,7 @@ def check_regression(name: str, wall_sec: float, mem_kb: float = 0.0) -> None:
 # ---------------------------------------------------------------------------
 # Benchmark helpers
 # ---------------------------------------------------------------------------
+
 
 class BenchmarkResult:
     """Captures timing and memory for a single benchmark invocation."""
@@ -176,35 +178,48 @@ def _make_messages(count: int, with_tools: bool = True) -> list[dict]:
     for i in range(1, count + 1, 4):
         msgs.append({"role": "user", "content": f"Task {i}: write code for feature X"})
         if with_tools and i + 1 <= count:
-            msgs.append({
-                "role": "assistant",
-                "content": "",
-                "tool_calls": [{
-                    "id": f"call_{i}",
-                    "type": "function",
-                    "function": {
-                        "name": "write_file",
-                        "arguments": json.dumps({
-                            "path": f"file_{i}.py",
-                            "content": f"# generated file {i}\n" + "x" * 500,
-                        }),
-                    },
-                }],
-            })
+            msgs.append(
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": f"call_{i}",
+                            "type": "function",
+                            "function": {
+                                "name": "write_file",
+                                "arguments": json.dumps(
+                                    {
+                                        "path": f"file_{i}.py",
+                                        "content": f"# generated file {i}\n"
+                                        + "x" * 500,
+                                    }
+                                ),
+                            },
+                        }
+                    ],
+                }
+            )
         if with_tools and i + 2 <= count:
-            msgs.append({
-                "role": "tool",
-                "tool_call_id": f"call_{i}",
-                "content": json.dumps({
-                    "success": True,
-                    "content": f"Wrote file_{i}.py",
-                }),
-            })
+            msgs.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": f"call_{i}",
+                    "content": json.dumps(
+                        {
+                            "success": True,
+                            "content": f"Wrote file_{i}.py",
+                        }
+                    ),
+                }
+            )
         if with_tools and i + 3 <= count:
-            msgs.append({
-                "role": "assistant",
-                "content": f"Done with task {i}. The file has been written.",
-            })
+            msgs.append(
+                {
+                    "role": "assistant",
+                    "content": f"Done with task {i}. The file has been written.",
+                }
+            )
     return msgs[:count]
 
 
@@ -246,8 +261,10 @@ class TestBenchmarkSymbolIndex:
 
         # Clear module-level caches in search_ops
         from tools.search_ops import build_symbol_index
+
         # Force fresh build by clearing globals
         import tools.search_ops as so
+
         so._SYMBOL_INDEX = None
         so._REF_INDEX = None
         so._INDEX_MAX_MTIME = 0.0
@@ -290,16 +307,19 @@ class TestBenchmarkSymbolIndex:
 class TestBenchmarkMemoryPruning:
     """Benchmark _prune_by_tokens on realistic message volumes."""
 
-    def _bench_prune(self, msg_count: int, max_tokens: int, max_messages: int) -> BenchmarkResult:
+    def _bench_prune(
+        self, msg_count: int, max_tokens: int, max_messages: int
+    ) -> BenchmarkResult:
         from memory.memory import _prune_by_tokens
 
         msgs = _make_messages(msg_count)
 
         def _prune():
             kept, pruned = _prune_by_tokens(msgs, max_tokens, max_messages)
-            assert len(kept) <= max_messages or sum(
-                len(json.dumps(m)) for m in kept
-            ) <= max_tokens * 4, "unexpected size"
+            assert (
+                len(kept) <= max_messages
+                or sum(len(json.dumps(m)) for m in kept) <= max_tokens * 4
+            ), "unexpected size"
 
         result = measure(
             f"prune_{msg_count}_msgs_budget_{max_messages}",
@@ -338,7 +358,9 @@ class TestBenchmarkMemoryPruning:
         def _prune():
             kept, pruned = _prune_by_tokens(msgs, max_tokens=target, max_messages=9999)
             kept_tokens = sum(_estimate_tokens(m) for m in kept)
-            assert kept_tokens <= target + 1000, f"exceeded budget: {kept_tokens} > {target}"
+            assert kept_tokens <= target + 1000, (
+                f"exceeded budget: {kept_tokens} > {target}"
+            )
 
         result = measure(
             "prune_token_limited_1000_msgs",
@@ -433,7 +455,9 @@ class TestBenchmarkCircuitBreaker:
             {
                 "function": {
                     "name": "read_file",
-                    "arguments": json.dumps({"path": f"/tmp/file_{i}.py", "limit": 100}),
+                    "arguments": json.dumps(
+                        {"path": f"/tmp/file_{i}.py", "limit": 100}
+                    ),
                 }
             }
             for i in range(1000)
@@ -458,11 +482,13 @@ class TestBenchmarkCircuitBreaker:
         # Build a realistic window: mostly unique + some repeated
         keys: list[str] = []
         for i in range(100):
-            keys.extend([
-                f"read_file:{{\"path\": \"/tmp/f{i}.py\"}}",
-                f"write_file:{{\"path\": \"/tmp/out{i}.py\"}}",
-                f"search_files:{{\"pattern\": \"def test_{i}\"}}",
-            ])
+            keys.extend(
+                [
+                    f'read_file:{{"path": "/tmp/f{i}.py"}}',
+                    f'write_file:{{"path": "/tmp/out{i}.py"}}',
+                    f'search_files:{{"pattern": "def test_{i}"}}',
+                ]
+            )
         # Add repeated calls to trip circuit
         for _ in range(5):
             keys.append('read_file:{"path": "/tmp/stuck.py"}')
@@ -504,7 +530,9 @@ class TestBenchmarkCircuitBreaker:
                 d.popleft()
 
         list_result = measure("list_pop_1000_from_10000", _list_pop, iterations=5)
-        deque_result = measure("deque_popleft_1000_from_10000", _deque_pop, iterations=5)
+        deque_result = measure(
+            "deque_popleft_1000_from_10000", _deque_pop, iterations=5
+        )
 
         # deque should be at least 8x faster for this workload
         # (on fast machines the absolute times are tiny -- ~1ms vs ~0.1ms --
@@ -540,13 +568,15 @@ class TestBenchmarkToolDispatch:
         tool_names = list(_TOOL_DISPATCH.keys())
         calls: list[dict] = []
         for i, name in enumerate(tool_names):
-            calls.append({
-                "id": f"call_{i}",
-                "function": {
-                    "name": name,
-                    "arguments": '{"dummy": true}',
-                },
-            })
+            calls.append(
+                {
+                    "id": f"call_{i}",
+                    "function": {
+                        "name": name,
+                        "arguments": '{"dummy": true}',
+                    },
+                }
+            )
 
         # Clear cache between iterations to measure full dispatch cost
         def _dispatch_all():
@@ -608,10 +638,12 @@ class TestBenchmarkPipeShortCircuit:
             {
                 "function": {
                     "name": "read_file",
-                    "arguments": json.dumps({
-                        "path": f"/tmp/file_{i}.py",
-                        "limit": 50,
-                    }),
+                    "arguments": json.dumps(
+                        {
+                            "path": f"/tmp/file_{i}.py",
+                            "limit": 50,
+                        }
+                    ),
                 }
             }
             for i in range(500)
@@ -635,12 +667,14 @@ class TestBenchmarkPipeShortCircuit:
             {
                 "function": {
                     "name": "search_files",
-                    "arguments": json.dumps({
-                        "pattern": f"def test_{i}",
-                        "_pipe": [
-                            {"tool": "read_file", "param": "path"},
-                        ],
-                    }),
+                    "arguments": json.dumps(
+                        {
+                            "pattern": f"def test_{i}",
+                            "_pipe": [
+                                {"tool": "read_file", "param": "path"},
+                            ],
+                        }
+                    ),
                 }
             }
             for i in range(500)
@@ -715,6 +749,7 @@ class TestBenchmarkSemanticSearch:
         so._reset_semantic_state()
 
         import time as _time
+
         t0 = _time.perf_counter()
         model = _sem_get_model()
         elapsed = _time.perf_counter() - t0
@@ -761,6 +796,7 @@ class TestBenchmarkSemanticSearch:
         ] * 10  # 50 snippets
 
         import time as _time
+
         t0 = _time.perf_counter()
         for _ in range(5):  # 250 total encodes
             model.encode(snippets, show_progress_bar=False)
@@ -792,6 +828,7 @@ class TestBenchmarkSemanticSearch:
         so._SEMANTIC_LRU.clear()
 
         import time as _time
+
         t0 = _time.perf_counter()
         _sem_index(tmp)
         index_time = _time.perf_counter() - t0
@@ -799,6 +836,7 @@ class TestBenchmarkSemanticSearch:
 
         # Run a search
         from core.safety import ReadSafetyGate
+
         rg = ReadSafetyGate(tmp)
 
         t0 = _time.perf_counter()
@@ -811,6 +849,7 @@ class TestBenchmarkSemanticSearch:
 
         # Cleanup
         import shutil
+
         shutil.rmtree(tmp, ignore_errors=True)
 
 
@@ -850,9 +889,15 @@ if __name__ == "__main__":
     import argparse
 
     ap = argparse.ArgumentParser(description="mini_agent performance benchmarks")
-    ap.add_argument("--baseline", action="store_true", help="Store current results as baseline")
-    ap.add_argument("--compare", action="store_true", help="Compare against stored baseline")
-    ap.add_argument("--run-slow", action="store_true", help="Include slow/stress benchmarks")
+    ap.add_argument(
+        "--baseline", action="store_true", help="Store current results as baseline"
+    )
+    ap.add_argument(
+        "--compare", action="store_true", help="Compare against stored baseline"
+    )
+    ap.add_argument(
+        "--run-slow", action="store_true", help="Include slow/stress benchmarks"
+    )
     ap.add_argument("--list", action="store_true", help="List available benchmarks")
     args = ap.parse_args()
 

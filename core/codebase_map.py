@@ -32,7 +32,10 @@ from .constants import SKIP_DIRS  # noqa: E402  — canonical skip-dirs set
 # these names (nul, con, prn, aux, com1-9, lpt1-9) which resolve to
 # NT namespace paths like \\.\nul, breaking os.path.relpath.
 _WIN_RESERVED: set[str] = {
-    "nul", "con", "prn", "aux",
+    "nul",
+    "con",
+    "prn",
+    "aux",
     *(f"com{i}" for i in range(1, 10)),
     *(f"lpt{i}" for i in range(1, 10)),
 }
@@ -50,6 +53,7 @@ def _safe_relpath(filepath: str, start: str) -> str | None:
         return os.path.relpath(filepath, start)
     except ValueError:
         return None
+
 
 # File extensions we can extract symbols from
 PYTHON_EXT: set[str] = {".py"}
@@ -76,10 +80,12 @@ _MAP_CACHE_WORKSPACE: str = ""
 # Data structures
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class FileSymbols:
     """Extracted symbols from a single source file."""
-    path: str                          # relative path from workspace root
+
+    path: str  # relative path from workspace root
     classes: list[str] = field(default_factory=list)
     functions: list[str] = field(default_factory=list)
     imports_internal: list[str] = field(default_factory=list)  # internal module imports
@@ -92,6 +98,7 @@ class FileSymbols:
 @dataclass
 class ModuleGroup:
     """A group of files under a common directory prefix."""
+
     prefix: str
     files: list[FileSymbols] = field(default_factory=list)
 
@@ -99,6 +106,7 @@ class ModuleGroup:
 # ---------------------------------------------------------------------------
 # Python AST extraction
 # ---------------------------------------------------------------------------
+
 
 def _is_internal_import(module_name: str, workspace_packages: set[str]) -> bool:
     """Return True if module_name is internal to the workspace."""
@@ -110,7 +118,9 @@ def _is_internal_import(module_name: str, workspace_packages: set[str]) -> bool:
 
 
 def _extract_python_symbols(
-    filepath: str, rel_path: str, workspace_packages: set[str],
+    filepath: str,
+    rel_path: str,
+    workspace_packages: set[str],
 ) -> FileSymbols | None:
     """Parse a Python file and extract classes, functions, and imports."""
     try:
@@ -189,7 +199,9 @@ _TS_IMPORT_RE = re.compile(
 
 
 def _extract_ts_symbols(
-    filepath: str, rel_path: str, workspace_packages: set[str],
+    filepath: str,
+    rel_path: str,
+    workspace_packages: set[str],
 ) -> FileSymbols | None:
     """Extract symbols from TypeScript/JavaScript using regex heuristics."""
     try:
@@ -203,8 +215,9 @@ def _extract_ts_symbols(
         return None
 
     sym = FileSymbols(path=rel_path, line_count=line_count)
-    sym.is_test = any(kw in os.path.basename(filepath).lower()
-                      for kw in ("test", "spec"))
+    sym.is_test = any(
+        kw in os.path.basename(filepath).lower() for kw in ("test", "spec")
+    )
 
     # Find exported/declared symbols
     for m in _TS_EXPORT_RE.finditer(source):
@@ -243,8 +256,11 @@ def _extract_ts_symbols(
 # Tree-sitter extraction adapters (fall back to AST/regex)
 # ---------------------------------------------------------------------------
 
+
 def _extract_python_with_treesitter(
-    filepath: str, rel_path: str, workspace_packages: set[str],
+    filepath: str,
+    rel_path: str,
+    workspace_packages: set[str],
 ) -> FileSymbols | None:
     """Extract Python symbols via tree-sitter. Returns None if unavailable."""
     try:
@@ -264,8 +280,9 @@ def _extract_python_with_treesitter(
     except OSError:
         line_count = 0
     sym = FileSymbols(path=rel_path, line_count=line_count)
-    sym.is_test = any(kw in os.path.basename(filepath).lower()
-                      for kw in ("test", "spec"))
+    sym.is_test = any(
+        kw in os.path.basename(filepath).lower() for kw in ("test", "spec")
+    )
     for d in defs:
         if d["kind"] == "class":
             sym.classes.append(d["name"])
@@ -285,7 +302,9 @@ def _extract_python_with_treesitter(
 
 
 def _extract_ts_with_treesitter(
-    filepath: str, rel_path: str, workspace_packages: set[str],
+    filepath: str,
+    rel_path: str,
+    workspace_packages: set[str],
 ) -> FileSymbols | None:
     """Extract TypeScript/JS symbols via tree-sitter. Returns None if unavailable."""
     try:
@@ -304,8 +323,9 @@ def _extract_ts_with_treesitter(
     except OSError:
         line_count = 0
     sym = FileSymbols(path=rel_path, line_count=line_count)
-    sym.is_test = any(kw in os.path.basename(filepath).lower()
-                      for kw in ("test", "spec"))
+    sym.is_test = any(
+        kw in os.path.basename(filepath).lower() for kw in ("test", "spec")
+    )
     for d in defs:
         name = d["name"]
         if name.startswith("_"):
@@ -331,8 +351,11 @@ def _extract_ts_with_treesitter(
 # Incremental update helpers
 # ---------------------------------------------------------------------------
 
+
 def _extract_single_file(
-    filepath: str, rel_path: str, workspace_packages: set[str],
+    filepath: str,
+    rel_path: str,
+    workspace_packages: set[str],
 ) -> FileSymbols | None:
     """Extract symbols from a single file (called for incremental updates).
 
@@ -427,6 +450,7 @@ def get_cached_map() -> dict[str, FileSymbols]:
 # Main entry point
 # ---------------------------------------------------------------------------
 
+
 def build_codebase_map(
     workspace: str,
     *,
@@ -472,7 +496,8 @@ def build_codebase_map(
         try:
             for dirpath, dirnames, filenames in os.walk(workspace):
                 dirnames[:] = sorted(
-                    d for d in dirnames
+                    d
+                    for d in dirnames
                     if d not in SKIP_DIRS
                     and not d.startswith(".")
                     and not _is_win_reserved(d)
@@ -489,7 +514,9 @@ def build_codebase_map(
                         continue
 
                     symbols = _extract_single_file(
-                        filepath, rel_path, workspace_packages,
+                        filepath,
+                        rel_path,
+                        workspace_packages,
                     )
 
                     if symbols is not None:
@@ -556,8 +583,9 @@ def build_codebase_map(
                     parts[-1] += f" (+{len(sym.functions) - MAX_SYMBOLS_PER_FILE})"
 
             # Internal imports (most useful for dependency understanding)
-            internal = [i for i in sym.imports_internal
-                        if not i.startswith(".")]  # skip relative
+            internal = [
+                i for i in sym.imports_internal if not i.startswith(".")
+            ]  # skip relative
             if internal:
                 shown = internal[:MAX_IMPORTS_PER_FILE]
                 parts.append(f"-> {', '.join(shown)}")

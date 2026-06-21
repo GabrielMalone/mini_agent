@@ -30,6 +30,7 @@ from typing import Optional
 # FNV-1a 32-bit hash (matching Dirac's integer hash approach)
 # ---------------------------------------------------------------------------
 
+
 def _fnv1a_32(s: str) -> int:
     """FNV-1a 32-bit hash of a string."""
     h = 0x811C9DC5
@@ -68,7 +69,9 @@ def format_lines_for_model(
 ) -> str:
     """Format all lines with anchors."""
     return "\n".join(
-        format_line_for_model(line, anchors[i] if i < len(anchors) else f"L{i+1}", reveal)
+        format_line_for_model(
+            line, anchors[i] if i < len(anchors) else f"L{i + 1}", reveal
+        )
         for i, line in enumerate(lines)
     )
 
@@ -81,7 +84,7 @@ def split_anchor(line: str) -> tuple[str, str]:
     idx = line.find(ANCHOR_DELIMITER)
     if idx == -1:
         return ("", line)
-    return (line[:idx], line[idx + 1:])
+    return (line[:idx], line[idx + 1 :])
 
 
 def strip_anchors(text: str) -> str:
@@ -97,6 +100,7 @@ def strip_anchors(text: str) -> str:
 # Word dictionary
 # ---------------------------------------------------------------------------
 
+
 def _load_dictionary() -> list[str]:
     """Load the anchor word dictionary from disk."""
     dict_path = os.path.join(os.path.dirname(__file__), "anchor_words.txt")
@@ -106,15 +110,43 @@ def _load_dictionary() -> list[str]:
     except FileNotFoundError:
         # Fallback: generate from common short words
         return [
-            "ace", "act", "add", "age", "ago", "aid", "aim", "air", "ale", "ape",
-            "arc", "arm", "art", "ash", "ate", "awe", "axe", "bad", "bag", "ban",
-            "bar", "bat", "bay", "bed", "bet", "bid", "big", "bin", "bit", "bow",
+            "ace",
+            "act",
+            "add",
+            "age",
+            "ago",
+            "aid",
+            "aim",
+            "air",
+            "ale",
+            "ape",
+            "arc",
+            "arm",
+            "art",
+            "ash",
+            "ate",
+            "awe",
+            "axe",
+            "bad",
+            "bag",
+            "ban",
+            "bar",
+            "bat",
+            "bay",
+            "bed",
+            "bet",
+            "bid",
+            "big",
+            "bin",
+            "bit",
+            "bow",
         ]
 
 
 # ---------------------------------------------------------------------------
 # TrackedDocument -- per-file state
 # ---------------------------------------------------------------------------
+
 
 class TrackedDocument:
     """State for a single file being tracked with anchors."""
@@ -243,7 +275,7 @@ class AnchorStateManager:
         """
         # Safeguard for massive files
         if len(current_lines) > cls.MAX_TRACKED_LINES:
-            return [f"L{i+1}" for i in range(len(current_lines))]
+            return [f"L{i + 1}" for i in range(len(current_lines))]
 
         state = cls._get_task_state(task_id)
         current_hashes = cls._compute_hashes(current_lines)
@@ -262,10 +294,7 @@ class AnchorStateManager:
             used_words: set[str] = set()
             pool = list(cls.get_dictionary())
             random.shuffle(pool)
-            anchors = [
-                cls._get_unique_word(used_words, pool)
-                for _ in current_lines
-            ]
+            anchors = [cls._get_unique_word(used_words, pool) for _ in current_lines]
             for w in anchors:
                 used_words.add(w)
             doc = TrackedDocument(
@@ -403,12 +432,16 @@ def resolve_anchored_edits(
 
         if anchor_word not in anchor_map:
             # Find closest matching anchor for a helpful error
-            similar = difflib.get_close_matches(anchor_word, list(anchor_map), n=3, cutoff=0.0)
+            similar = difflib.get_close_matches(
+                anchor_word, list(anchor_map), n=3, cutoff=0.0
+            )
             hint = f" (did you mean {', '.join(similar)}?)" if similar else ""
-            failed.append({
-                "edit": edit,
-                "error": f"Anchor '{anchor_word}' not found in file{hint}. The file may have changed. Re-read it first.",
-            })
+            failed.append(
+                {
+                    "edit": edit,
+                    "error": f"Anchor '{anchor_word}' not found in file{hint}. The file may have changed. Re-read it first.",
+                }
+            )
             continue
 
         line_idx = anchor_map[anchor_word]
@@ -416,25 +449,29 @@ def resolve_anchored_edits(
         # Validate anchor content matches the actual line
         actual_line = lines[line_idx]
         if anchor_content and anchor_content != actual_line:
-            failed.append({
-                "edit": edit,
-                "error": (
-                    f"Anchor '{anchor_word}' found at line {line_idx + 1}, "
-                    f"but the content after '{ANCHOR_DELIMITER}' doesn't match. "
-                    f"Expected: '{anchor_content[:60]}...' "
-                    f"Got: '{actual_line[:60]}...'"
-                ),
-            })
+            failed.append(
+                {
+                    "edit": edit,
+                    "error": (
+                        f"Anchor '{anchor_word}' found at line {line_idx + 1}, "
+                        f"but the content after '{ANCHOR_DELIMITER}' doesn't match. "
+                        f"Expected: '{anchor_content[:60]}...' "
+                        f"Got: '{actual_line[:60]}...'"
+                    ),
+                }
+            )
             continue
 
         edit_type = edit.get("edit_type", "replace")
 
         if edit_type in ("insert_after", "insert_before"):
-            resolved.append({
-                "line_idx": line_idx,
-                "end_idx": line_idx,
-                "edit": edit,
-            })
+            resolved.append(
+                {
+                    "line_idx": line_idx,
+                    "end_idx": line_idx,
+                    "edit": edit,
+                }
+            )
             continue
 
         # replace: resolve end_anchor
@@ -442,10 +479,12 @@ def resolve_anchored_edits(
         if end_raw:
             end_word, end_content = split_anchor(end_raw)
             if end_word not in anchor_map:
-                failed.append({
-                    "edit": edit,
-                    "error": f"End anchor '{end_word}' not found in file",
-                })
+                failed.append(
+                    {
+                        "edit": edit,
+                        "error": f"End anchor '{end_word}' not found in file",
+                    }
+                )
                 continue
             end_idx = anchor_map[end_word]
         else:
@@ -453,17 +492,21 @@ def resolve_anchored_edits(
             end_idx = line_idx
 
         if end_idx < line_idx:
-            failed.append({
-                "edit": edit,
-                "error": f"end_anchor line ({end_idx + 1}) is before anchor line ({line_idx + 1})",
-            })
+            failed.append(
+                {
+                    "edit": edit,
+                    "error": f"end_anchor line ({end_idx + 1}) is before anchor line ({line_idx + 1})",
+                }
+            )
             continue
 
-        resolved.append({
-            "line_idx": line_idx,
-            "end_idx": end_idx,
-            "edit": edit,
-        })
+        resolved.append(
+            {
+                "line_idx": line_idx,
+                "end_idx": end_idx,
+                "edit": edit,
+            }
+        )
 
     return resolved, failed
 
@@ -498,15 +541,17 @@ def apply_resolved_edits(
                 new_lines.insert(line_idx + i, nl)
             lines_added = len(new_text_lines)
             lines_deleted = 0
-            applied.append({
-                "start_idx": line_idx,
-                "end_idx": line_idx + lines_added - 1,
-                "original_start_idx": original_start,
-                "original_end_idx": original_end,
-                "edit": edit,
-                "lines_added": lines_added,
-                "lines_deleted": lines_deleted,
-            })
+            applied.append(
+                {
+                    "start_idx": line_idx,
+                    "end_idx": line_idx + lines_added - 1,
+                    "original_start_idx": original_start,
+                    "original_end_idx": original_end,
+                    "edit": edit,
+                    "lines_added": lines_added,
+                    "lines_deleted": lines_deleted,
+                }
+            )
 
         elif edit_type == "insert_after":
             line_idx = re["line_idx"] + 1  # after the anchor line
@@ -516,15 +561,17 @@ def apply_resolved_edits(
                 new_lines.insert(line_idx + i, nl)
             lines_added = len(new_text_lines)
             lines_deleted = 0
-            applied.append({
-                "start_idx": line_idx,
-                "end_idx": line_idx + lines_added - 1,
-                "original_start_idx": original_start,
-                "original_end_idx": original_end,
-                "edit": edit,
-                "lines_added": lines_added,
-                "lines_deleted": lines_deleted,
-            })
+            applied.append(
+                {
+                    "start_idx": line_idx,
+                    "end_idx": line_idx + lines_added - 1,
+                    "original_start_idx": original_start,
+                    "original_end_idx": original_end,
+                    "edit": edit,
+                    "lines_added": lines_added,
+                    "lines_deleted": lines_deleted,
+                }
+            )
 
         else:  # replace
             start_idx = re["line_idx"]
@@ -535,18 +582,22 @@ def apply_resolved_edits(
             new_count = len(new_text_lines)
 
             # Replace the range
-            new_lines[start_idx:end_idx + 1] = new_text_lines
+            new_lines[start_idx : end_idx + 1] = new_text_lines
 
             lines_added = new_count
             lines_deleted = old_count
-            applied.append({
-                "start_idx": start_idx,
-                "end_idx": start_idx + new_count - 1 if new_count > 0 else start_idx,
-                "original_start_idx": original_start,
-                "original_end_idx": original_end,
-                "edit": edit,
-                "lines_added": lines_added,
-                "lines_deleted": lines_deleted,
-            })
+            applied.append(
+                {
+                    "start_idx": start_idx,
+                    "end_idx": start_idx + new_count - 1
+                    if new_count > 0
+                    else start_idx,
+                    "original_start_idx": original_start,
+                    "original_end_idx": original_end,
+                    "edit": edit,
+                    "lines_added": lines_added,
+                    "lines_deleted": lines_deleted,
+                }
+            )
 
     return new_lines, applied

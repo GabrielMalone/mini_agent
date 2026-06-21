@@ -14,10 +14,9 @@ tree-sitter or regex fallback).
 from __future__ import annotations
 
 import re
-from typing import Any, Optional
+from typing import Any
 
-from core.anchor_manager import AnchorStateManager
-from core.tree_sitter_parser import _get_parser_for_ext, _TREE_SITTER_AVAILABLE
+from core.tree_sitter_parser import _TREE_SITTER_AVAILABLE
 
 # ---------------------------------------------------------------------------
 # Query strings per language (mirrors Dirac's SymbolContextResolver.getQueryStrings)

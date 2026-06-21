@@ -126,8 +126,7 @@ def append_compaction_summary(
         "content": (
             "[CONTEXT COMPACTION] The following turns have been summarized "
             "to stay within context limits.  The conversation prefix is "
-            "unchanged, so cached data is preserved:\n\n"
-            + summary_text
+            "unchanged, so cached data is preserved:\n\n" + summary_text
         ),
     }
     messages.append(msg)

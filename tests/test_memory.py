@@ -13,7 +13,6 @@ from memory.memory import MemoryStore, _db_path, _prune_by_tokens
 
 
 class TestMemoryStore(unittest.TestCase):
-
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
         self.memfile = os.path.join(self.tmp, "memory.json")
@@ -21,6 +20,7 @@ class TestMemoryStore(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     # --- load from empty state ---
@@ -93,8 +93,13 @@ class TestMemoryStore(unittest.TestCase):
             {
                 "role": "assistant",
                 "content": "",
-                "tool_calls": [{"id": "orphan", "type": "function",
-                                "function": {"name": "f", "arguments": "{}"}}],
+                "tool_calls": [
+                    {
+                        "id": "orphan",
+                        "type": "function",
+                        "function": {"name": "f", "arguments": "{}"},
+                    }
+                ],
             },
         ]
         self.store.save(messages)
@@ -154,8 +159,10 @@ class TestMemoryStore(unittest.TestCase):
     def test_load_handles_bad_json_in_row(self):
         db_path = self.store._db_path
         with sqlite3.connect(db_path) as conn:
-            conn.execute("INSERT INTO messages (role, content) VALUES (?, ?)",
-                         ("user", "{{{ bad json"))
+            conn.execute(
+                "INSERT INTO messages (role, content) VALUES (?, ?)",
+                ("user", "{{{ bad json"),
+            )
         loaded = self.store.load()
         self.assertTrue(len(loaded) >= 1)
 
@@ -181,6 +188,7 @@ class TestMemoryStore(unittest.TestCase):
 # Pruning tests
 # ---------------------------------------------------------------------------
 
+
 class TestPruning(unittest.TestCase):
     """Verify that old messages are trimmed to stay within max_messages."""
 
@@ -199,8 +207,11 @@ class TestPruning(unittest.TestCase):
                 "role": "assistant",
                 "content": "",
                 "tool_calls": [
-                    {"id": f"call_{n}", "type": "function",
-                     "function": {"name": "f", "arguments": "{}"}},
+                    {
+                        "id": f"call_{n}",
+                        "type": "function",
+                        "function": {"name": "f", "arguments": "{}"},
+                    },
                 ],
             },
             {
@@ -223,8 +234,12 @@ class TestPruning(unittest.TestCase):
         self.assertEqual(pruned, [])
 
     def test_over_limit_trims_oldest_turns(self):
-        msgs = (self._make_turn(1) + self._make_turn(2) +
-                self._make_turn(3) + self._make_turn(4))  # 8 messages
+        msgs = (
+            self._make_turn(1)
+            + self._make_turn(2)
+            + self._make_turn(3)
+            + self._make_turn(4)
+        )  # 8 messages
         kept, pruned = _prune_by_tokens(msgs, max_tokens=999999, max_messages=4)
         # Should keep turns 3 and 4 (last 4 messages)
         self.assertEqual(len(kept), 4)
@@ -232,8 +247,9 @@ class TestPruning(unittest.TestCase):
 
     def test_prune_preserves_user_boundary(self):
         """Cut always lands on a user message, not mid-turn."""
-        msgs = (self._make_turn(1) + self._make_turn(2) +
-                self._make_turn(3))  # 6 messages
+        msgs = (
+            self._make_turn(1) + self._make_turn(2) + self._make_turn(3)
+        )  # 6 messages
         kept, pruned = _prune_by_tokens(msgs, max_tokens=999999, max_messages=3)
         # 3 messages would cut mid-turn-2. Should adjust to start at turn 2.
         self.assertEqual(kept[0]["role"], "user")
@@ -241,9 +257,9 @@ class TestPruning(unittest.TestCase):
 
     def test_tool_turn_preserved_by_user_boundary(self):
         """Tool-call sequences stay intact because cut aligns to user."""
-        msgs = (self._make_turn(1) +
-                self._make_tool_turn(2) +
-                self._make_turn(3))  # 2 + 3 + 2 = 7 messages
+        msgs = (
+            self._make_turn(1) + self._make_tool_turn(2) + self._make_turn(3)
+        )  # 2 + 3 + 2 = 7 messages
         kept, pruned = _prune_by_tokens(msgs, max_tokens=999999, max_messages=5)
         # Should keep tool turn 2 + turn 3 intact
         self.assertGreaterEqual(len(kept), 5)
@@ -270,12 +286,14 @@ class TestPruning(unittest.TestCase):
             self.assertIn("q3", contents)
         finally:
             import shutil
+
             shutil.rmtree(tmp, ignore_errors=True)
 
 
 # ---------------------------------------------------------------------------
 # JSON migration tests
 # ---------------------------------------------------------------------------
+
 
 class TestJSONMigration(unittest.TestCase):
     """Verify that old JSON memory files are migrated to SQLite."""
@@ -285,6 +303,7 @@ class TestJSONMigration(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def test_migration_creates_db_from_json(self):

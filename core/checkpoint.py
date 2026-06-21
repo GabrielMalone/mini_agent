@@ -21,7 +21,7 @@ import os
 import subprocess
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass
@@ -176,7 +176,11 @@ class CheckpointManager:
                     timeout=5,
                 )
 
-                sha = sha_result.stdout.strip() if sha_result.returncode == 0 else "unknown"
+                sha = (
+                    sha_result.stdout.strip()
+                    if sha_result.returncode == 0
+                    else "unknown"
+                )
 
                 cp = Checkpoint(
                     sha=sha,
@@ -187,7 +191,7 @@ class CheckpointManager:
 
                 # Prune old checkpoints from log
                 if len(self._checkpoints) > self.MAX_CHECKPOINTS:
-                    self._checkpoints = self._checkpoints[-self.MAX_CHECKPOINTS:]
+                    self._checkpoints = self._checkpoints[-self.MAX_CHECKPOINTS :]
 
                 self._checked_this_turn = True
                 return sha

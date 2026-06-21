@@ -44,6 +44,7 @@ class TestListSessions(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     def test_empty_workspace_returns_empty(self):
@@ -97,6 +98,7 @@ class TestDeleteSession(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     def test_cannot_delete_default(self):
@@ -129,11 +131,13 @@ class TestSwitchSession(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     def _make_config(self, **overrides):
         """Minimal AgentConfig for session tests."""
         from core.config import AgentConfig
+
         defaults = {
             "workspace": self.tmpdir,
             "api_provider": "deepseek",
@@ -164,9 +168,7 @@ class TestSwitchSession(unittest.TestCase):
         MockStore.return_value = mock_memory
 
         config = self._make_config()
-        result = session.switch_session(
-            self.tmpdir, "newsession", None, config
-        )
+        result = session.switch_session(self.tmpdir, "newsession", None, config)
 
         self.assertIn("memory", result)
         self.assertIn("messages", result)
@@ -205,12 +207,12 @@ class TestSwitchSession(unittest.TestCase):
         MockStore.return_value = mock_memory
 
         config = self._make_config()
-        result = session.switch_session(
-            self.tmpdir, "newsession", None, config
-        )
+        result = session.switch_session(self.tmpdir, "newsession", None, config)
 
         # The saved messages should be appended after system messages
-        contents = [m.get("content") for m in result["messages"] if m.get("role") == "user"]
+        contents = [
+            m.get("content") for m in result["messages"] if m.get("role") == "user"
+        ]
         self.assertIn("hello", contents)
 
 

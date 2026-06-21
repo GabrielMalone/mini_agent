@@ -21,6 +21,7 @@ from tools.mcp_client import (
 # In-process mock MCP server (newline-delimited JSON-RPC over stdio)
 # ---------------------------------------------------------------------------
 
+
 def _mock_mcp_server_script() -> str:
     """Return a standalone Python script that acts as a minimal MCP server."""
     return r"""
@@ -92,6 +93,7 @@ def mock_server_command():
 # ---------------------------------------------------------------------------
 # McpConnection tests
 # ---------------------------------------------------------------------------
+
 
 class TestMcpConnection(unittest.TestCase):
     """Unit tests for a single MCP connection."""
@@ -172,15 +174,18 @@ class TestMcpConnection(unittest.TestCase):
 # McpClientManager tests
 # ---------------------------------------------------------------------------
 
+
 class TestMcpClientManager(unittest.TestCase):
     """Tests for the multi-server manager."""
 
     def setUp(self):
         """Create a manager configured with the mock server."""
         cmd = mock_server_command()
-        self.mgr = McpClientManager({
-            "mock": {"command": cmd},
-        })
+        self.mgr = McpClientManager(
+            {
+                "mock": {"command": cmd},
+            }
+        )
 
     def tearDown(self):
         self.mgr.shutdown()
@@ -225,6 +230,7 @@ class TestMcpClientManager(unittest.TestCase):
 # Module-level singleton tests
 # ---------------------------------------------------------------------------
 
+
 class TestModuleSingleton(unittest.TestCase):
     """Tests for get_mcp_manager / init_mcp_servers / shutdown_mcp."""
 
@@ -250,6 +256,7 @@ class TestModuleSingleton(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # McpError / McpConnectionError tests
 # ---------------------------------------------------------------------------
+
 
 class TestMcpErrors(unittest.TestCase):
     """Tests for error types."""

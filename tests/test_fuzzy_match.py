@@ -1,4 +1,3 @@
-
 import unittest
 from tools.file_ops import _fuzzy_find, _line_match, _find_closest_lines
 
@@ -30,7 +29,7 @@ class TestFuzzyFind(unittest.TestCase):
         search = "hello\nworld"
         result = _fuzzy_find(content, search)
         self.assertIsNotNone(result)
-        self.assertEqual(content[result[0]:result[1]], "hello   \nworld")
+        self.assertEqual(content[result[0] : result[1]], "hello   \nworld")
 
     def test_trailing_whitespace_reverse(self):
         content = "hello\nworld"
@@ -152,7 +151,6 @@ class TestLineMatch(unittest.TestCase):
         self.assertIsNone(result)
 
 
-
 class TestFuzzyFindPass4(unittest.TestCase):
     """Tests for the 4th-pass normalized-content fuzzy matching."""
 
@@ -179,8 +177,8 @@ class TestFuzzyFindPass4(unittest.TestCase):
         self.assertIsNotNone(result)
         start, end = result
         # CRLF is normalized in matching; the returned region should contain the matched content
-        matched = content[start:end].replace('\r', '')
-        self.assertIn("helloworld", matched.replace('\n', ''))
+        matched = content[start:end].replace("\r", "")
+        self.assertIn("helloworld", matched.replace("\n", ""))
 
     # -- Collapsed whitespace --
     def test_collapsed_extra_spaces(self):
@@ -227,8 +225,8 @@ class TestFindClosestLines(unittest.TestCase):
         search_lines = ["def foo():", "    return 1"]
         result = _find_closest_lines(content_lines, search_lines)
         self.assertIsNotNone(result)
-        self.assertEqual(result['line'], 1)
-        self.assertEqual(result['lines'], ["def foo():", "    return 1"])
+        self.assertEqual(result["line"], 1)
+        self.assertEqual(result["lines"], ["def foo():", "    return 1"])
 
     def test_tab_mismatch(self):
         content_lines = ["\tdef foo():", "\t    return 1"]
@@ -236,14 +234,14 @@ class TestFindClosestLines(unittest.TestCase):
         result = _find_closest_lines(content_lines, search_lines)
         self.assertIsNotNone(result)
         # Should match since normalization handles tabs
-        self.assertEqual(result['line'], 1)
+        self.assertEqual(result["line"], 1)
 
     def test_whitespace_diff_shown(self):
         content_lines = ["def bar():", "    return 42"]
         search_lines = ["def foo():", "    return 1"]
         result = _find_closest_lines(content_lines, search_lines)
         self.assertIsNotNone(result)
-        self.assertIn("expected", result['diff_hint'].lower())
+        self.assertIn("expected", result["diff_hint"].lower())
 
 
 # ---------------------------------------------------------------------------
@@ -272,7 +270,7 @@ class TestQuoteNormalization(unittest.TestCase):
         self.assertIsNotNone(result)
         start, end = result
         # Should match the original curly-quoted content
-        self.assertIn('Hello world', content[start:end])
+        self.assertIn("Hello world", content[start:end])
 
     def test_curly_single_quotes(self):
         content = "'test'"
@@ -282,7 +280,7 @@ class TestQuoteNormalization(unittest.TestCase):
 
     def test_mixed_quotes_in_code(self):
         content = "x = \"foo\" + 'bar'"
-        search = 'x = "foo" + \'bar\''
+        search = "x = \"foo\" + 'bar'"
         result = _fuzzy_find(content, search)
         self.assertIsNotNone(result)
 
@@ -343,8 +341,8 @@ class TestIndentationPreservation(unittest.TestCase):
         new = "    if x:\n        pass\n        log()"
         file_region = "\tif x:\n\t\tpass"
         result = _preserve_indentation(old, new, file_region)
-        self.assertIn('\tif x:', result)
-        self.assertIn('\t\tpass', result)
+        self.assertIn("\tif x:", result)
+        self.assertIn("\t\tpass", result)
 
     def test_tabs_to_spaces_preserved(self):
         # File uses spaces, model outputs tabs
@@ -352,8 +350,8 @@ class TestIndentationPreservation(unittest.TestCase):
         new = "\tif x:\n\t\tpass\n\t\tlog()"
         file_region = "    if x:\n        pass"
         result = _preserve_indentation(old, new, file_region)
-        self.assertIn('    if x:', result)
-        self.assertIn('        pass', result)
+        self.assertIn("    if x:", result)
+        self.assertIn("        pass", result)
 
     def test_relative_indent_increase(self):
         old = "def foo():\n    return 1"
@@ -361,8 +359,8 @@ class TestIndentationPreservation(unittest.TestCase):
         file_region = "def foo():\n  return 1"
         result = _preserve_indentation(old, new, file_region)
         # Should use 2-space indent from file
-        self.assertIn('  return 1', result)
-        self.assertIn('  return 2', result)
+        self.assertIn("  return 1", result)
+        self.assertIn("  return 2", result)
 
     def test_single_line_no_preservation(self):
         result = _preserve_indentation("old", "new", "old")
@@ -373,8 +371,8 @@ class TestIndentationPreservation(unittest.TestCase):
         new = "def foo():\n    pass\n    x = 1\n    y = 2"
         file_region = "def foo():\n\tpass"
         result = _preserve_indentation(old, new, file_region)
-        self.assertIn('\tx = 1', result)
-        self.assertIn('\ty = 2', result)
+        self.assertIn("\tx = 1", result)
+        self.assertIn("\ty = 2", result)
 
 
 class TestReadBeforeEdit(unittest.TestCase):
@@ -402,8 +400,8 @@ class TestConfidenceScoring(unittest.TestCase):
         search_lines = ["def foo():", "    return 1"]
         result = _find_closest_lines(content_lines, search_lines)
         self.assertIsNotNone(result)
-        self.assertEqual(result['match_ratio'], 1.0)
-        self.assertEqual(result['matched_lines'], 2)
+        self.assertEqual(result["match_ratio"], 1.0)
+        self.assertEqual(result["matched_lines"], 2)
 
     def test_partial_match_has_lower_confidence(self):
         # 3 lines: 2 match, 1 has different content = 2/3 confidence
@@ -411,16 +409,16 @@ class TestConfidenceScoring(unittest.TestCase):
         search_lines = ["def foo():", "    return 42", "    different"]
         result = _find_closest_lines(content_lines, search_lines)
         self.assertIsNotNone(result)
-        self.assertAlmostEqual(result['match_ratio'], 2/3)
-        self.assertEqual(result['matched_lines'], 2)
+        self.assertAlmostEqual(result["match_ratio"], 2 / 3)
+        self.assertEqual(result["matched_lines"], 2)
 
     def test_different_content_zero_confidence(self):
         content_lines = ["def bar():", "    return 42"]
         search_lines = ["def foo():", "    return 1"]
         result = _find_closest_lines(content_lines, search_lines)
         self.assertIsNotNone(result)
-        self.assertEqual(result['match_ratio'], 0.0)  # completely different
-        self.assertEqual(result['matched_lines'], 0)
+        self.assertEqual(result["match_ratio"], 0.0)  # completely different
+        self.assertEqual(result["matched_lines"], 0)
 
 
 if __name__ == "__main__":

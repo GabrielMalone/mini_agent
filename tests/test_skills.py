@@ -89,8 +89,16 @@ class TestListSkills(unittest.TestCase):
 
     def test_all_expected_skill_names(self):
         result = skills.list_skills()
-        expected = {"test", "lsp", "web",
-                    "search", "tasks", "image", "bootstrap", "desktop"}
+        expected = {
+            "test",
+            "lsp",
+            "web",
+            "search",
+            "tasks",
+            "image",
+            "bootstrap",
+            "desktop",
+        }
         self.assertTrue(expected.issubset(set(result.keys())))
 
 
@@ -175,7 +183,7 @@ class TestGetActiveToolNames(unittest.TestCase):
         skills.activate_skill("test")
         names = skills.get_active_tool_names()
         # Core tools should appear first, in original order
-        core_slice = names[:len(skills.CORE_TOOLS)]
+        core_slice = names[: len(skills.CORE_TOOLS)]
         self.assertEqual(core_slice, skills.CORE_TOOLS)
 
 
@@ -189,8 +197,10 @@ class TestGetActiveTools(unittest.TestCase):
         skills.reset_skills()
 
     def test_returns_core_tool_schemas_only(self):
-        with patch("tools.skills.get_active_tool_names",
-                   return_value=["read_file", "write_file", "run_shell"]):
+        with patch(
+            "tools.skills.get_active_tool_names",
+            return_value=["read_file", "write_file", "run_shell"],
+        ):
             # Only the 3 tools named above should be in the result
             result = skills.get_active_tools()
             result_names = [td["function"]["name"] for td in result]
@@ -202,8 +212,10 @@ class TestGetActiveTools(unittest.TestCase):
             self.assertEqual(result, [])
 
     def test_unknown_tool_name_skipped(self):
-        with patch("tools.skills.get_active_tool_names",
-                   return_value=["read_file", "nonexistent_tool_xyz"]):
+        with patch(
+            "tools.skills.get_active_tool_names",
+            return_value=["read_file", "nonexistent_tool_xyz"],
+        ):
             result = skills.get_active_tools()
             result_names = [td["function"]["name"] for td in result]
             self.assertIn("read_file", result_names)
@@ -289,8 +301,9 @@ class TestCoreToolsInvariants(unittest.TestCase):
     def test_all_skill_tool_names_are_strings(self):
         for skill_name, tool_list in skills.SKILLS.items():
             for tool in tool_list:
-                self.assertIsInstance(tool, str,
-                    f"Tool in skill '{skill_name}' is not a string: {tool!r}")
+                self.assertIsInstance(
+                    tool, str, f"Tool in skill '{skill_name}' is not a string: {tool!r}"
+                )
 
 
 if __name__ == "__main__":

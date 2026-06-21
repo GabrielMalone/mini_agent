@@ -34,6 +34,7 @@ from tools import execute_tool, ToolResult, _TOOL_DISPATCH
 # 1. LSP tool dispatch tests
 # ---------------------------------------------------------------------------
 
+
 class TestLspToolDispatch(unittest.TestCase):
     """Verify all 4 LSP tools are registered, dispatchable, and handle errors."""
 
@@ -43,6 +44,7 @@ class TestLspToolDispatch(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.workspace, ignore_errors=True)
 
     def test_all_lsp_tools_registered(self):
@@ -80,6 +82,7 @@ class TestLspToolDispatch(unittest.TestCase):
 # 2. File reservation concurrency
 # ---------------------------------------------------------------------------
 
+
 class TestFileReservationConcurrency(unittest.TestCase):
     """Verify FILE_RESERVATIONS with threading.Lock prevents collisions."""
 
@@ -89,6 +92,7 @@ class TestFileReservationConcurrency(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.workspace, ignore_errors=True)
 
     def test_concurrent_write_to_same_file_one_wins(self):
@@ -104,11 +108,14 @@ class TestFileReservationConcurrency(unittest.TestCase):
 
         t1 = threading.Thread(target=_write, args=("# thread 1\n",))
         t2 = threading.Thread(target=_write, args=("# thread 2\n",))
-        t1.start(); t2.start()
-        t1.join(timeout=5); t2.join(timeout=5)
+        t1.start()
+        t2.start()
+        t1.join(timeout=5)
+        t2.join(timeout=5)
 
-        self.assertTrue(any(r.success for r in results),
-                        f"Neither write succeeded: {results}")
+        self.assertTrue(
+            any(r.success for r in results), f"Neither write succeeded: {results}"
+        )
         self.assertTrue(os.path.exists(filepath))
         with open(filepath) as f:
             content = f.read()
@@ -123,13 +130,15 @@ class TestFileReservationConcurrency(unittest.TestCase):
         self.assertTrue(result.success)
 
         with _FILE_RESERVATIONS_LOCK:
-            self.assertNotIn(filepath, _FILE_RESERVATIONS,
-                             "Reservation not released after write")
+            self.assertNotIn(
+                filepath, _FILE_RESERVATIONS, "Reservation not released after write"
+            )
 
 
 # ---------------------------------------------------------------------------
 # 3. Coordination patterns with real AgentRuntime
 # ---------------------------------------------------------------------------
+
 
 @unittest.skip("Sub-agent system removed in commit 25d41eb")
 class TestCoordinationPatternsEndToEnd(unittest.TestCase):
@@ -143,17 +152,27 @@ class TestCoordinationPatternsEndToEnd(unittest.TestCase):
         self.wg, self.rg = _gates(self.workspace)
 
         class _Cfg:
-            model = "test"; sub_agent_model = "test"
-            sub_agent_max_concurrent = 10; sub_agent_max_turns = 25
-            workspace = self.workspace; unrestricted = True
-            allow_overwrites = True; approve_write_ops = False
-            api_key = ""; api_url = ""; stream = False; verbose = False
-            sub_agent_api_key = ""; max_messages = 500; max_tokens = 200000
+            model = "test"
+            sub_agent_model = "test"
+            sub_agent_max_concurrent = 10
+            sub_agent_max_turns = 25
+            workspace = self.workspace
+            unrestricted = True
+            allow_overwrites = True
+            approve_write_ops = False
+            api_key = ""
+            api_url = ""
+            stream = False
+            verbose = False
+            sub_agent_api_key = ""
+            max_messages = 500
+            max_tokens = 200000
 
         self.config = _Cfg()
 
     def tearDown(self):
         import shutil
+
         self.runtime.cancel_all()
         for t in list(self.runtime.tasks.values()):
             t.join(timeout=2)
@@ -165,12 +184,12 @@ class TestCoordinationPatternsEndToEnd(unittest.TestCase):
 
         task_ids = fan_out(
             ["task-a: simple", "task-b: simple", "task-c: simple"],
-            runtime=self.runtime, config=self.config,
+            runtime=self.runtime,
+            config=self.config,
         )
 
         # fan_out calls _spawn_one which spawns real threads
-        self.assertGreaterEqual(len(task_ids), 1,
-                                "Should spawn at least one agent")
+        self.assertGreaterEqual(len(task_ids), 1, "Should spawn at least one agent")
         for tid in task_ids:
             self.assertTrue(tid, "Task ID should be non-empty")
 
@@ -180,8 +199,12 @@ class TestCoordinationPatternsEndToEnd(unittest.TestCase):
         from agents.agent_runtime import SubAgentResult
 
         # Manually register completed results
-        self.runtime.store_result("task-1", SubAgentResult(True, "result-1", turns_used=1))
-        self.runtime.store_result("task-2", SubAgentResult(True, "result-2", turns_used=2))
+        self.runtime.store_result(
+            "task-1", SubAgentResult(True, "result-1", turns_used=1)
+        )
+        self.runtime.store_result(
+            "task-2", SubAgentResult(True, "result-2", turns_used=2)
+        )
 
         results = fan_in(["task-1", "task-2"], runtime=self.runtime)
         self.assertEqual(len(results), 2)
@@ -196,19 +219,20 @@ class TestCoordinationPatternsEndToEnd(unittest.TestCase):
         # Simulate agents reaching the barrier by sending coord.sync
         for tid in ("agent-a", "agent-b"):
             msg = AgentMessage(
-                type="coord.sync", sender=tid,
+                type="coord.sync",
+                sender=tid,
                 payload={"barrier": "test-barrier", "arrived": 1, "total": 2},
             )
             self.runtime.append_inbox(tid, msg)
 
-        result = barrier("test-barrier", ["agent-a", "agent-b"],
-                         runtime=self.runtime)
+        result = barrier("test-barrier", ["agent-a", "agent-b"], runtime=self.runtime)
         self.assertTrue(result, "Barrier should pass when all agents sync")
 
 
 # ---------------------------------------------------------------------------
 # 4. Pipeline ordering
 # ---------------------------------------------------------------------------
+
 
 @unittest.skip("Sub-agent system removed in commit 25d41eb")
 class TestPipelineOrdering(unittest.TestCase):
@@ -222,17 +246,27 @@ class TestPipelineOrdering(unittest.TestCase):
         self.wg, self.rg = _gates(self.workspace)
 
         class _Cfg:
-            model = "test"; sub_agent_model = "test"
-            sub_agent_max_concurrent = 10; sub_agent_max_turns = 25
-            workspace = self.workspace; unrestricted = True
-            allow_overwrites = True; approve_write_ops = False
-            api_key = ""; api_url = ""; stream = False; verbose = False
-            sub_agent_api_key = ""; max_messages = 500; max_tokens = 200000
+            model = "test"
+            sub_agent_model = "test"
+            sub_agent_max_concurrent = 10
+            sub_agent_max_turns = 25
+            workspace = self.workspace
+            unrestricted = True
+            allow_overwrites = True
+            approve_write_ops = False
+            api_key = ""
+            api_url = ""
+            stream = False
+            verbose = False
+            sub_agent_api_key = ""
+            max_messages = 500
+            max_tokens = 200000
 
         self.config = _Cfg()
 
     def tearDown(self):
         import shutil
+
         self.runtime.cancel_all()
         for t in list(self.runtime.tasks.values()):
             t.join(timeout=2)
@@ -242,14 +276,12 @@ class TestPipelineOrdering(unittest.TestCase):
         """pipeline tool is registered and dispatchable."""
 
         # Verify the pipeline helper is registered as a tool
-        self.assertIn("pipeline", _TOOL_DISPATCH,
-                      "pipeline not in _TOOL_DISPATCH")
+        self.assertIn("pipeline", _TOOL_DISPATCH, "pipeline not in _TOOL_DISPATCH")
 
         # Pipeline orchestrates sequential agent execution.
         # Without real API keys, sub-agents will fail -- but the tool
         # dispatch itself should work.
-        tc = _make_tool_call("pipeline",
-                             stages=["Stage 1", "Stage 2", "Stage 3"])
+        tc = _make_tool_call("pipeline", stages=["Stage 1", "Stage 2", "Stage 3"])
         result = execute_tool(tc, self.wg, self.rg)
         # May succeed or fail depending on sub-agent API -- but shouldn't crash
         self.assertIsInstance(result, ToolResult)
@@ -259,6 +291,7 @@ class TestPipelineOrdering(unittest.TestCase):
 # 5. Auto-extend logic
 # ---------------------------------------------------------------------------
 
+
 class TestAutoExtend(unittest.TestCase):
     """Verify auto-extend grants extra turns when agent is near budget."""
 
@@ -266,21 +299,18 @@ class TestAutoExtend(unittest.TestCase):
         turns_budget = 10
         turns_used = 8
         remaining = turns_budget - turns_used
-        self.assertLessEqual(remaining, 3,
-                             f"Should trigger: {remaining} turns left")
+        self.assertLessEqual(remaining, 3, f"Should trigger: {remaining} turns left")
 
     def test_auto_extend_not_triggered_with_plenty_of_turns(self):
         turns_budget = 25
         turns_used = 5
         remaining = turns_budget - turns_used
-        self.assertGreater(remaining, 3,
-                           f"Should NOT trigger: {remaining} turns left")
+        self.assertGreater(remaining, 3, f"Should NOT trigger: {remaining} turns left")
 
     def test_auto_extend_max_cap(self):
         turns_budget = 33
         extended = min(turns_budget + 10, 35)
-        self.assertEqual(extended, 35,
-                         f"Extended budget {extended} exceeds max 35")
+        self.assertEqual(extended, 35, f"Extended budget {extended} exceeds max 35")
 
     def test_auto_extend_no_double_extension(self):
         turns_budget = 10
@@ -292,12 +322,14 @@ class TestAutoExtend(unittest.TestCase):
 # 6. Stale agent GC
 # ---------------------------------------------------------------------------
 
+
 @unittest.skip("Sub-agent system removed in commit 25d41eb")
 class TestStaleAgentGC(unittest.TestCase):
     """Verify stale agent threads from previous sessions are cleaned up."""
 
     def setUp(self):
         from agents.agent_runtime import AgentRuntime
+
         self.runtime = AgentRuntime()
 
     def tearDown(self):
@@ -311,7 +343,8 @@ class TestStaleAgentGC(unittest.TestCase):
         cancel = threading.Event()
         t = threading.Thread(target=lambda: time.sleep(0.05), daemon=True)
         self.runtime.register("stale-1", t, cancel)
-        t.start(); t.join(timeout=1)
+        t.start()
+        t.join(timeout=1)
         self.runtime.store_result("stale-1", SubAgentResult(True, "done"))
         self.assertEqual(self.runtime.get_status("stale-1"), "completed")
 
@@ -319,7 +352,8 @@ class TestStaleAgentGC(unittest.TestCase):
         cancel = threading.Event()
         t = threading.Thread(target=lambda: None, daemon=True)
         self.runtime.register("ghost-1", t, cancel)
-        t.start(); t.join(timeout=1)
+        t.start()
+        t.join(timeout=1)
         status = self.runtime.get_status("ghost-1")
         self.assertIn(status, ("running", "not_found", "completed"))
 
@@ -342,12 +376,14 @@ class TestStaleAgentGC(unittest.TestCase):
 # 7. Agent handoff inbox delivery (via append_inbox)
 # ---------------------------------------------------------------------------
 
+
 @unittest.skip("Sub-agent system removed in commit 25d41eb")
 class TestAgentHandoffInbox(unittest.TestCase):
     """Verify agent_handoff messages are delivered and readable via inbox."""
 
     def setUp(self):
         from agents.agent_runtime import AgentRuntime
+
         self.runtime = AgentRuntime()
 
     def tearDown(self):
@@ -362,8 +398,10 @@ class TestAgentHandoffInbox(unittest.TestCase):
         msg = AgentMessage(
             type="handoff.result",
             sender="worker-1",
-            payload={"result": {"count": 42, "files": ["a.py", "b.py"]},
-                     "task": "count files"},
+            payload={
+                "result": {"count": 42, "files": ["a.py", "b.py"]},
+                "task": "count files",
+            },
             correlation_id="corr-abc",
         )
         self.runtime.append_inbox("orchestrator", msg)
@@ -380,7 +418,8 @@ class TestAgentHandoffInbox(unittest.TestCase):
 
         for i in range(1100):
             msg = AgentMessage(
-                type="text", sender=f"agent-{i}",
+                type="text",
+                sender=f"agent-{i}",
                 payload={"body": f"message {i}"},
             )
             self.runtime.append_inbox("receiver", msg)
@@ -393,13 +432,15 @@ class TestAgentHandoffInbox(unittest.TestCase):
         from tools.agent_messages import AgentMessage
 
         direct_msg = AgentMessage(
-            type="handoff.result", sender="agent-a",
+            type="handoff.result",
+            sender="agent-a",
             payload={"result": {"data": "direct"}, "task": "test"},
         )
         self.runtime.append_inbox("target-only", direct_msg)
 
         broadcast_msg = AgentMessage(
-            type="status.heartbeat", sender="agent-a",
+            type="status.heartbeat",
+            sender="agent-a",
             payload={"progress": "50%", "pct": 50},
         )
         for rid in ("orchestrator", "agent-b", "agent-c"):
@@ -411,13 +452,16 @@ class TestAgentHandoffInbox(unittest.TestCase):
 
         for rid in ("orchestrator", "agent-b", "agent-c"):
             inbox = self.runtime.get_inbox(rid)
-            self.assertTrue(any(m.type == "status.heartbeat" for m in inbox),
-                            f"{rid} should have received heartbeat")
+            self.assertTrue(
+                any(m.type == "status.heartbeat" for m in inbox),
+                f"{rid} should have received heartbeat",
+            )
 
 
 # ---------------------------------------------------------------------------
 # 8. Sub-agent recursion guard
 # ---------------------------------------------------------------------------
+
 
 @unittest.skip("Sub-agent system removed in commit 25d41eb")
 class TestSubAgentRecursion(unittest.TestCase):
@@ -431,17 +475,27 @@ class TestSubAgentRecursion(unittest.TestCase):
         self.wg, self.rg = _gates(self.workspace)
 
         class _Cfg:
-            model = "test"; sub_agent_model = "test"
-            sub_agent_max_concurrent = 10; sub_agent_max_turns = 25
-            workspace = self.workspace; unrestricted = True
-            allow_overwrites = True; approve_write_ops = False
-            api_key = ""; api_url = ""; stream = False; verbose = False
-            sub_agent_api_key = ""; max_messages = 500; max_tokens = 200000
+            model = "test"
+            sub_agent_model = "test"
+            sub_agent_max_concurrent = 10
+            sub_agent_max_turns = 25
+            workspace = self.workspace
+            unrestricted = True
+            allow_overwrites = True
+            approve_write_ops = False
+            api_key = ""
+            api_url = ""
+            stream = False
+            verbose = False
+            sub_agent_api_key = ""
+            max_messages = 500
+            max_tokens = 200000
 
         self.config = _Cfg()
 
     def tearDown(self):
         import shutil
+
         self.runtime.cancel_all()
         for t in list(self.runtime.tasks.values()):
             t.join(timeout=2)
@@ -452,9 +506,14 @@ class TestSubAgentRecursion(unittest.TestCase):
         from tools.agent_spawn import _spawn_one
 
         parent_id = _spawn_one(
-            "Parent task", self.config, self.runtime,
-            self.wg, self.rg, 15,
-            parent_depth=1, max_depth=3,
+            "Parent task",
+            self.config,
+            self.runtime,
+            self.wg,
+            self.rg,
+            15,
+            parent_depth=1,
+            max_depth=3,
         )
         self.assertIsNotNone(parent_id)
         self.assertEqual(self.runtime.get_status(parent_id), "running")
@@ -464,9 +523,14 @@ class TestSubAgentRecursion(unittest.TestCase):
         from tools.agent_spawn import _spawn_one
 
         child_id = _spawn_one(
-            "Deep child", self.config, self.runtime,
-            self.wg, self.rg, 15,
-            parent_depth=3, max_depth=3,
+            "Deep child",
+            self.config,
+            self.runtime,
+            self.wg,
+            self.rg,
+            15,
+            parent_depth=3,
+            max_depth=3,
         )
         if child_id is not None:
             self.runtime.cancel(child_id)
@@ -475,6 +539,7 @@ class TestSubAgentRecursion(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # 9. Workspace tree cache
 # ---------------------------------------------------------------------------
+
 
 class TestWorkspaceTreeCache(unittest.TestCase):
     """Verify the workspace tree cache is invalidated on changes."""
@@ -485,6 +550,7 @@ class TestWorkspaceTreeCache(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.workspace, ignore_errors=True)
 
     def test_cache_invalidated_after_file_write(self):
@@ -514,12 +580,12 @@ class TestWorkspaceTreeCache(unittest.TestCase):
         self.assertIn("unique_function_xyz", result.content)
 
     def test_restore_file_is_dispatchable(self):
-        self.assertIn("restore_file", _TOOL_DISPATCH,
-                      "restore_file not in _TOOL_DISPATCH")
+        self.assertIn(
+            "restore_file", _TOOL_DISPATCH, "restore_file not in _TOOL_DISPATCH"
+        )
 
     def test_verify_tool_is_registered(self):
-        self.assertIn("verify", _TOOL_DISPATCH,
-                      "verify not in _TOOL_DISPATCH")
+        self.assertIn("verify", _TOOL_DISPATCH, "verify not in _TOOL_DISPATCH")
 
 
 if __name__ == "__main__":

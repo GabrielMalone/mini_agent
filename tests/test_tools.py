@@ -18,14 +18,15 @@ from tools import ToolResult, execute_tool, tool_summary, _TOOL_CONTEXT
 # run_shell tests
 # ---------------------------------------------------------------------------
 
-class TestRunShell(unittest.TestCase):
 
+class TestRunShell(unittest.TestCase):
     def setUp(self):
         self.workspace = tempfile.mkdtemp()
         self.write_gate, self.read_gate = _gates(self.workspace)
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.workspace, ignore_errors=True)
 
     def test_simple_command_succeeds(self):
@@ -86,7 +87,9 @@ class TestRunShell(unittest.TestCase):
         self.assertNotIn("blocked by safety guard", result.content)
 
     def test_force_bypasses_guard(self):
-        tc = _make_tool_call("run_shell", command="rm -rf /nonexistent_test_dir", force=True)
+        tc = _make_tool_call(
+            "run_shell", command="rm -rf /nonexistent_test_dir", force=True
+        )
         result = execute_tool(tc, self.write_gate, self.read_gate)
         # Will succeed or fail depending on permissions, but NOT blocked by guard
         self.assertNotIn("blocked by safety guard", result.content)
@@ -119,8 +122,8 @@ class TestRunShell(unittest.TestCase):
 # search_files tests
 # ---------------------------------------------------------------------------
 
-class TestSearchFiles(unittest.TestCase):
 
+class TestSearchFiles(unittest.TestCase):
     def setUp(self):
         self.workspace = tempfile.mkdtemp()
         self.write_gate, self.read_gate = _gates(self.workspace)
@@ -133,6 +136,7 @@ class TestSearchFiles(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.workspace, ignore_errors=True)
 
     def _write(self, relpath: str, content: str) -> str:
@@ -151,7 +155,9 @@ class TestSearchFiles(unittest.TestCase):
         self.assertIn("c.txt:1:", result.content)
 
     def test_no_matches(self):
-        tc = _make_tool_call("search_files", pattern="zzznonexistent", path=self.workspace)
+        tc = _make_tool_call(
+            "search_files", pattern="zzznonexistent", path=self.workspace
+        )
         result = execute_tool(tc, self.write_gate, self.read_gate)
         self.assertTrue(result.success)
         self.assertIn("No matches", result.content)
@@ -177,6 +183,7 @@ class TestSearchFiles(unittest.TestCase):
             self.assertNotIn("blocked by safety layer", result.content)
         finally:
             import shutil
+
             shutil.rmtree(outside, ignore_errors=True)
 
     def test_capped_at_200_results(self):
@@ -205,7 +212,9 @@ class TestSearchFiles(unittest.TestCase):
 
     def test_regex_matches(self):
         self._write("funcs.py", "def hello():\n  pass\nclass Foo:\n  pass\n")
-        tc = _make_tool_call("search_files", pattern=r"def \w+", path=self.workspace, regex=True)
+        tc = _make_tool_call(
+            "search_files", pattern=r"def \w+", path=self.workspace, regex=True
+        )
         result = execute_tool(tc, self.write_gate, self.read_gate)
         self.assertTrue(result.success)
         self.assertIn("def hello", result.content)
@@ -214,14 +223,18 @@ class TestSearchFiles(unittest.TestCase):
 
     def test_regex_finds_decorators(self):
         self._write("deco.py", "@register\ndef f(): pass\n@summarize\ndef g(): pass\n")
-        tc = _make_tool_call("search_files", pattern=r"@\w+", path=self.workspace, regex=True)
+        tc = _make_tool_call(
+            "search_files", pattern=r"@\w+", path=self.workspace, regex=True
+        )
         result = execute_tool(tc, self.write_gate, self.read_gate)
         self.assertTrue(result.success)
         self.assertIn("@register", result.content)
         self.assertIn("@summarize", result.content)
 
     def test_invalid_regex_returns_error(self):
-        tc = _make_tool_call("search_files", pattern="[unclosed", path=self.workspace, regex=True)
+        tc = _make_tool_call(
+            "search_files", pattern="[unclosed", path=self.workspace, regex=True
+        )
         result = execute_tool(tc, self.write_gate, self.read_gate)
         self.assertFalse(result.success)
         self.assertIn("Invalid regex", result.content)
@@ -230,23 +243,33 @@ class TestSearchFiles(unittest.TestCase):
 
     def test_case_insensitive_matches(self):
         self._write("caps.py", "HELLO WORLD\nFooBar\n")
-        tc = _make_tool_call("search_files", pattern="hello", path=self.workspace, ignore_case=True)
+        tc = _make_tool_call(
+            "search_files", pattern="hello", path=self.workspace, ignore_case=True
+        )
         result = execute_tool(tc, self.write_gate, self.read_gate)
         self.assertTrue(result.success)
         self.assertIn("HELLO", result.content)
 
     def test_case_sensitive_still_works(self):
         self._write("caps.py", "HELLO WORLD\n")
-        tc = _make_tool_call("search_files", pattern="hello",
-                             path=os.path.join(self.workspace, "caps.py"))
+        tc = _make_tool_call(
+            "search_files",
+            pattern="hello",
+            path=os.path.join(self.workspace, "caps.py"),
+        )
         result = execute_tool(tc, self.write_gate, self.read_gate)
         self.assertTrue(result.success)
         self.assertIn("No matches", result.content)
 
     def test_case_insensitive_with_regex(self):
         self._write("caps.py", "HELLO test\nhello TEST\n")
-        tc = _make_tool_call("search_files", pattern=r"test", path=self.workspace,
-                             regex=True, ignore_case=True)
+        tc = _make_tool_call(
+            "search_files",
+            pattern=r"test",
+            path=self.workspace,
+            regex=True,
+            ignore_case=True,
+        )
         result = execute_tool(tc, self.write_gate, self.read_gate)
         self.assertTrue(result.success)
         self.assertIn("HELLO test", result.content)
@@ -257,14 +280,15 @@ class TestSearchFiles(unittest.TestCase):
 # edit_file tests
 # ---------------------------------------------------------------------------
 
-class TestEditFile(unittest.TestCase):
 
+class TestEditFile(unittest.TestCase):
     def setUp(self):
         self.workspace = tempfile.mkdtemp()
         self.write_gate, self.read_gate = _gates(self.workspace)
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.workspace, ignore_errors=True)
 
     def _write(self, relpath: str, content: str) -> str:
@@ -277,9 +301,12 @@ class TestEditFile(unittest.TestCase):
     def test_replaces_first_occurrence(self):
         path = self._write("f.txt", "hello world hello")
         # Must read before editing
-        execute_tool(_make_tool_call("read_file", path=path), self.write_gate, self.read_gate)
-        tc = _make_tool_call("edit_file", path=path,
-                             old_string="hello", new_string="hi")
+        execute_tool(
+            _make_tool_call("read_file", path=path), self.write_gate, self.read_gate
+        )
+        tc = _make_tool_call(
+            "edit_file", path=path, old_string="hello", new_string="hi"
+        )
         result = execute_tool(tc, self.write_gate, self.read_gate)
         self.assertTrue(result.success)
         with open(path) as f:
@@ -287,9 +314,10 @@ class TestEditFile(unittest.TestCase):
 
     def test_old_string_not_found_returns_error(self):
         path = self._write("f.txt", "abc")
-        execute_tool(_make_tool_call("read_file", path=path), self.write_gate, self.read_gate)
-        tc = _make_tool_call("edit_file", path=path,
-                             old_string="xyz", new_string="q")
+        execute_tool(
+            _make_tool_call("read_file", path=path), self.write_gate, self.read_gate
+        )
+        tc = _make_tool_call("edit_file", path=path, old_string="xyz", new_string="q")
         result = execute_tool(tc, self.write_gate, self.read_gate)
         self.assertFalse(result.success)
         self.assertIn("not found", result.content)
@@ -297,17 +325,22 @@ class TestEditFile(unittest.TestCase):
     def test_outside_workspace_allowed(self):
         outside = tempfile.mkdtemp()
         try:
-            tc = _make_tool_call("edit_file",
-                                 path=os.path.join(outside, "x.txt"),
-                                 old_string="a", new_string="b")
+            tc = _make_tool_call(
+                "edit_file",
+                path=os.path.join(outside, "x.txt"),
+                old_string="a",
+                new_string="b",
+            )
             result = execute_tool(tc, self.write_gate, self.read_gate)
             self.assertNotIn("blocked by safety layer", result.content)
         finally:
             import shutil
+
             shutil.rmtree(outside, ignore_errors=True)
 
     def test_write_file_tracks_modified_files(self):
         from tools import _MODIFIED_FILES, clear_tool_cache
+
         clear_tool_cache()
         _MODIFIED_FILES.clear()
         path = os.path.join(self.workspace, "new_file.txt")
@@ -320,14 +353,15 @@ class TestEditFile(unittest.TestCase):
 # file_info tests
 # ---------------------------------------------------------------------------
 
-class TestFileInfo(unittest.TestCase):
 
+class TestFileInfo(unittest.TestCase):
     def setUp(self):
         self.workspace = tempfile.mkdtemp()
         self.write_gate, self.read_gate = _gates(self.workspace)
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.workspace, ignore_errors=True)
 
     def _write(self, relpath: str, content: str) -> str:
@@ -371,6 +405,7 @@ class TestFileInfo(unittest.TestCase):
             self.assertNotIn("blocked by safety layer", result.content)
         finally:
             import shutil
+
             shutil.rmtree(outside, ignore_errors=True)
 
 
@@ -378,8 +413,8 @@ class TestFileInfo(unittest.TestCase):
 # tool_summary tests
 # ---------------------------------------------------------------------------
 
-class TestToolSummary(unittest.TestCase):
 
+class TestToolSummary(unittest.TestCase):
     def test_read_file_summary(self):
         tc = _make_tool_call("read_file", path="/some/file.txt")
         s = tool_summary(tc)
@@ -401,8 +436,9 @@ class TestToolSummary(unittest.TestCase):
         self.assertLess(len(s), 180)
 
     def test_edit_file_summary(self):
-        tc = _make_tool_call("edit_file", path="f.txt",
-                             old_string="replace me", new_string="done")
+        tc = _make_tool_call(
+            "edit_file", path="f.txt", old_string="replace me", new_string="done"
+        )
         s = tool_summary(tc)
         self.assertIn("edit_file", s)
         self.assertIn("f.txt", s)
@@ -460,6 +496,7 @@ class TestToolSummary(unittest.TestCase):
 # run_tests tool tests
 # ---------------------------------------------------------------------------
 
+
 class TestRunTests(unittest.TestCase):
     """Verify the run_tests tool works with real pytest output."""
 
@@ -480,6 +517,7 @@ class TestRunTests(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.workspace, ignore_errors=True)
 
     def test_runs_all_tests_in_workspace(self):
@@ -495,7 +533,9 @@ class TestRunTests(unittest.TestCase):
         self.assertIn("passed", result.content)
 
     def test_failing_tests_return_failure(self):
-        with open(os.path.join(self.workspace, "dummy_tests", "test_fail.py"), "w") as f:
+        with open(
+            os.path.join(self.workspace, "dummy_tests", "test_fail.py"), "w"
+        ) as f:
             f.write("def test_fail(): assert False\n")
         tc = _make_tool_call("run_tests", path="dummy_tests/test_fail.py")
         result = execute_tool(tc, self.write_gate, self.read_gate)
@@ -509,7 +549,10 @@ class TestRunTests(unittest.TestCase):
 
     def test_background_mode_returns_task_id(self):
         from tools import _TASK_REGISTRY
-        tc = _make_tool_call("run_tests", path="dummy_tests/test_dummy.py", background=True)
+
+        tc = _make_tool_call(
+            "run_tests", path="dummy_tests/test_dummy.py", background=True
+        )
         result = execute_tool(tc, self.write_gate, self.read_gate)
         self.assertTrue(result.success)
         self.assertIn("background test run", result.content)
@@ -524,13 +567,17 @@ class TestRunTests(unittest.TestCase):
     def test_test_output_persisted_to_db(self):
         """After running tests, the output should be in the memory DB."""
         from tools import _TOOL_CONTEXT
+
         # Create a temp DB and wire it into _TOOL_CONTEXT
         tmp_db = os.path.join(self.workspace, "test_memory.db")
         _TOOL_CONTEXT.scratchpad_path = tmp_db
         # Initialize the table
         import sqlite3
+
         conn = sqlite3.connect(tmp_db)
-        conn.execute("CREATE TABLE IF NOT EXISTS test_output (id INTEGER PRIMARY KEY CHECK (id = 1), output TEXT NOT NULL DEFAULT '')")
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS test_output (id INTEGER PRIMARY KEY CHECK (id = 1), output TEXT NOT NULL DEFAULT '')"
+        )
         conn.execute("INSERT OR IGNORE INTO test_output (id, output) VALUES (1, '')")
         conn.commit()
         conn.close()
@@ -552,6 +599,7 @@ class TestRunTests(unittest.TestCase):
 # web_search tests
 # ---------------------------------------------------------------------------
 
+
 class TestWebSearch(unittest.TestCase):
     """Verify web_search tool behavior. Uses real API if key is available."""
 
@@ -560,10 +608,12 @@ class TestWebSearch(unittest.TestCase):
         self.write_gate, self.read_gate = _gates(self.workspace)
         from core.config import DEFAULT_EXA_API_KEY
         from tools import set_context
+
         set_context(exa_api_key=os.environ.get("EXA_API_KEY", DEFAULT_EXA_API_KEY))
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.workspace, ignore_errors=True)
 
     def test_requires_query(self):
@@ -598,6 +648,7 @@ class TestWebSearch(unittest.TestCase):
 # semantic_search tests
 # ---------------------------------------------------------------------------
 
+
 class TestSemanticSearch(unittest.TestCase):
     """Verify semantic_search indexes .py files and returns relevant chunks."""
 
@@ -607,6 +658,7 @@ class TestSemanticSearch(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.workspace, ignore_errors=True)
 
     def _write(self, relpath: str, content: str) -> str:
@@ -626,10 +678,21 @@ class TestSemanticSearch(unittest.TestCase):
     @patch("tools.search_ops._sem_get_model")
     def test_finds_relevant_chunks(self, mock_model):
         import numpy as np
+
         mock_model.return_value.encode.return_value = np.array([[0.0, 1.0], [1.0, 0.0]])
-        self._write("auth.py", "def authenticate_user(token):\n    if token:\n        return True\n    return False\n")
-        self._write("storage.py", "def save_file(path, data):\n    with open(path, 'w') as f:\n        f.write(data)\n")
-        tc = _make_tool_call("semantic_search", query="user login and authentication", path=self.workspace)
+        self._write(
+            "auth.py",
+            "def authenticate_user(token):\n    if token:\n        return True\n    return False\n",
+        )
+        self._write(
+            "storage.py",
+            "def save_file(path, data):\n    with open(path, 'w') as f:\n        f.write(data)\n",
+        )
+        tc = _make_tool_call(
+            "semantic_search",
+            query="user login and authentication",
+            path=self.workspace,
+        )
         result = execute_tool(tc, self.write_gate, self.read_gate)
         self.assertTrue(result.success)
         # Should find the auth function first
@@ -638,16 +701,31 @@ class TestSemanticSearch(unittest.TestCase):
     @patch("tools.search_ops._sem_get_model")
     def test_finds_file_io_chunks(self, mock_model):
         import numpy as np
+
         mock = mock_model.return_value
         # "writing files to disk" -> similar to storage.py (0.95), not auth.py (0.3)
-        mock.encode.side_effect = lambda texts, **kw: np.array([
-            [1.0, 0.0] if "save_file" in t else [1.0, 0.0] if "writing" in t else [0.0, 1.0]
-            for t in texts
-        ])
+        mock.encode.side_effect = lambda texts, **kw: np.array(
+            [
+                [1.0, 0.0]
+                if "save_file" in t
+                else [1.0, 0.0]
+                if "writing" in t
+                else [0.0, 1.0]
+                for t in texts
+            ]
+        )
 
-        self._write("auth.py", "def authenticate_user(token):\n    if token:\n        return True\n    return False\n")
-        self._write("storage.py", "def save_file(path, data):\n    with open(path, 'w') as f:\n        f.write(data)\n")
-        tc = _make_tool_call("semantic_search", query="writing files to disk", path=self.workspace)
+        self._write(
+            "auth.py",
+            "def authenticate_user(token):\n    if token:\n        return True\n    return False\n",
+        )
+        self._write(
+            "storage.py",
+            "def save_file(path, data):\n    with open(path, 'w') as f:\n        f.write(data)\n",
+        )
+        tc = _make_tool_call(
+            "semantic_search", query="writing files to disk", path=self.workspace
+        )
         result = execute_tool(tc, self.write_gate, self.read_gate)
         self.assertTrue(result.success)
         self.assertIn("storage.py", result.content.lower())
@@ -668,6 +746,7 @@ class TestSemanticSearch(unittest.TestCase):
             self.assertNotIn("blocked by safety layer", result.content)
         finally:
             import shutil
+
             shutil.rmtree(outside, ignore_errors=True)
 
 
@@ -679,8 +758,8 @@ if __name__ == "__main__":
 # Tool cache tests
 # ---------------------------------------------------------------------------
 
-class TestToolCache(unittest.TestCase):
 
+class TestToolCache(unittest.TestCase):
     def setUp(self):
         self.workspace = tempfile.mkdtemp()
         self.write_gate, self.read_gate = _gates(self.workspace)
@@ -688,6 +767,7 @@ class TestToolCache(unittest.TestCase):
     def tearDown(self):
         import shutil
         from tools import clear_tool_cache
+
         clear_tool_cache()
         shutil.rmtree(self.workspace, ignore_errors=True)
 
@@ -788,8 +868,8 @@ class TestToolCache(unittest.TestCase):
 # find_symbol tests
 # ---------------------------------------------------------------------------
 
-class TestFindSymbol(unittest.TestCase):
 
+class TestFindSymbol(unittest.TestCase):
     def setUp(self):
         self.workspace = tempfile.mkdtemp()
         self.write_gate, self.read_gate = _gates(self.workspace)
@@ -800,10 +880,12 @@ class TestFindSymbol(unittest.TestCase):
             f.write("class MyClass:\n    def method_one(self):\n        pass\n")
         # Build fresh index
         from tools.search_ops import build_symbol_index
+
         build_symbol_index(self.workspace)
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.workspace, ignore_errors=True)
 
     def test_exact_match_finds_symbols(self):
@@ -843,6 +925,7 @@ class TestFindSymbol(unittest.TestCase):
 # explore tests
 # ---------------------------------------------------------------------------
 
+
 class TestExplore(unittest.TestCase):
     """Verify explore tool ranks symbols by name, filename, AND docstring/comment content."""
 
@@ -851,30 +934,34 @@ class TestExplore(unittest.TestCase):
         self.write_gate, self.read_gate = _gates(self.workspace)
         # Clear global symbol index so symbols from other tests don't leak in
         import tools.search_ops as so
+
         so._SYMBOL_INDEX = None
         so._REF_INDEX = None
         so._INDEX_MAX_MTIME = 0.0
         # Write files with varied symbol naming and documentation
         src = os.path.join(self.workspace, "auth.py")
         with open(src, "w") as f:
-            f.write('def authenticate(user, password):\n')
+            f.write("def authenticate(user, password):\n")
             f.write('    """Validate user credentials against the database."""\n')
-            f.write('    pass\n\n')
-            f.write('# Verify the session token is still valid\n')
-            f.write('def check_session(token):\n')
+            f.write("    pass\n\n")
+            f.write("# Verify the session token is still valid\n")
+            f.write("def check_session(token):\n")
             f.write('    """Return True if the session token has not expired."""\n')
-            f.write('    pass\n\n')
-            f.write('def logout():\n')
-            f.write('    pass\n')
+            f.write("    pass\n\n")
+            f.write("def logout():\n")
+            f.write("    pass\n")
         # Build fresh index
         from tools.search_ops import build_symbol_index
+
         build_symbol_index(self.workspace)
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.workspace, ignore_errors=True)
         # Clean up global state
         import tools.search_ops as so
+
         so._SYMBOL_INDEX = None
         so._REF_INDEX = None
         so._INDEX_MAX_MTIME = 0.0
@@ -932,6 +1019,7 @@ class TestExplore(unittest.TestCase):
 # build_symbol_index double-walk regression test
 # ---------------------------------------------------------------------------
 
+
 class TestBuildSymbolIndex(unittest.TestCase):
     """Verify build_symbol_index returns correct results without duplicate I/O."""
 
@@ -944,15 +1032,18 @@ class TestBuildSymbolIndex(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.workspace, ignore_errors=True)
         # Clean up global state so other tests aren't affected
         from tools import search_ops
+
         search_ops._SYMBOL_INDEX = None
         search_ops._REF_INDEX = None
         search_ops._INDEX_MAX_MTIME = 0.0
 
     def test_first_call_builds_and_returns_correctly(self):
         import tools.search_ops as so
+
         so._SYMBOL_INDEX = None
         so._REF_INDEX = None
         so._INDEX_MAX_MTIME = 0.0
@@ -964,6 +1055,7 @@ class TestBuildSymbolIndex(unittest.TestCase):
 
     def test_second_call_returns_same_index(self):
         import tools.search_ops as so
+
         so._SYMBOL_INDEX = None
         so._REF_INDEX = None
         so._INDEX_MAX_MTIME = 0.0
@@ -975,6 +1067,7 @@ class TestBuildSymbolIndex(unittest.TestCase):
 
     def test_index_includes_line_numbers(self):
         import tools.search_ops as so
+
         so._SYMBOL_INDEX = None
         so._REF_INDEX = None
         so._INDEX_MAX_MTIME = 0.0
@@ -987,14 +1080,15 @@ class TestBuildSymbolIndex(unittest.TestCase):
 # Error hint tests
 # ---------------------------------------------------------------------------
 
-class TestErrorHints(unittest.TestCase):
 
+class TestErrorHints(unittest.TestCase):
     def setUp(self):
         self.workspace = tempfile.mkdtemp()
         self.write_gate, self.read_gate = _gates(self.workspace)
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.workspace, ignore_errors=True)
 
     def test_read_file_not_found_includes_hint(self):
@@ -1008,34 +1102,43 @@ class TestErrorHints(unittest.TestCase):
     def test_shell_streaming_stderr(self):
         """on_output receives stderr lines with [stderr] prefix."""
         import sys
+
         # Cross-platform: use Python to write to stderr instead of bash redirect
         cmd = f"{sys.executable} -c \"import sys; sys.stderr.write('to_stderr\\n'); sys.stderr.flush()\""
         tc = _make_tool_call("run_shell", command=cmd)
         lines = []
-        result = execute_tool(tc, self.write_gate, self.read_gate, on_output=lines.append)
+        result = execute_tool(
+            tc, self.write_gate, self.read_gate, on_output=lines.append
+        )
         self.assertTrue(result.success)
-        self.assertTrue(any("to_stderr" in l and "stderr" in l for l in lines),
-                        f"Expected [stderr] prefix in output lines: {lines}")
+        self.assertTrue(
+            any("to_stderr" in l and "stderr" in l for l in lines),
+            f"Expected [stderr] prefix in output lines: {lines}",
+        )
 
     def test_write_outside_workspace_allowed(self):
         outside = tempfile.mkdtemp()
         try:
-            tc = _make_tool_call("write_file",
-                                 path=os.path.join(outside, "x.txt"),
-                                 content="hello")
+            tc = _make_tool_call(
+                "write_file", path=os.path.join(outside, "x.txt"), content="hello"
+            )
             result = execute_tool(tc, self.write_gate, self.read_gate)
             self.assertTrue(result.success)
         finally:
             import shutil
+
             shutil.rmtree(outside, ignore_errors=True)
 
     def test_edit_not_found_includes_hint(self):
         path = os.path.join(self.workspace, "f.txt")
         with open(path, "w") as f:
             f.write("original content\n")
-        execute_tool(_make_tool_call("read_file", path=path), self.write_gate, self.read_gate)
-        tc = _make_tool_call("edit_file", path=path,
-                             old_string="nonexistent", new_string="replacement")
+        execute_tool(
+            _make_tool_call("read_file", path=path), self.write_gate, self.read_gate
+        )
+        tc = _make_tool_call(
+            "edit_file", path=path, old_string="nonexistent", new_string="replacement"
+        )
         result = execute_tool(tc, self.write_gate, self.read_gate)
         self.assertFalse(result.success)
         self.assertIn("Hint:", result.content)
@@ -1061,6 +1164,7 @@ class TestErrorHints(unittest.TestCase):
     def test_shell_output_truncated_at_500_lines(self):
         """Long shell output is truncated."""
         import sys
+
         cmd = sys.executable + ' -c "for i in range(600): print(i)"'
         tc = _make_tool_call("run_shell", command=cmd)
         result = execute_tool(tc, self.write_gate, self.read_gate)
@@ -1072,7 +1176,9 @@ class TestErrorHints(unittest.TestCase):
         cmd = "echo line1 && echo line2 && echo line3"
         tc = _make_tool_call("run_shell", command=cmd)
         lines = []
-        result = execute_tool(tc, self.write_gate, self.read_gate, on_output=lines.append)
+        result = execute_tool(
+            tc, self.write_gate, self.read_gate, on_output=lines.append
+        )
         self.assertTrue(result.success)
         # Windows echo may include trailing spaces -- strip for comparison
         stripped = [l.strip() for l in lines]
@@ -1082,11 +1188,11 @@ class TestErrorHints(unittest.TestCase):
 
 
 class TestPlanningPrompt(unittest.TestCase):
-
     def test_prompt_includes_planning_instruction(self):
         """System prompt tells agent about plan-based workflows."""
         from core.prompt import build_system_prompt
         from core.config import AgentConfig
+
         prompt = build_system_prompt(AgentConfig())
         self.assertIn("plan", prompt.lower())
 
@@ -1095,22 +1201,24 @@ class TestPlanningPrompt(unittest.TestCase):
 # Approval mode tests
 # ---------------------------------------------------------------------------
 
-class TestApprovalMode(unittest.TestCase):
 
+class TestApprovalMode(unittest.TestCase):
     def setUp(self):
         self.workspace = tempfile.mkdtemp()
         self.write_gate, self.read_gate = _gates(self.workspace)
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.workspace, ignore_errors=True)
 
     def test_approve_callback_denies_write(self):
         """When approve_callback returns False, write is blocked."""
         path = os.path.join(self.workspace, "denied.txt")
         tc = _make_tool_call("write_file", path=path, content="nope")
-        result = execute_tool(tc, self.write_gate, self.read_gate,
-                              approve_callback=lambda n, a: False)
+        result = execute_tool(
+            tc, self.write_gate, self.read_gate, approve_callback=lambda n, a: False
+        )
         self.assertFalse(result.success)
         self.assertIn("not approved", result.content)
         self.assertFalse(os.path.isfile(path))
@@ -1119,8 +1227,9 @@ class TestApprovalMode(unittest.TestCase):
         """When approve_callback returns True, write proceeds."""
         path = os.path.join(self.workspace, "allowed.txt")
         tc = _make_tool_call("write_file", path=path, content="yes")
-        result = execute_tool(tc, self.write_gate, self.read_gate,
-                              approve_callback=lambda n, a: True)
+        result = execute_tool(
+            tc, self.write_gate, self.read_gate, approve_callback=lambda n, a: True
+        )
         self.assertTrue(result.success)
         self.assertTrue(os.path.isfile(path))
 
@@ -1131,18 +1240,24 @@ class TestApprovalMode(unittest.TestCase):
             f.write("hello")
         called = [False]
         tc = _make_tool_call("read_file", path=path)
-        result = execute_tool(tc, self.write_gate, self.read_gate,
-                              approve_callback=lambda n, a: called.__setitem__(0, True) or True)
+        result = execute_tool(
+            tc,
+            self.write_gate,
+            self.read_gate,
+            approve_callback=lambda n, a: called.__setitem__(0, True) or True,
+        )
         self.assertTrue(result.success)
-        self.assertFalse(called[0], "approve_callback should not be called for read tools")
+        self.assertFalse(
+            called[0], "approve_callback should not be called for read tools"
+        )
 
 
 # ---------------------------------------------------------------------------
 # Background shell task tests
 # ---------------------------------------------------------------------------
 
-class TestBackgroundTasks(unittest.TestCase):
 
+class TestBackgroundTasks(unittest.TestCase):
     def setUp(self):
         self.workspace = tempfile.mkdtemp()
         self.write_gate, self.read_gate = _gates(self.workspace)
@@ -1150,15 +1265,19 @@ class TestBackgroundTasks(unittest.TestCase):
     def tearDown(self):
         import shutil
         from tools import _TASK_REGISTRY
+
         _TASK_REGISTRY.clear()
         shutil.rmtree(self.workspace, ignore_errors=True)
 
     def test_background_task_returns_id(self):
         """background=True returns a task ID."""
         import sys
-        tc = _make_tool_call("run_shell",
-            command=f'{sys.executable} -c "import time; time.sleep(1); print(\'done\')"',
-            background=True)
+
+        tc = _make_tool_call(
+            "run_shell",
+            command=f"{sys.executable} -c \"import time; time.sleep(1); print('done')\"",
+            background=True,
+        )
         result = execute_tool(tc, self.write_gate, self.read_gate)
         self.assertTrue(result.success)
         self.assertIn("background task", result.content)
@@ -1168,12 +1287,16 @@ class TestBackgroundTasks(unittest.TestCase):
     def test_task_status_running(self):
         """task_status reports 'still running' for active tasks."""
         from tools import _TASK_REGISTRY
+
         task_id = "test1234"
         import subprocess
         import sys
+
         _TASK_REGISTRY[task_id] = subprocess.Popen(
             [sys.executable, "-c", "import time; time.sleep(10)"],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
         )
         tc = _make_tool_call("task_status", task_id=task_id)
         result = execute_tool(tc, self.write_gate, self.read_gate)
@@ -1185,12 +1308,16 @@ class TestBackgroundTasks(unittest.TestCase):
     def test_task_status_completed(self):
         """task_status reports exit code for completed tasks."""
         from tools import _TASK_REGISTRY
+
         task_id = "done1234"
         import subprocess
         import sys
+
         proc = subprocess.Popen(
             [sys.executable, "-c", "print('hello')"],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
         )
         proc.wait()
         _TASK_REGISTRY[task_id] = proc
@@ -1211,14 +1338,15 @@ class TestBackgroundTasks(unittest.TestCase):
 # search_files file_path param (improvement #1)
 # ---------------------------------------------------------------------------
 
-class TestSearchFilesFilePath(unittest.TestCase):
 
+class TestSearchFilesFilePath(unittest.TestCase):
     def setUp(self):
         self.workspace = tempfile.mkdtemp()
         self.write_gate, self.read_gate = _gates(self.workspace)
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.workspace, ignore_errors=True)
 
     def test_file_path_restricts_search_to_one_file(self):
@@ -1255,21 +1383,24 @@ class TestSearchFilesFilePath(unittest.TestCase):
 # edit_file short output (improvement #2)
 # ---------------------------------------------------------------------------
 
-class TestEditFileShortOutput(unittest.TestCase):
 
+class TestEditFileShortOutput(unittest.TestCase):
     def setUp(self):
         self.workspace = tempfile.mkdtemp()
         self.write_gate, self.read_gate = _gates(self.workspace)
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.workspace, ignore_errors=True)
 
     def test_success_output_is_short_no_diff(self):
         f = os.path.join(self.workspace, "e.txt")
         with open(f, "w") as fh:
             fh.write("alpha\nbeta\ngamma\n")
-        execute_tool(_make_tool_call("read_file", path=f), self.write_gate, self.read_gate)
+        execute_tool(
+            _make_tool_call("read_file", path=f), self.write_gate, self.read_gate
+        )
         tc = _make_tool_call("edit_file", path=f, old_string="beta", new_string="delta")
         result = execute_tool(tc, self.write_gate, self.read_gate)
         self.assertTrue(result.success)
@@ -1283,7 +1414,9 @@ class TestEditFileShortOutput(unittest.TestCase):
         f = os.path.join(self.workspace, "e2.txt")
         with open(f, "w") as fh:
             fh.write("one\ntwo\nthree\n")
-        execute_tool(_make_tool_call("read_file", path=f), self.write_gate, self.read_gate)
+        execute_tool(
+            _make_tool_call("read_file", path=f), self.write_gate, self.read_gate
+        )
         tc = _make_tool_call("edit_file", path=f, old_string="two", new_string="TWO")
         result = execute_tool(tc, self.write_gate, self.read_gate)
         self.assertTrue(result.success)
@@ -1297,26 +1430,29 @@ class TestEditFileShortOutput(unittest.TestCase):
 # write_file reindex (improvement #3)
 # ---------------------------------------------------------------------------
 
-class TestWriteFileReindex(unittest.TestCase):
 
+class TestWriteFileReindex(unittest.TestCase):
     def setUp(self):
         self.workspace = tempfile.mkdtemp()
         self.write_gate, self.read_gate = _gates(self.workspace)
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.workspace, ignore_errors=True)
 
     def test_write_py_file_triggers_reindex(self):
         import tools.search_ops as so
+
         saved_index = so._SYMBOL_INDEX
         saved_mtime = so._INDEX_MAX_MTIME
         try:
             so._SYMBOL_INDEX = None
             so._INDEX_MAX_MTIME = 0.0
             pyf = os.path.join(self.workspace, "new_mod.py")
-            tc = _make_tool_call("write_file", path=pyf,
-                                 content="def hello_world():\n    return 42\n")
+            tc = _make_tool_call(
+                "write_file", path=pyf, content="def hello_world():\n    return 42\n"
+            )
             result = execute_tool(tc, self.write_gate, self.read_gate)
             self.assertTrue(result.success)
 
@@ -1324,6 +1460,7 @@ class TestWriteFileReindex(unittest.TestCase):
             # Clear the tool cache so find_symbol doesn't return stale results
             # from previous tests (find_symbol is cached in _TOOL_CACHE).
             from tools import _TOOL_CACHE
+
             _TOOL_CACHE.clear()
 
             tc2 = _make_tool_call("find_symbol", name="hello_world")
@@ -1345,12 +1482,13 @@ class TestWriteFileReindex(unittest.TestCase):
 # recall_turn (improvement #5)
 # ---------------------------------------------------------------------------
 
-class TestRecallTurn(unittest.TestCase):
 
+class TestRecallTurn(unittest.TestCase):
     def setUp(self):
         self.workspace = tempfile.mkdtemp()
         self.write_gate, self.read_gate = _gates(self.workspace)
         from tools import _TOOL_CONTEXT
+
         # Seed the turn history so recall_turn has data to return
         _TOOL_CONTEXT._turn_history = {
             1: "Assistant: wrote file\na.txt\n  Tool: write_file({...})\n  Result: V OK",
@@ -1359,8 +1497,10 @@ class TestRecallTurn(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.workspace, ignore_errors=True)
         from tools import _TOOL_CONTEXT
+
         _TOOL_CONTEXT._turn_history = {}
 
     def test_recall_existing_turn(self):
@@ -1383,10 +1523,10 @@ class TestRecallTurn(unittest.TestCase):
         self.assertIn("positive integer", result.content)
 
 
-
 # ---------------------------------------------------------------------------
 # Tool piping (_pipe meta-field)
 # ---------------------------------------------------------------------------
+
 
 class ToolPipingTests(unittest.TestCase):
     def setUp(self):
@@ -1396,11 +1536,13 @@ class ToolPipingTests(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.workspace, ignore_errors=True)
 
     def test_pipe_stripped_from_args(self):
         """_pipe is popped before validation, so it never reaches tool impl."""
         from tools import _TOOL_DISPATCH
+
         original = _TOOL_DISPATCH.get("read_file")
         called_with = {}
 
@@ -1430,6 +1572,7 @@ class ToolPipingTests(unittest.TestCase):
 # max_tokens truncation test
 # ---------------------------------------------------------------------------
 
+
 class TestMaxTokensTruncation(unittest.TestCase):
     """Verify _compress_tool_results actually truncates when data exceeds threshold."""
 
@@ -1441,43 +1584,58 @@ class TestMaxTokensTruncation(unittest.TestCase):
         messages: list[dict] = []
         for i in range(10):
             content_lines = [f"line {j}" for j in range(20)]  # 20 lines
-            messages.append({
-                "role": "tool",
-                "tool_call_id": f"call_{i}",
-                "content": '{"success": true, "content": "' +
-                           "\\n".join(content_lines).replace('"', '\\"') +
-                           '"}',
-            })
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": f"call_{i}",
+                    "content": '{"success": true, "content": "'
+                    + "\\n".join(content_lines).replace('"', '\\"')
+                    + '"}',
+                }
+            )
 
         # keep_recent=1 means only the last message stays untouched
         result, changed = _compress_tool_results(messages, keep_recent=1)
 
-        self.assertTrue(changed, "Expected compression to happen with 20-line tool results")
+        self.assertTrue(
+            changed, "Expected compression to happen with 20-line tool results"
+        )
         # First 9 messages should be truncated
         for i in range(9):
             content = result[i]["content"]
             parsed = json.loads(content)
-            self.assertIn("truncated at 5 lines", parsed["content"],
-                          f"Message {i} should be truncated")
-            self.assertEqual(parsed["content"].count("\n"), 5,
-                             f"Message {i} should have 5 kept lines + truncation marker")
+            self.assertIn(
+                "truncated at 5 lines",
+                parsed["content"],
+                f"Message {i} should be truncated",
+            )
+            self.assertEqual(
+                parsed["content"].count("\n"),
+                5,
+                f"Message {i} should have 5 kept lines + truncation marker",
+            )
         # Last message (recent) should be untouched
         last_content = result[9]["content"]
-        self.assertNotIn("truncated at 5 lines", last_content,
-                         "Recent message should not be truncated")
+        self.assertNotIn(
+            "truncated at 5 lines",
+            last_content,
+            "Recent message should not be truncated",
+        )
 
     def test_under_threshold_not_truncated(self):
         """Tool results <= 5 lines are NOT compressed."""
         from memory.memory import _compress_tool_results
 
         short_content = "short\nresult\nhere"  # 3 lines
-        messages = [{
-            "role": "tool",
-            "tool_call_id": "call_0",
-            "content": '{"success": true, "content": "' +
-                       short_content.replace('"', '\\"') +
-                       '"}',
-        }]
+        messages = [
+            {
+                "role": "tool",
+                "tool_call_id": "call_0",
+                "content": '{"success": true, "content": "'
+                + short_content.replace('"', '\\"')
+                + '"}',
+            }
+        ]
 
         result, changed = _compress_tool_results(messages, keep_recent=0)
         self.assertFalse(changed, "Short results should not trigger compression")

@@ -8,6 +8,7 @@ recall_turn replays a previous turn for debugging.
 remember captures a learning to project knowledge.
 read_image analyzes an image file via the LLM.
 """
+
 from __future__ import annotations
 import base64
 import os
@@ -23,8 +24,6 @@ import os as _os_restore
 
 
 @_register("restore_file")
-
-
 def _restore_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
     """Restore a file from a git checkpoint or session backup.
 
@@ -43,10 +42,12 @@ def _restore_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolR
     # --- Try git checkpoint restore first (Dirac-inspired) ---
     try:
         from core.checkpoint import get_checkpoint_manager
+
         cm = get_checkpoint_manager(wg.workspace_root)
         if cm.is_available() and cm.checkpoint_count() > 0:
             if cm.restore_file(resolved):
                 from tools import _MODIFIED_FILES, _MODIFIED_FILES_LOCK
+
                 with _MODIFIED_FILES_LOCK:
                     _MODIFIED_FILES.discard(safety_result.resolved_path)
                 # Also clean up backup if it exists
@@ -70,6 +71,7 @@ def _restore_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolR
         shutil.copy2(backup_path, resolved)
         del _BACKUPS[resolved]
         from tools import _MODIFIED_FILES, _MODIFIED_FILES_LOCK
+
         with _MODIFIED_FILES_LOCK:
             _MODIFIED_FILES.discard(safety_result.resolved_path)
         return ToolResult(
@@ -84,15 +86,11 @@ def _restore_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolR
 
 
 @_summarize("restore_file")
-
-
 def _restore_file_summary(args: dict) -> str:
     return f"restore_file({args.get('path', '?')})"
 
 
 @_register("session_stats")
-
-
 def _session_stats(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
     """Show session statistics: turns, tokens, context usage, plan progress."""
     turn_history = getattr(_TOOL_CONTEXT, "_turn_history", None) or {}
@@ -110,16 +108,19 @@ def _session_stats(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> Too
     input_tokens = cache_stats.get("input_tokens", 0)
     output_tokens = cache_stats.get("output_tokens", 0)
     total_cache_tokens = cache_hits + cache_misses
-    hit_rate_pct = (cache_hits / total_cache_tokens * 100) if total_cache_tokens > 0 else 0
+    hit_rate_pct = (
+        (cache_hits / total_cache_tokens * 100) if total_cache_tokens > 0 else 0
+    )
     provider = getattr(_TOOL_CONTEXT, "_provider", None) or "deepseek"
     try:
         from core.config import PROVIDER_DEFAULTS
+
         pd = PROVIDER_DEFAULTS.get(provider)
         if pd and pd.input_price > 0:
             cost_without_cache = input_tokens / 1_000_000 * pd.input_price
             actual_input_cost = (
-                cache_hits / 1_000_000 * pd.cache_hit_price +
-                cache_misses / 1_000_000 * pd.input_price
+                cache_hits / 1_000_000 * pd.cache_hit_price
+                + cache_misses / 1_000_000 * pd.input_price
             )
             output_cost = output_tokens / 1_000_000 * pd.output_price
             actual_total = actual_input_cost + output_cost
@@ -145,8 +146,7 @@ def _session_stats(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> Too
         )
         if saved > 0:
             lines.append(
-                f"Cost:          ${actual_total:.4f} "
-                f"(saved ${saved:.4f} via cache)"
+                f"Cost:          ${actual_total:.4f} (saved ${saved:.4f} via cache)"
             )
         elif actual_total > 0:
             lines.append(f"Cost:          ${actual_total:.4f}")
@@ -159,15 +159,11 @@ def _session_stats(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> Too
 
 
 @_summarize("session_stats")
-
-
 def _session_stats_summary(args: dict) -> str:
     return "session_stats"
 
 
 @_register("recall_turn")
-
-
 def _recall_turn(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
     """Return a summary of what happened on a given turn number."""
     turn = args.get("turn", 0)
@@ -180,22 +176,22 @@ def _recall_turn(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolR
             success=True,
             content=(
                 f"No record of turn {turn}. "
-                + (f"Available turns: {available}" if available else "No turns recorded yet.")
+                + (
+                    f"Available turns: {available}"
+                    if available
+                    else "No turns recorded yet."
+                )
             ),
         )
     return ToolResult(success=True, content=f"Turn {turn}:\n{history[turn]}")
 
 
 @_summarize("recall_turn")
-
-
 def _recall_turn_summary(args: dict) -> str:
     return f"recall_turn({args.get('turn', '?')})"
 
 
 @_register("remember")
-
-
 def _remember(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
     """Store a project-level learning that persists across sessions.
     Saved to the project_knowledge table in the session SQLite DB.
@@ -212,6 +208,7 @@ def _remember(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResu
     if not category:
         try:
             from tools.failure_learning import suggest_category, KNOWLEDGE_CATEGORIES
+
             category = suggest_category(topic, detail)
             if category not in KNOWLEDGE_CATEGORIES:
                 category = "general"
@@ -228,10 +225,12 @@ def _remember(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResu
         # Trigger async embedding for the new knowledge entry
         if new_id is not None:
             try:
-                from core.semantic_memory import _embed_text, _get_model
+                from core.semantic_memory import _get_model
+
                 model = _get_model()
                 if model is not None:
                     import numpy as np
+
                     text = f"{topic}\n{detail}" if detail else topic
                     vec = model.encode(text, show_progress_bar=False)
                     emb_bytes = np.asarray(vec, dtype=np.float32).tobytes()
@@ -250,8 +249,6 @@ def _remember(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResu
 
 
 @_summarize("remember")
-
-
 def _remember_summary(args: dict) -> str:
     topic = args.get("topic", "?")
     return f"remember({topic})"
@@ -274,11 +271,10 @@ def _guess_mime_type(path: str) -> str:
 
 
 @_register("read_image")
-
-
 def _read_image(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
     """Read an image file, send it to GPT-4o, and return a text description."""
     import requests
+
     path = args.get("path", "")
     if not path:
         return ToolResult(success=False, content="Missing required parameter: 'path'.")
@@ -286,6 +282,7 @@ def _read_image(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolRes
     if not sr.allowed:
         return ToolResult(success=False, content=f"Read blocked: {sr.reason}")
     import os as _os
+
     resolved = sr.resolved_path
     if not _os.path.isfile(resolved):
         return ToolResult(success=False, content=f"File not found: {path}")
@@ -316,7 +313,9 @@ def _read_image(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolRes
                 "content": [
                     {
                         "type": "text",
-                        "text": args.get("prompt", "Describe this image in detail. What do you see?"),
+                        "text": args.get(
+                            "prompt", "Describe this image in detail. What do you see?"
+                        ),
                     },
                     {
                         "type": "image_url",
@@ -355,8 +354,6 @@ def _read_image(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolRes
 
 
 @_summarize("read_image")
-
-
 def _read_image_summary(args: dict) -> str:
     path = args.get("path", "?")
     return f"read_image({path})"

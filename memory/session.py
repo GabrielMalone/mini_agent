@@ -4,6 +4,7 @@
 Session DBs are SQLite databases stored as .mini_agent_memory_session_<name>.db
 in the workspace root.  The default session uses .mini_agent_memory.db directly.
 """
+
 from __future__ import annotations
 
 import os
@@ -31,7 +32,7 @@ def list_sessions(workspace: str) -> list[str]:
     prefix = MEMORY_FILENAME.replace(".db", "_session_")
     for fname in os.listdir(workspace):
         if fname.startswith(prefix) and fname.endswith(".db"):
-            name = fname[len(prefix):-len(".db")]
+            name = fname[len(prefix) : -len(".db")]
             sessions.append(name)
     # Also check if default session DB exists
     default_path = os.path.join(workspace, MEMORY_FILENAME)
@@ -55,13 +56,23 @@ def switch_session(
         current_memory.close()
 
     db_path = _session_db_path(workspace, session_name)
-    memory = MemoryStore(db_path, max_messages=current_config.max_messages,
-                         max_tokens=current_config.context_window)
+    memory = MemoryStore(
+        db_path,
+        max_messages=current_config.max_messages,
+        max_tokens=current_config.context_window,
+    )
     saved = memory.load()
     if saved:
-        from memory.memory import _compress_tool_results, _prune_by_tokens, _summarize_pruned
+        from memory.memory import (
+            _compress_tool_results,
+            _prune_by_tokens,
+            _summarize_pruned,
+        )
+
         saved, _ = _compress_tool_results(saved, keep_recent=20)
-        saved, pruned = _prune_by_tokens(saved, current_config.context_window, current_config.max_messages)
+        saved, pruned = _prune_by_tokens(
+            saved, current_config.context_window, current_config.max_messages
+        )
         if pruned:
             summary = _summarize_pruned(pruned)
             if summary:

@@ -14,6 +14,7 @@ class TestToolGraph:
         with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
             db_path = f.name
         from memory.memory import _close_shared_conn
+
         tg = ToolGraph(db_path)
         tg.init_schema()
         yield tg
@@ -80,26 +81,34 @@ class TestToolGraph:
 
     def test_read_before_write_detection(self, graph):
         # Agent about to edit without reading -- use a tool not in _READ_TOOLS
-        pending = [{"function": {"name": "edit_file", "arguments": '{"path":"test.py"}'}}]
+        pending = [
+            {"function": {"name": "edit_file", "arguments": '{"path":"test.py"}'}}
+        ]
         recent = ["run_shell"]  # Not a read tool
         warning = graph.detect_read_before_write_gap(pending, recent)
         assert warning is not None
         assert "read" in warning.lower()
 
     def test_read_before_write_ok_when_read_recent(self, graph):
-        pending = [{"function": {"name": "edit_file", "arguments": '{"path":"test.py"}'}}]
+        pending = [
+            {"function": {"name": "edit_file", "arguments": '{"path":"test.py"}'}}
+        ]
         recent = ["read_file", "list_directory"]  # Has reads
         warning = graph.detect_read_before_write_gap(pending, recent)
         assert warning is None
 
     def test_read_before_write_no_write_pending(self, graph):
-        pending = [{"function": {"name": "read_file", "arguments": '{"path":"test.py"}'}}]
+        pending = [
+            {"function": {"name": "read_file", "arguments": '{"path":"test.py"}'}}
+        ]
         recent = []
         warning = graph.detect_read_before_write_gap(pending, recent)
         assert warning is None  # No write tools pending
 
     def test_no_reads_first_turn_ok(self, graph):
-        pending = [{"function": {"name": "edit_file", "arguments": '{"path":"test.py"}'}}]
+        pending = [
+            {"function": {"name": "edit_file", "arguments": '{"path":"test.py"}'}}
+        ]
         recent = []  # First turn -- no history
         warning = graph.detect_read_before_write_gap(pending, recent)
         assert warning is None  # First turn is fine

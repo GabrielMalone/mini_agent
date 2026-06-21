@@ -7,7 +7,6 @@ from __future__ import annotations
 import os
 import tempfile
 
-import pytest
 
 from core.anchor_manager import (
     AnchorStateManager,
@@ -25,6 +24,7 @@ from core.anchor_manager import (
 # ---------------------------------------------------------------------------
 # FNV-1a 32-bit hash
 # ---------------------------------------------------------------------------
+
 
 class TestFNV1A:
     def test_empty_string(self):
@@ -51,6 +51,7 @@ class TestFNV1A:
 # content_hash
 # ---------------------------------------------------------------------------
 
+
 class TestContentHash:
     def test_returns_hex_string(self):
         h = content_hash("hello world")
@@ -72,6 +73,7 @@ class TestContentHash:
 # format_line_with_anchor
 # ---------------------------------------------------------------------------
 
+
 class TestFormatLineForModel:
     def test_basic(self):
         result = format_line_for_model("def foo():", "Apple")
@@ -85,6 +87,7 @@ class TestFormatLineForModel:
 # ---------------------------------------------------------------------------
 # format_lines_for_model
 # ---------------------------------------------------------------------------
+
 
 class TestFormatLinesForModel:
     def test_basic(self):
@@ -121,6 +124,7 @@ class TestFormatLinesForModel:
 # strip_anchors
 # ---------------------------------------------------------------------------
 
+
 class TestStripAnchors:
     def test_removes_anchor_prefix(self):
         assert strip_anchors("Apple§def foo():") == "def foo():"
@@ -140,6 +144,7 @@ class TestStripAnchors:
 # ---------------------------------------------------------------------------
 # split_anchor
 # ---------------------------------------------------------------------------
+
 
 class TestSplitAnchor:
     def test_basic(self):
@@ -166,6 +171,7 @@ class TestSplitAnchor:
 # ---------------------------------------------------------------------------
 # AnchorStateManager.reconcile
 # ---------------------------------------------------------------------------
+
 
 class TestReconcile:
     def setup_method(self):
@@ -266,6 +272,7 @@ class TestReconcile:
 # resolve_anchored_edits
 # ---------------------------------------------------------------------------
 
+
 class TestResolveAnchoredEdits:
     # Helper: split anchored lines into (plain_lines, anchor_words)
     @staticmethod
@@ -281,9 +288,7 @@ class TestResolveAnchoredEdits:
     def test_single_line_replace(self):
         anchored = ["Apple§def foo():", "Banana§    return 42"]
         plain, anchors = self._split(anchored)
-        edits = [
-            {"anchor": "Apple§def foo():", "text": "def bar():"}
-        ]
+        edits = [{"anchor": "Apple§def foo():", "text": "def bar():"}]
         resolved, failed = resolve_anchored_edits(edits, plain, anchors)
         assert len(failed) == 0
         assert len(resolved) == 1
@@ -333,7 +338,11 @@ class TestResolveAnchoredEdits:
         anchored = ["Apple§line two"]
         plain, anchors = self._split(anchored)
         edits = [
-            {"anchor": "Apple§line two", "edit_type": "insert_before", "text": "line one"}
+            {
+                "anchor": "Apple§line two",
+                "edit_type": "insert_before",
+                "text": "line one",
+            }
         ]
         resolved, failed = resolve_anchored_edits(edits, plain, anchors)
         assert len(failed) == 0
@@ -344,7 +353,11 @@ class TestResolveAnchoredEdits:
         anchored = ["Apple§line one"]
         plain, anchors = self._split(anchored)
         edits = [
-            {"anchor": "Apple§line one", "edit_type": "insert_after", "text": "line two"}
+            {
+                "anchor": "Apple§line one",
+                "edit_type": "insert_after",
+                "text": "line two",
+            }
         ]
         resolved, failed = resolve_anchored_edits(edits, plain, anchors)
         assert len(failed) == 0
@@ -399,7 +412,9 @@ class TestResolveAnchoredEdits:
         This means the anchor word is empty and won't match any word in the file."""
         anchored = ["Apple§x = 1"]
         plain, anchors = self._split(anchored)
-        edits = [{"anchor": "Apple", "text": "y = 2"}]  # No § → word="", content="Apple"
+        edits = [
+            {"anchor": "Apple", "text": "y = 2"}
+        ]  # No § → word="", content="Apple"
         resolved, failed = resolve_anchored_edits(edits, plain, anchors)
         # Empty anchor word won't match → fails
         assert len(resolved) == 0
@@ -410,12 +425,11 @@ class TestResolveAnchoredEdits:
 # apply_resolved_edits
 # ---------------------------------------------------------------------------
 
+
 class TestApplyResolvedEdits:
     def test_replace_single_line(self):
         lines = ["def foo():", "    pass"]
-        resolved = [
-            {"line_idx": 0, "end_idx": 0, "edit": {"text": "def bar():"}}
-        ]
+        resolved = [{"line_idx": 0, "end_idx": 0, "edit": {"text": "def bar():"}}]
         new_lines, applied = apply_resolved_edits(lines, resolved)
         assert new_lines == ["def bar():", "    pass"]
         assert len(applied) == 1
@@ -424,9 +438,7 @@ class TestApplyResolvedEdits:
 
     def test_replace_multi_line_with_single(self):
         lines = ["a", "b", "c"]
-        resolved = [
-            {"line_idx": 0, "end_idx": 1, "edit": {"text": "replacement"}}
-        ]
+        resolved = [{"line_idx": 0, "end_idx": 1, "edit": {"text": "replacement"}}]
         new_lines, applied = apply_resolved_edits(lines, resolved)
         assert new_lines == ["replacement", "c"]
         assert applied[0]["lines_added"] == 1
@@ -434,9 +446,7 @@ class TestApplyResolvedEdits:
 
     def test_replace_with_multiple_lines(self):
         lines = ["old"]
-        resolved = [
-            {"line_idx": 0, "end_idx": 0, "edit": {"text": "new1\nnew2\nnew3"}}
-        ]
+        resolved = [{"line_idx": 0, "end_idx": 0, "edit": {"text": "new1\nnew2\nnew3"}}]
         new_lines, applied = apply_resolved_edits(lines, resolved)
         assert new_lines == ["new1", "new2", "new3"]
         assert applied[0]["lines_added"] == 3
@@ -445,8 +455,11 @@ class TestApplyResolvedEdits:
     def test_insert_before(self):
         lines = ["second"]
         resolved = [
-            {"line_idx": 0, "end_idx": 0,
-             "edit": {"text": "first", "edit_type": "insert_before"}}
+            {
+                "line_idx": 0,
+                "end_idx": 0,
+                "edit": {"text": "first", "edit_type": "insert_before"},
+            }
         ]
         new_lines, applied = apply_resolved_edits(lines, resolved)
         assert new_lines == ["first", "second"]
@@ -456,8 +469,11 @@ class TestApplyResolvedEdits:
     def test_insert_after(self):
         lines = ["first"]
         resolved = [
-            {"line_idx": 0, "end_idx": 0,
-             "edit": {"text": "second", "edit_type": "insert_after"}}
+            {
+                "line_idx": 0,
+                "end_idx": 0,
+                "edit": {"text": "second", "edit_type": "insert_after"},
+            }
         ]
         new_lines, applied = apply_resolved_edits(lines, resolved)
         assert new_lines == ["first", "second"]
@@ -467,8 +483,11 @@ class TestApplyResolvedEdits:
     def test_insert_after_multiline(self):
         lines = ["header"]
         resolved = [
-            {"line_idx": 0, "end_idx": 0,
-             "edit": {"text": "line1\nline2", "edit_type": "insert_after"}}
+            {
+                "line_idx": 0,
+                "end_idx": 0,
+                "edit": {"text": "line1\nline2", "edit_type": "insert_after"},
+            }
         ]
         new_lines, applied = apply_resolved_edits(lines, resolved)
         assert new_lines == ["header", "line1", "line2"]
@@ -488,9 +507,7 @@ class TestApplyResolvedEdits:
     def test_delete_range(self):
         """Replace with empty string = delete."""
         lines = ["a", "b", "c"]
-        resolved = [
-            {"line_idx": 1, "end_idx": 1, "edit": {"text": ""}}
-        ]
+        resolved = [{"line_idx": 1, "end_idx": 1, "edit": {"text": ""}}]
         new_lines, applied = apply_resolved_edits(lines, resolved)
         assert new_lines == ["a", "c"]
         assert applied[0]["lines_added"] == 0
@@ -505,8 +522,11 @@ class TestApplyResolvedEdits:
     def test_insert_before_first_line(self):
         lines = ["first"]
         resolved = [
-            {"line_idx": 0, "end_idx": 0,
-             "edit": {"text": "zeroth", "edit_type": "insert_before"}}
+            {
+                "line_idx": 0,
+                "end_idx": 0,
+                "edit": {"text": "zeroth", "edit_type": "insert_before"},
+            }
         ]
         new_lines, applied = apply_resolved_edits(lines, resolved)
         assert new_lines == ["zeroth", "first"]
@@ -518,7 +538,10 @@ class TestApplyResolvedEdits:
             "Banana§",
             "Cherry§x = 1",
         ]
-        plain, anchors = [strip_anchors(l) for l in anchored], [split_anchor(l)[0] for l in anchored]
+        plain, anchors = (
+            [strip_anchors(l) for l in anchored],
+            [split_anchor(l)[0] for l in anchored],
+        )
         edits = [
             {"anchor": "Banana§", "text": "import sys"},
             {"anchor": "Cherry§x = 1", "text": "x = 42"},

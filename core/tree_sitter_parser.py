@@ -25,6 +25,7 @@ _PARSERS: dict[str, Any] = {}
 
 try:
     import tree_sitter
+
     _TREE_SITTER_AVAILABLE = True
 except ImportError:
     pass
@@ -167,7 +168,9 @@ def extract_symbols(
 
 
 def _extract_with_tree_sitter(
-    source: str, parser: Any, ext: str,
+    source: str,
+    parser: Any,
+    ext: str,
 ) -> tuple[list[dict], list[dict], list[dict]]:
     """Extract symbols using tree-sitter queries."""
     tree = parser.parse(source.encode("utf-8"))
@@ -230,14 +233,18 @@ def _extract_with_tree_sitter(
                 key = (start_line, callee)
                 if key not in seen_calls:
                     caller = line_to_func.get(start_line)
-                    calls.append({"caller": caller, "callee": callee, "line": start_line})
+                    calls.append(
+                        {"caller": caller, "callee": callee, "line": start_line}
+                    )
                     seen_calls.add(key)
 
     return definitions, calls, imports
 
 
 def _extract_with_fallback(
-    source: str, filepath: str, ext: str,
+    source: str,
+    filepath: str,
+    ext: str,
 ) -> tuple[list[dict], list[dict], list[dict]]:
     """Extract symbols using regex/AST fallback."""
     definitions: list[dict] = []
@@ -250,6 +257,7 @@ def _extract_with_fallback(
         # Use AST for Python (more accurate than regex)
         try:
             import ast
+
             tree = ast.parse(source)
             return _extract_python_ast(tree, filepath)
         except SyntaxError:
@@ -259,34 +267,41 @@ def _extract_with_fallback(
         for i, line in enumerate(lines, 1):
             m = _PY_DEF_RE.match(line)
             if m:
-                definitions.append({
-                    "kind": m.group(1),
-                    "name": m.group(2),
-                    "line": i,
-                })
+                definitions.append(
+                    {
+                        "kind": m.group(1),
+                        "name": m.group(2),
+                        "line": i,
+                    }
+                )
     elif ext in (".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs"):
         for i, line in enumerate(lines, 1):
             m = _TS_DEF_RE.match(line)
             if m:
-                definitions.append({
-                    "kind": "function" if "function" in line else "class",
-                    "name": m.group(1),
-                    "line": i,
-                })
+                definitions.append(
+                    {
+                        "kind": "function" if "function" in line else "class",
+                        "name": m.group(1),
+                        "line": i,
+                    }
+                )
                 continue
             m = _TS_ARROW_RE.match(line)
             if m:
-                definitions.append({
-                    "kind": "function",
-                    "name": m.group(1),
-                    "line": i,
-                })
+                definitions.append(
+                    {
+                        "kind": "function",
+                        "name": m.group(1),
+                        "line": i,
+                    }
+                )
 
     return definitions, calls, imports
 
 
 def _extract_python_ast(
-    tree: Any, filepath: str,
+    tree: Any,
+    filepath: str,
 ) -> tuple[list[dict], list[dict], list[dict]]:
     """Extract symbols using Python's built-in AST.
 
@@ -306,20 +321,24 @@ def _extract_python_ast(
 
     for node in _ast.walk(tree):
         if isinstance(node, (_ast.FunctionDef, _ast.AsyncFunctionDef)):
-            definitions.append({
-                "kind": "def",
-                "name": node.name,
-                "line": node.lineno,
-            })
+            definitions.append(
+                {
+                    "kind": "def",
+                    "name": node.name,
+                    "line": node.lineno,
+                }
+            )
             end = getattr(node, "end_lineno", node.lineno)
             func_ranges.append((node.lineno, end, node.name))
 
         elif isinstance(node, _ast.ClassDef):
-            definitions.append({
-                "kind": "class",
-                "name": node.name,
-                "line": node.lineno,
-            })
+            definitions.append(
+                {
+                    "kind": "class",
+                    "name": node.name,
+                    "line": node.lineno,
+                }
+            )
 
         elif isinstance(node, _ast.Call):
             callee = resolve_call_name(node)
@@ -329,25 +348,31 @@ def _extract_python_ast(
                     if start <= node.lineno <= end:
                         caller = fname
                         break
-                calls.append({
-                    "caller": caller,
-                    "callee": callee,
-                    "line": node.lineno,
-                })
+                calls.append(
+                    {
+                        "caller": caller,
+                        "callee": callee,
+                        "line": node.lineno,
+                    }
+                )
 
         elif isinstance(node, _ast.Import):
             for alias in node.names:
-                imports.append({
-                    "module": alias.name,
-                    "internal": False,  # caller can refine this later
-                })
+                imports.append(
+                    {
+                        "module": alias.name,
+                        "internal": False,  # caller can refine this later
+                    }
+                )
 
         elif isinstance(node, _ast.ImportFrom):
             if node.module:
-                imports.append({
-                    "module": node.module,
-                    "internal": False,
-                })
+                imports.append(
+                    {
+                        "module": node.module,
+                        "internal": False,
+                    }
+                )
 
     return definitions, calls, imports
 
@@ -356,10 +381,20 @@ def _extract_python_ast(
 # Symbol-only extraction (lightweight, for index population)
 # ---------------------------------------------------------------------------
 
-_SKIP_NAMES: frozenset[str] = frozenset({
-    "self", "cls", "True", "False", "None", "__init__", "__name__",
-    "__main__", "__file__", "__doc__",
-})
+_SKIP_NAMES: frozenset[str] = frozenset(
+    {
+        "self",
+        "cls",
+        "True",
+        "False",
+        "None",
+        "__init__",
+        "__name__",
+        "__main__",
+        "__file__",
+        "__doc__",
+    }
+)
 
 
 def extract_definitions(

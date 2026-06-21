@@ -41,16 +41,18 @@ if TYPE_CHECKING:
 # Constants
 # ---------------------------------------------------------------------------
 
-_IDEMPOTENCY_TTL: float = 300.0     # 5 minutes
+_IDEMPOTENCY_TTL: float = 300.0  # 5 minutes
 _IDEMPOTENCY_MAX_ENTRIES: int = 64  # cap to prevent unbounded growth
 
 # Write tools that support idempotency
-_IDEMPOTENT_TOOLS: frozenset[str] = frozenset({
-    "write_file",
-    "edit_file",
-    "edit_lines",
-    "run_shell",
-})
+_IDEMPOTENT_TOOLS: frozenset[str] = frozenset(
+    {
+        "write_file",
+        "edit_file",
+        "edit_lines",
+        "run_shell",
+    }
+)
 
 # ---------------------------------------------------------------------------
 # Storage

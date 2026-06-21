@@ -118,6 +118,7 @@ class TestToolRegistration:
     def test_desktop_tools_in_dispatch(self):
         """All desktop tools should be in _TOOL_DISPATCH."""
         from tools import _TOOL_DISPATCH
+
         expected = [
             "desktop_snapshot",
             "desktop_click",
@@ -137,45 +138,68 @@ class TestToolRegistration:
             "desktop_notify",
         ]
         for name in expected:
-            assert name in _TOOL_DISPATCH, (
-                f"Missing dispatch for '{name}'"
-            )
+            assert name in _TOOL_DISPATCH, f"Missing dispatch for '{name}'"
             assert callable(_TOOL_DISPATCH[name])
 
     def test_desktop_tools_in_schema(self):
         """All desktop tools should have schemas in TOOLS."""
         from tools.schema import TOOLS
+
         desktop_names = [
             t["function"]["name"]
             for t in TOOLS
             if t["function"]["name"].startswith("desktop_")
         ]
         assert len(desktop_names) >= 16
-        for name in ["desktop_snapshot", "desktop_click", "desktop_type",
-                     "desktop_find", "desktop_screenshot",
-                     "desktop_apps", "desktop_launch", "desktop_quit",
-                     "desktop_focus", "desktop_clipboard", "desktop_windows",
-                     "desktop_system_info", "desktop_key", "desktop_open",
-                     "desktop_reveal", "desktop_notify"]:
+        for name in [
+            "desktop_snapshot",
+            "desktop_click",
+            "desktop_type",
+            "desktop_find",
+            "desktop_screenshot",
+            "desktop_apps",
+            "desktop_launch",
+            "desktop_quit",
+            "desktop_focus",
+            "desktop_clipboard",
+            "desktop_windows",
+            "desktop_system_info",
+            "desktop_key",
+            "desktop_open",
+            "desktop_reveal",
+            "desktop_notify",
+        ]:
             assert name in desktop_names, f"Missing schema for '{name}'"
 
     def test_desktop_tools_have_summaries(self):
         """All desktop tools should have summary functions."""
         from tools import _TOOL_SUMMARIES
-        for name in ["desktop_snapshot", "desktop_click", "desktop_type",
-                     "desktop_find", "desktop_screenshot",
-                     "desktop_apps", "desktop_launch", "desktop_quit",
-                     "desktop_focus", "desktop_clipboard", "desktop_windows",
-                     "desktop_system_info", "desktop_key", "desktop_open",
-                     "desktop_reveal", "desktop_notify"]:
-            assert name in _TOOL_SUMMARIES, (
-                f"Missing summary for '{name}'"
-            )
+
+        for name in [
+            "desktop_snapshot",
+            "desktop_click",
+            "desktop_type",
+            "desktop_find",
+            "desktop_screenshot",
+            "desktop_apps",
+            "desktop_launch",
+            "desktop_quit",
+            "desktop_focus",
+            "desktop_clipboard",
+            "desktop_windows",
+            "desktop_system_info",
+            "desktop_key",
+            "desktop_open",
+            "desktop_reveal",
+            "desktop_notify",
+        ]:
+            assert name in _TOOL_SUMMARIES, f"Missing summary for '{name}'"
             assert callable(_TOOL_SUMMARIES[name])
 
     def test_desktop_skill_registered(self):
         """The 'desktop' skill should be in SKILLS."""
         from tools.skills import SKILLS
+
         assert "desktop" in SKILLS
         assert len(SKILLS["desktop"]) >= 16
         assert "desktop_snapshot" in SKILLS["desktop"]
@@ -190,6 +214,7 @@ class TestToolRegistration:
     def test_use_skill_desktop_available(self):
         """'desktop' should be listed in the use_skill schema."""
         from tools.skills import USE_SKILL_SCHEMA
+
         desc = USE_SKILL_SCHEMA["function"]["description"]
         assert "desktop" in desc
 
@@ -200,6 +225,7 @@ class TestSkillActivation:
     def test_activate_desktop_skill(self):
         """Activating 'desktop' should work."""
         from tools.skills import activate_skill, reset_skills, active_skills
+
         reset_skills()
         ok, msg = activate_skill("desktop")
         assert ok is True
@@ -209,6 +235,7 @@ class TestSkillActivation:
     def test_activate_idempotent(self):
         """Activating twice should be idempotent."""
         from tools.skills import activate_skill, reset_skills
+
         reset_skills()
         ok1, _ = activate_skill("desktop")
         ok2, msg2 = activate_skill("desktop")
@@ -219,6 +246,7 @@ class TestSkillActivation:
     def test_unknown_skill(self):
         """Activating an unknown skill should fail."""
         from tools.skills import activate_skill, reset_skills
+
         reset_skills()
         ok, msg = activate_skill("nonexistent_xyz")
         assert ok is False
@@ -227,8 +255,11 @@ class TestSkillActivation:
     def test_desktop_in_get_active_tool_names(self):
         """After activation, desktop tools appear in active names."""
         from tools.skills import (
-            activate_skill, reset_skills, get_active_tool_names,
+            activate_skill,
+            reset_skills,
+            get_active_tool_names,
         )
+
         reset_skills()
         activate_skill("desktop")
         names = get_active_tool_names()
@@ -242,6 +273,7 @@ class TestDesktopSnapshotErrors:
     def test_snapshot_missing_args_ignored(self):
         """desktop_snapshot takes no args but should handle them gracefully."""
         from tools.desktop_ops import _desktop_snapshot
+
         result = _desktop_snapshot({}, None, None)
         # Even on failure, we should get a ToolResult (not an exception)
         assert result is not None
@@ -251,6 +283,7 @@ class TestDesktopSnapshotErrors:
     def test_click_missing_role(self):
         """desktop_click without role should fail."""
         from tools.desktop_ops import _desktop_click
+
         result = _desktop_click({}, None, None)
         assert result.success is False
         assert "role" in result.content.lower()
@@ -258,6 +291,7 @@ class TestDesktopSnapshotErrors:
     def test_click_missing_name(self):
         """desktop_click without name should fail."""
         from tools.desktop_ops import _desktop_click
+
         result = _desktop_click({"role": "button"}, None, None)
         assert result.success is False
         assert "name" in result.content.lower()
@@ -265,6 +299,7 @@ class TestDesktopSnapshotErrors:
     def test_type_missing_text(self):
         """desktop_type without text should fail."""
         from tools.desktop_ops import _desktop_type
+
         result = _desktop_type({}, None, None)
         assert result.success is False
         assert "text" in result.content.lower()
@@ -272,6 +307,7 @@ class TestDesktopSnapshotErrors:
     def test_find_missing_query(self):
         """desktop_find without query should fail."""
         from tools.desktop_ops import _desktop_find
+
         result = _desktop_find({}, None, None)
         assert result.success is False
         assert "query" in result.content.lower()
@@ -279,6 +315,7 @@ class TestDesktopSnapshotErrors:
     def test_screenshot_no_args(self):
         """desktop_screenshot with no args should work or give clear error."""
         from tools.desktop_ops import _desktop_screenshot
+
         result = _desktop_screenshot({}, None, None)
         # Should either succeed (mss installed) or give clear install instructions
         assert result is not None
@@ -293,28 +330,33 @@ class TestSummaries:
 
     def test_snapshot_summary(self):
         from tools.desktop_ops import _desktop_snapshot_summary
+
         result = _desktop_snapshot_summary({})
         assert isinstance(result, str)
         assert "desktop_snapshot" in result
 
     def test_click_summary(self):
         from tools.desktop_ops import _desktop_click_summary
+
         result = _desktop_click_summary({"role": "button", "name": "OK"})
         assert "button" in result
         assert "OK" in result
 
     def test_type_summary(self):
         from tools.desktop_ops import _desktop_type_summary
+
         result = _desktop_type_summary({"text": "hello world"})
         assert "hello" in result
 
     def test_find_summary(self):
         from tools.desktop_ops import _desktop_find_summary
+
         result = _desktop_find_summary({"query": "search term"})
         assert "search" in result
 
     def test_screenshot_summary(self):
         from tools.desktop_ops import _desktop_screenshot_summary
+
         result = _desktop_screenshot_summary({})
         assert isinstance(result, str)
         assert "desktop_screenshot" in result

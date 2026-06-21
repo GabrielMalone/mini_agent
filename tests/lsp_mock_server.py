@@ -115,13 +115,16 @@ def _write(obj):
 
 def handle_initialize(rid, _params):
     """Return server capabilities."""
-    return _make_response(rid, {
-        "capabilities": _SERVER_CAPABILITIES,
-        "serverInfo": {
-            "name": "lsp-mock-server",
-            "version": "1.0.0",
+    return _make_response(
+        rid,
+        {
+            "capabilities": _SERVER_CAPABILITIES,
+            "serverInfo": {
+                "name": "lsp-mock-server",
+                "version": "1.0.0",
+            },
         },
-    })
+    )
 
 
 def handle_definition(rid, _params):
@@ -149,11 +152,13 @@ def handle_notification(method, params):
     if method == "textDocument/didOpen":
         uri = params.get("textDocument", {}).get("uri", _TEST_URI)
         # Respond with diagnostics for any didOpen URI (real LSP servers do this)
-        _write({
-            "jsonrpc": "2.0",
-            "method": "textDocument/publishDiagnostics",
-            "params": {"uri": uri, "diagnostics": _DIAGNOSTICS},
-        })
+        _write(
+            {
+                "jsonrpc": "2.0",
+                "method": "textDocument/publishDiagnostics",
+                "params": {"uri": uri, "diagnostics": _DIAGNOSTICS},
+            }
+        )
     elif method == "exit":
         sys.exit(0)
     # initialized and other notifications are silently ignored

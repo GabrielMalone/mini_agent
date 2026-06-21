@@ -46,6 +46,7 @@ PLATFORM = platform.system()  # "Darwin", "Windows", "Linux"
 if PLATFORM == "Darwin":
     try:
         from atomacos import NativeUIElement
+
         NativeUIElement.getFrontmostApp()
     except Exception:
         pass  # atomacos not installed or accessibility permission not granted
@@ -54,6 +55,7 @@ if PLATFORM == "Darwin":
 # ---------------------------------------------------------------------------
 # Auto-detection of available desktop providers
 # ---------------------------------------------------------------------------
+
 
 def _detect_providers() -> dict[str, bool]:
     """Detect which desktop automation providers are available on this system."""
@@ -89,7 +91,9 @@ def _command_exists(cmd: str) -> bool:
     try:
         result = subprocess.run(
             ["which" if PLATFORM != "Windows" else "where", cmd],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         return result.returncode == 0
     except Exception:
@@ -151,7 +155,6 @@ Install one of these (easiest first):
 After installing, you must grant Accessibility permission:
   System Settings -> Privacy & Security -> Accessibility -> enable Terminal
 """.strip(),
-
     "Windows": """
 No desktop automation provider found on Windows.
 
@@ -166,7 +169,6 @@ Install one of these (easiest first):
   # Option 3: via Node.js
   npm install -g native-devtools-mcp
 """.strip(),
-
     "Linux": """
 No desktop automation provider found on Linux.
 
@@ -190,10 +192,12 @@ def _install_instructions() -> str:
 # Tier 1: MCP bridge (routes through configured MCP servers)
 # ---------------------------------------------------------------------------
 
+
 def _get_mcp_desktop_server() -> str | None:
     """Find the name of a connected desktop MCP server, or None."""
     try:
         from tools.mcp_client import get_mcp_manager
+
         manager = get_mcp_manager()
         manager._ensure_started()
 
@@ -213,6 +217,7 @@ def _mcp_call(server: str, tool: str, arguments: dict) -> ToolResult:
     """Call a tool on an MCP server. Returns ToolResult."""
     try:
         from tools.mcp_client import get_mcp_manager
+
         manager = get_mcp_manager()
         return manager.call(server, tool, arguments)
     except Exception as exc:
@@ -232,14 +237,15 @@ def _mcp_call(server: str, tool: str, arguments: dict) -> ToolResult:
 # Each AX attribute access is a synchronous XPC call that can hang
 # if the target app is unresponsive.  We cap the total walk at
 # _SNAPSHOT_DEADLINE seconds to avoid the 120 s agent-level timeout.
-_ATOMACOS_OP_TIMEOUT = 3.0   # per getattr / children call
-_SNAPSHOT_DEADLINE = 25.0    # total wall-clock budget for the snapshot
-_MAX_ELEMENTS = 200           # hard cap on collected elements
+_ATOMACOS_OP_TIMEOUT = 3.0  # per getattr / children call
+_SNAPSHOT_DEADLINE = 25.0  # total wall-clock budget for the snapshot
+_MAX_ELEMENTS = 200  # hard cap on collected elements
 
 
 def _atomacos_getattr(element, attr: str, default=None):
     """``getattr`` with a per-call timeout to prevent hangs."""
     import threading
+
     result = default
     exc = None
     done = threading.Event()
@@ -278,7 +284,7 @@ def _macos_atomacos_snapshot() -> ToolResult:
                 content="No frontmost application found. Is Accessibility permission granted?",
             )
 
-        app_name = str(_atomacos_getattr(front_app, 'AXTitle') or front_app)
+        app_name = str(_atomacos_getattr(front_app, "AXTitle") or front_app)
 
         # Get windows
         try:
@@ -301,14 +307,15 @@ def _macos_atomacos_snapshot() -> ToolResult:
         return ToolResult(
             success=False,
             content="atomacos is not installed. Run: pip install atomacos\n"
-                    "Then grant Accessibility permission in System Settings.",
+            "Then grant Accessibility permission in System Settings.",
         )
     except Exception as exc:
         return ToolResult(success=False, content=f"atomacos snapshot failed: {exc}")
 
 
-def _walk_atomacos_tree(element, depth: int = 0, max_depth: int = 4,
-                        deadline: float | None = None) -> list[dict]:
+def _walk_atomacos_tree(
+    element, depth: int = 0, max_depth: int = 4, deadline: float | None = None
+) -> list[dict]:
     """Walk the accessibility tree, collecting interactive elements.
 
     *deadline* is a ``time.monotonic()`` timestamp after which we stop
@@ -325,25 +332,30 @@ def _walk_atomacos_tree(element, depth: int = 0, max_depth: int = 4,
         return elements
 
     try:
-        role = str(_atomacos_getattr(element, 'AXRole', 'unknown'))
+        role = str(_atomacos_getattr(element, "AXRole", "unknown"))
     except Exception:
-        role = 'unknown'
+        role = "unknown"
 
     try:
-        name = str(_atomacos_getattr(element, 'AXTitle', '') or
-                   _atomacos_getattr(element, 'AXDescription', '') or
-                   _atomacos_getattr(element, 'AXValue', '') or '')
+        name = str(
+            _atomacos_getattr(element, "AXTitle", "")
+            or _atomacos_getattr(element, "AXDescription", "")
+            or _atomacos_getattr(element, "AXValue", "")
+            or ""
+        )
     except Exception:
-        name = ''
+        name = ""
 
     # Skip non-interactive roles
-    skip_roles = {'AXGroup', 'AXLayoutArea', 'AXLayoutItem', 'AXUnknown'}
+    skip_roles = {"AXGroup", "AXLayoutArea", "AXLayoutItem", "AXUnknown"}
     if role not in skip_roles:
-        elements.append({
-            'role': role,
-            'name': name[:100],
-            'depth': depth,
-        })
+        elements.append(
+            {
+                "role": role,
+                "name": name[:100],
+                "depth": depth,
+            }
+        )
 
     # Track total elements collected across recursive calls
     try:
@@ -357,7 +369,7 @@ def _walk_atomacos_tree(element, depth: int = 0, max_depth: int = 4,
         return elements
 
     try:
-        children = _atomacos_getattr(element, 'AXChildren', None)
+        children = _atomacos_getattr(element, "AXChildren", None)
         if children and isinstance(children, list):
             for child in children:
                 if deadline is not None and time.monotonic() > deadline:
@@ -375,14 +387,14 @@ def _walk_atomacos_tree(element, depth: int = 0, max_depth: int = 4,
 
 def _format_app_no_window(app) -> str:
     """Format output when an app has no windows (e.g. menu bar only)."""
-    app_name = str(getattr(app, 'AXTitle', app) or app)
+    app_name = str(getattr(app, "AXTitle", app) or app)
     try:
         menu_items = []
-        menu_bar = getattr(app, 'AXMenuBar', None)
+        menu_bar = getattr(app, "AXMenuBar", None)
         if menu_bar and isinstance(menu_bar, list):
             for item in menu_bar[:30]:
                 try:
-                    menu_items.append(str(getattr(item, 'AXTitle', item)))
+                    menu_items.append(str(getattr(item, "AXTitle", item)))
                 except Exception:
                     pass
         if menu_items:
@@ -399,11 +411,11 @@ def _format_element_list(elements: list[dict]) -> str:
 
     lines = []
     for i, el in enumerate(elements):
-        indent = "  " * el.get('depth', 0)
-        role = el.get('role', '?')
-        name = el.get('name', '')
+        indent = "  " * el.get("depth", 0)
+        role = el.get("role", "?")
+        name = el.get("name", "")
         if name:
-            lines.append(f"{indent}[{i}] {role}: \"{name}\"")
+            lines.append(f'{indent}[{i}] {role}: "{name}"')
         else:
             lines.append(f"{indent}[{i}] {role}")
     return "\n".join(lines)
@@ -429,7 +441,9 @@ def _macos_atomacos_click(role: str, name: str) -> ToolResult:
                 for window in front_app.windows():
                     if time.monotonic() > deadline:
                         break
-                    element = _find_atomacos_element(window, role, name, deadline=deadline)
+                    element = _find_atomacos_element(
+                        window, role, name, deadline=deadline
+                    )
                     if element:
                         break
             except Exception:
@@ -438,21 +452,21 @@ def _macos_atomacos_click(role: str, name: str) -> ToolResult:
         if element is None:
             return ToolResult(
                 success=False,
-                content=f"No {role} named \"{name}\" found in frontmost app.",
+                content=f'No {role} named "{name}" found in frontmost app.',
                 hint="Try desktop_snapshot first to see available elements.",
             )
 
         # Click the element at its center
         try:
-            pos = _atomacos_getattr(element, 'AXPosition')
-            size = _atomacos_getattr(element, 'AXSize')
+            pos = _atomacos_getattr(element, "AXPosition")
+            size = _atomacos_getattr(element, "AXSize")
             center_x = pos[0] + size[0] / 2
             center_y = pos[1] + size[1] / 2
             mouse.click(center_x, center_y)
-            app_name = str(_atomacos_getattr(front_app, 'AXTitle') or front_app)
+            app_name = str(_atomacos_getattr(front_app, "AXTitle") or front_app)
             return ToolResult(
                 success=True,
-                content=f"Clicked {role} \"{name}\" in {app_name}.",
+                content=f'Clicked {role} "{name}" in {app_name}.',
             )
         except Exception as exc:
             return ToolResult(
@@ -469,8 +483,9 @@ def _macos_atomacos_click(role: str, name: str) -> ToolResult:
         return ToolResult(success=False, content=f"atomacos click failed: {exc}")
 
 
-def _find_atomacos_element(element, role: str, name: str, max_depth: int = 8,
-                           deadline: float | None = None):
+def _find_atomacos_element(
+    element, role: str, name: str, max_depth: int = 8, deadline: float | None = None
+):
     """Recursively find an element by role and name.
 
     *deadline* is a ``time.monotonic()`` timestamp after which we stop
@@ -482,26 +497,31 @@ def _find_atomacos_element(element, role: str, name: str, max_depth: int = 8,
         return None
 
     try:
-        el_role = str(_atomacos_getattr(element, 'AXRole', ''))
+        el_role = str(_atomacos_getattr(element, "AXRole", ""))
     except Exception:
         return None
 
     try:
-        el_name = str(_atomacos_getattr(element, 'AXTitle', '') or
-                      _atomacos_getattr(element, 'AXDescription', '') or '')
+        el_name = str(
+            _atomacos_getattr(element, "AXTitle", "")
+            or _atomacos_getattr(element, "AXDescription", "")
+            or ""
+        )
     except Exception:
-        el_name = ''
+        el_name = ""
 
     if el_role.lower() == role.lower() and name.lower() in el_name.lower():
         return element
 
     try:
-        children = _atomacos_getattr(element, 'AXChildren', None)
+        children = _atomacos_getattr(element, "AXChildren", None)
         if children and isinstance(children, list):
             for child in children:
                 if deadline is not None and time.monotonic() > deadline:
                     return None
-                result = _find_atomacos_element(child, role, name, max_depth - 1, deadline)
+                result = _find_atomacos_element(
+                    child, role, name, max_depth - 1, deadline
+                )
                 if result is not None:
                     return result
     except Exception:
@@ -531,6 +551,7 @@ def _macos_atomacos_type(text: str) -> ToolResult:
 
 # -- macOS: CGEvent (keyboard injection) -----------------------------------
 
+
 def _macos_cgevent_type(text: str) -> ToolResult:
     """Type text via Core Graphics events (requires pyobjc-framework-Quartz)."""
     try:
@@ -555,13 +576,20 @@ def _macos_cgevent_type(text: str) -> ToolResult:
 
 # -- macOS: osascript (always available) -----------------------------------
 
+
 def _macos_osascript_type(text: str) -> ToolResult:
     """Type text via AppleScript keystroke (always works on macOS)."""
     try:
-        escaped = text.replace('\\', '\\\\').replace('"', '\\"')
+        escaped = text.replace("\\", "\\\\").replace('"', '\\"')
         subprocess.run(
-            ["osascript", "-e", f'tell application "System Events" to keystroke "{escaped}"'],
-            capture_output=True, text=True, timeout=5,
+            [
+                "osascript",
+                "-e",
+                f'tell application "System Events" to keystroke "{escaped}"',
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         return ToolResult(success=True, content="Typed text via System Events.")
     except Exception as exc:
@@ -569,6 +597,7 @@ def _macos_osascript_type(text: str) -> ToolResult:
 
 
 # -- Windows: uiautomation -------------------------------------------------
+
 
 def _win_uia_snapshot() -> ToolResult:
     """Capture the UI tree using Windows UI Automation."""
@@ -601,20 +630,22 @@ def _walk_uia_tree(element, depth: int = 0, max_depth: int = 5) -> list[dict]:
         return elements
 
     try:
-        control_type = str(element.ControlTypeName or 'unknown')
-        name = str(element.Name or '')
+        control_type = str(element.ControlTypeName or "unknown")
+        name = str(element.Name or "")
     except Exception:
-        control_type = 'unknown'
-        name = ''
+        control_type = "unknown"
+        name = ""
 
     # Skip generic container types
-    skip_types = {'GroupControl', 'PaneControl', 'WindowControl'}
+    skip_types = {"GroupControl", "PaneControl", "WindowControl"}
     if control_type not in skip_types or depth <= 1:
-        elements.append({
-            'role': control_type,
-            'name': name[:100],
-            'depth': depth,
-        })
+        elements.append(
+            {
+                "role": control_type,
+                "name": name[:100],
+                "depth": depth,
+            }
+        )
 
     try:
         children = element.GetChildren()
@@ -639,12 +670,12 @@ def _win_uia_click(role: str, name: str) -> ToolResult:
         if element is None:
             return ToolResult(
                 success=False,
-                content=f"No {role} named \"{name}\" found in foreground window.",
+                content=f'No {role} named "{name}" found in foreground window.',
                 hint="Try desktop_snapshot first to see available elements.",
             )
 
         element.Click()
-        return ToolResult(success=True, content=f"Clicked {role} \"{name}\".")
+        return ToolResult(success=True, content=f'Clicked {role} "{name}".')
 
     except ImportError:
         return ToolResult(
@@ -658,8 +689,8 @@ def _win_uia_click(role: str, name: str) -> ToolResult:
 def _find_uia_element(element, role: str, name: str, max_depth: int = 6):
     """Recursively find a UIA element by control type and name."""
     try:
-        el_type = str(element.ControlTypeName or '')
-        el_name = str(element.Name or '')
+        el_type = str(element.ControlTypeName or "")
+        el_name = str(element.Name or "")
     except Exception:
         return None
 
@@ -713,6 +744,7 @@ def _win_uia_type(text: str) -> ToolResult:
 
 # -- Screenshot (cross-platform via mss or platform-native) ----------------
 
+
 def _native_screenshot() -> ToolResult:
     """Take a screenshot of the current screen using mss (lightweight)."""
     try:
@@ -733,15 +765,15 @@ def _native_screenshot() -> ToolResult:
         return ToolResult(
             success=True,
             content=f"Screenshot saved to: {out_path}\n"
-                    f"Resolution: {screenshot.width}x{screenshot.height}\n"
-                    f"Use read_image to view this screenshot.",
+            f"Resolution: {screenshot.width}x{screenshot.height}\n"
+            f"Use read_image to view this screenshot.",
         )
 
     except ImportError:
         return ToolResult(
             success=False,
             content="mss is not installed. Run: pip install mss\n"
-                    "mss is a lightweight, cross-platform screenshot library.",
+            "mss is a lightweight, cross-platform screenshot library.",
         )
     except Exception as exc:
         return ToolResult(success=False, content=f"Screenshot failed: {exc}")
@@ -750,12 +782,14 @@ def _native_screenshot() -> ToolResult:
 def _timestamp() -> str:
     """Return a compact timestamp for filenames."""
     import time
+
     return time.strftime("%Y%m%d_%H%M%S")
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _truncate(text: str, max_len: int) -> str:
     if len(text) <= max_len:
@@ -766,6 +800,7 @@ def _truncate(text: str, max_len: int) -> str:
 # ---------------------------------------------------------------------------
 # Main dispatch: choose provider and execute
 # ---------------------------------------------------------------------------
+
 
 def _get_best_provider() -> str | None:
     """Return the name of the best available provider."""
@@ -800,9 +835,11 @@ def _get_best_provider() -> str | None:
 # Tool implementations
 # ---------------------------------------------------------------------------
 
+
 @_register("desktop_snapshot")
-def _desktop_snapshot(args: dict, _wg: WriteSafetyGate,
-                      _rg: ReadSafetyGate) -> ToolResult:
+def _desktop_snapshot(
+    args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate
+) -> ToolResult:
     """Capture the accessibility tree of the frontmost window.
 
     Returns a structured text representation of interactive elements
@@ -821,15 +858,20 @@ def _desktop_snapshot(args: dict, _wg: WriteSafetyGate,
         server = _get_mcp_desktop_server()
         if server:
             # Try common MCP tool names
-            for tool_name in ("get_accessibility_tree", "snapshot", "get_ui_tree",
-                              "capture_snapshot", "get_snapshot"):
+            for tool_name in (
+                "get_accessibility_tree",
+                "snapshot",
+                "get_ui_tree",
+                "capture_snapshot",
+                "get_snapshot",
+            ):
                 result = _mcp_call(server, tool_name, {})
                 if result.success:
                     return result
             return ToolResult(
                 success=False,
                 content=f"MCP server '{server}' connected but no snapshot tool found. "
-                        f"Use mcp_discover to see available tools.",
+                f"Use mcp_discover to see available tools.",
             )
 
     if provider == "atomacos":
@@ -847,8 +889,7 @@ def _desktop_snapshot(args: dict, _wg: WriteSafetyGate,
 
 
 @_register("desktop_click")
-def _desktop_click(args: dict, _wg: WriteSafetyGate,
-                   _rg: ReadSafetyGate) -> ToolResult:
+def _desktop_click(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
     """Click a UI element identified by its role and name.
 
     Args:
@@ -894,8 +935,7 @@ def _desktop_click(args: dict, _wg: WriteSafetyGate,
 
 
 @_register("desktop_type")
-def _desktop_type(args: dict, _wg: WriteSafetyGate,
-                  _rg: ReadSafetyGate) -> ToolResult:
+def _desktop_type(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
     """Type text into the currently focused input field.
 
     Args:
@@ -939,8 +979,7 @@ def _desktop_type(args: dict, _wg: WriteSafetyGate,
 
 
 @_register("desktop_find")
-def _desktop_find(args: dict, _wg: WriteSafetyGate,
-                  _rg: ReadSafetyGate) -> ToolResult:
+def _desktop_find(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
     """Find UI elements matching a text or role query.
 
     Useful for locating elements across all open windows.
@@ -961,7 +1000,8 @@ def _desktop_find(args: dict, _wg: WriteSafetyGate,
         if server:
             for tool_name in ("find", "find_element", "search_ui", "query_elements"):
                 result = _mcp_call(
-                    server, tool_name,
+                    server,
+                    tool_name,
                     {"query": query, "role": role_filter},
                 )
                 if result.success:
@@ -974,7 +1014,8 @@ def _desktop_find(args: dict, _wg: WriteSafetyGate,
     # Native find: re-use snapshot and filter
     if provider in ("atomacos", "uiautomation"):
         snapshot_result = (
-            _macos_atomacos_snapshot() if provider == "atomacos"
+            _macos_atomacos_snapshot()
+            if provider == "atomacos"
             else _win_uia_snapshot()
         )
         if not snapshot_result.success:
@@ -993,12 +1034,13 @@ def _desktop_find(args: dict, _wg: WriteSafetyGate,
         if not matched:
             return ToolResult(
                 success=True,
-                content=f"No elements matching \"{query}\" found. "
-                        f"Try desktop_snapshot to see all elements.",
+                content=f'No elements matching "{query}" found. '
+                f"Try desktop_snapshot to see all elements.",
             )
         return ToolResult(
             success=True,
-            content=f"Found {len(matched)} matching elements:\n" + "\n".join(matched[:50]),
+            content=f"Found {len(matched)} matching elements:\n"
+            + "\n".join(matched[:50]),
         )
 
     if provider == "osascript":
@@ -1006,7 +1048,7 @@ def _desktop_find(args: dict, _wg: WriteSafetyGate,
         return ToolResult(
             success=False,
             content="desktop_find requires atomacos (pip install atomacos) or an MCP server. "
-                    "The osascript fallback does not support search.",
+            "The osascript fallback does not support search.",
         )
 
     return ToolResult(
@@ -1016,8 +1058,9 @@ def _desktop_find(args: dict, _wg: WriteSafetyGate,
 
 
 @_register("desktop_screenshot")
-def _desktop_screenshot(args: dict, _wg: WriteSafetyGate,
-                        _rg: ReadSafetyGate) -> ToolResult:
+def _desktop_screenshot(
+    args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate
+) -> ToolResult:
     """Capture a screenshot of the current screen (not browser).
 
     Unlike browser_screenshot, this captures the native desktop --
@@ -1034,6 +1077,7 @@ def _desktop_screenshot(args: dict, _wg: WriteSafetyGate,
 # ---------------------------------------------------------------------------
 # Summaries
 # ---------------------------------------------------------------------------
+
 
 @_summarize("desktop_snapshot")
 def _desktop_snapshot_summary(args: dict) -> str:

@@ -21,19 +21,21 @@ MEMORY_FILENAME = ".mini_agent_memory.db"
 # Provider defaults
 # ---------------------------------------------------------------------------
 
-DEFAULT_API_PROVIDER = "deepseek"  # "deepseek", "claude", "xai", "openrouter", or "ollama"
+DEFAULT_API_PROVIDER = (
+    "deepseek"  # "deepseek", "claude", "xai", "openrouter", or "ollama"
+)
 
 # ---------------------------------------------------------------------------
 # Truncation / timeout / connection-pool constants
 # ---------------------------------------------------------------------------
 
-TREE_TRUNCATION_LINES = 60    # max lines in workspace tree before truncating
-GIT_LOG_TIMEOUT = 5           # seconds to wait for git log
-GIT_LOG_COUNT = 5             # number of recent commits to show on startup
-HTTP_CONNECT_TIMEOUT = 30     # seconds to establish HTTP connection
-HTTP_READ_TIMEOUT = 120       # seconds to read HTTP response
-HTTP_POOL_CONNECTIONS = 2     # max connections per host
-HTTP_POOL_MAXSIZE = 4         # max total pool size
+TREE_TRUNCATION_LINES = 60  # max lines in workspace tree before truncating
+GIT_LOG_TIMEOUT = 5  # seconds to wait for git log
+GIT_LOG_COUNT = 5  # number of recent commits to show on startup
+HTTP_CONNECT_TIMEOUT = 30  # seconds to establish HTTP connection
+HTTP_READ_TIMEOUT = 120  # seconds to read HTTP response
+HTTP_POOL_CONNECTIONS = 2  # max connections per host
+HTTP_POOL_MAXSIZE = 4  # max total pool size
 
 # ---------------------------------------------------------------------------
 # Directory names to skip during os.walk / tree traversal.
@@ -42,12 +44,19 @@ HTTP_POOL_MAXSIZE = 4         # max total pool size
 #          shell_ops.py, search_ops.py.
 # ---------------------------------------------------------------------------
 SKIP_DIRS: set[str] = {
-    ".git", ".hg", ".svn",
+    ".git",
+    ".hg",
+    ".svn",
     "__pycache__",
-    ".venv", "venv",
+    ".venv",
+    "venv",
     "node_modules",
-    ".mypy_cache", ".pytest_cache", ".ruff_cache",
-    "dist", "build",
-    ".tox", ".eggs",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    "dist",
+    "build",
+    ".tox",
+    ".eggs",
     "*.egg-info",
 }

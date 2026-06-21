@@ -104,10 +104,7 @@ class TestConfidenceWebSearchNudge(unittest.TestCase):
         messages = [
             _assistant_msg([_call(f"c{i}", "find_symbol", '{"name":"x"}')])
             for i in range(5)
-        ] + [
-            _tool_msg(f"c{i}", success=True, content="no match")
-            for i in range(5)
-        ]
+        ] + [_tool_msg(f"c{i}", success=True, content="no match") for i in range(5)]
         nudge = self._assert_nudge(messages)
         self.assertIsNotNone(nudge)
         self.assertIn("5", nudge)  # mentions the count

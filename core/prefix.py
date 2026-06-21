@@ -46,7 +46,7 @@ class ImmutablePrefix:
     """
 
     system: str
-    tool_specs: list[dict]     # serialized with sort_keys=True
+    tool_specs: list[dict]  # serialized with sort_keys=True
     few_shots: list[dict] = field(default_factory=list)
 
     _hash: str = field(init=False, default="")
@@ -98,7 +98,9 @@ class SessionPrefixCache:
     def is_established(self) -> bool:
         return self._prefix is not None
 
-    def establish(self, system: str, tool_specs: list[dict], few_shots: list[dict] | None = None) -> ImmutablePrefix:
+    def establish(
+        self, system: str, tool_specs: list[dict], few_shots: list[dict] | None = None
+    ) -> ImmutablePrefix:
         """Set the immutable prefix for this session. Call once at startup.
 
         Returns the new prefix.  If called again with the same content,
@@ -111,7 +113,10 @@ class SessionPrefixCache:
             few_shots=few_shots or [],
         )
         with self._lock:
-            if self._prefix is not None and self._prefix.fingerprint == new_prefix.fingerprint:
+            if (
+                self._prefix is not None
+                and self._prefix.fingerprint == new_prefix.fingerprint
+            ):
                 return self._prefix  # no change
             old_fp = self._prefix.fingerprint if self._prefix else "none"
             self._prefix = new_prefix
@@ -123,7 +128,10 @@ class SessionPrefixCache:
 
     def fingerprint_changed(self) -> bool:
         """True if the prefix fingerprint changed since last establish()."""
-        return len(self._fingerprint_history) > 0 and self._fingerprint_history[-1] != "none"
+        return (
+            len(self._fingerprint_history) > 0
+            and self._fingerprint_history[-1] != "none"
+        )
 
     def build_system_message(self, config: Any) -> str:
         """Build the canonical system prompt string.
@@ -132,6 +140,7 @@ class SessionPrefixCache:
         The caller should pass get_active_tools() result as tool_specs.
         """
         from core.prompt import build_system_prompt
+
         system = build_system_prompt(config)
         if hasattr(config, "system_extension") and config.system_extension:
             system += "\n\n" + config.system_extension

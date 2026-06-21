@@ -38,35 +38,50 @@ def main() -> None:
 
     # --- Boot diagnostic log (written early so it survives even on crash) --
     import datetime as _dt
+
     _boot_log = os.path.join(workspace, "_bot_boot.log")
     _boot_lines = []
+
     def _flush_boot_log() -> None:
         try:
             with open(_boot_log, "a", encoding="utf-8") as f:
                 f.write("\n".join(_boot_lines) + "\n")
         except Exception:
             pass
+
     def _blog(msg: str) -> None:
         """Log to both console and the boot log file."""
         print(msg, flush=True)
         _boot_lines.append(f"[{_dt.datetime.now().isoformat()}] {msg}")
 
     _blog(f"[workspace_bot] Boot start -- workspace={workspace}")
-    _blog(f"[workspace_bot] Python={sys.version} | platform={sys.platform} | pid={os.getpid()}")
+    _blog(
+        f"[workspace_bot] Python={sys.version} | platform={sys.platform} | pid={os.getpid()}"
+    )
 
     # Load .env first so WORKSPACE_BOT_TOKEN (and any API keys in the
     # mini_agent .env) are available before we bootstrap the session.
     from core.config import _load_dotenv
+
     _load_dotenv(workspace)
     _blog("[workspace_bot] .env loaded")
 
     # Dump relevant env vars for diagnostics
-    _env_diag = {k: os.environ.get(k, "(unset)") for k in [
-        "WORKSPACE_BOT_TOKEN", "DISCORD_BOT_TOKEN", "AGENT_WORKSPACE",
-        "MINI_AGENT_UI", "DEEPSEEK_API_KEY"
-    ] if os.environ.get(k)}
-    _blog(f"[workspace_bot] Env: WORKSPACE_BOT_TOKEN={'SET' if os.environ.get('WORKSPACE_BOT_TOKEN') else 'MISSING'}, "
-          f"DISCORD_BOT_TOKEN={'SET' if os.environ.get('DISCORD_BOT_TOKEN') else 'MISSING'}")
+    _env_diag = {
+        k: os.environ.get(k, "(unset)")
+        for k in [
+            "WORKSPACE_BOT_TOKEN",
+            "DISCORD_BOT_TOKEN",
+            "AGENT_WORKSPACE",
+            "MINI_AGENT_UI",
+            "DEEPSEEK_API_KEY",
+        ]
+        if os.environ.get(k)
+    }
+    _blog(
+        f"[workspace_bot] Env: WORKSPACE_BOT_TOKEN={'SET' if os.environ.get('WORKSPACE_BOT_TOKEN') else 'MISSING'}, "
+        f"DISCORD_BOT_TOKEN={'SET' if os.environ.get('DISCORD_BOT_TOKEN') else 'MISSING'}"
+    )
 
     # Resolve token (must happen before init_session which may print a
     # confusing "no DISCORD_BOT_TOKEN" warning)
@@ -89,10 +104,13 @@ def main() -> None:
         read_gate = session_data["read_gate"]
         memory = session_data["memory"]
         base_messages = session_data["messages"]
-        _blog(f"[workspace_bot] Agent initialized (model={config.model}, provider={config.api_provider})")
+        _blog(
+            f"[workspace_bot] Agent initialized (model={config.model}, provider={config.api_provider})"
+        )
     except Exception as e:
         _blog(f"[workspace_bot] FATAL init_session: {e}")
         import traceback
+
         _blog(traceback.format_exc())
         _flush_boot_log()
         sys.exit(1)
@@ -100,6 +118,7 @@ def main() -> None:
     # Clear any stale sub-agent callback (system removed in 25d41eb)
     try:
         from tools import _TOOL_CONTEXT
+
         _TOOL_CONTEXT._subagent_callback = None
     except Exception:
         pass
@@ -130,9 +149,14 @@ def main() -> None:
     except Exception as e:
         # Check for privileged intents error -- retry with basic intents
         if "PrivilegedIntentsRequired" in type(e).__name__:
-            _blog("[workspace_bot] Privileged intents not enabled in Discord Developer Portal.")
-            _blog("[workspace_bot] Disabling privileged intents (members, presences, message_content) and retrying...")
+            _blog(
+                "[workspace_bot] Privileged intents not enabled in Discord Developer Portal."
+            )
+            _blog(
+                "[workspace_bot] Disabling privileged intents (members, presences, message_content) and retrying..."
+            )
             import discord_bot
+
             discord_bot.INTENTS.members = False
             discord_bot.INTENTS.presences = False
             discord_bot.INTENTS.message_content = False
@@ -152,6 +176,7 @@ def main() -> None:
             return  # skip the except/finally below
         _blog(f"[workspace_bot] FATAL bot.run: {e}")
         import traceback
+
         _blog(traceback.format_exc())
         _flush_boot_log()
         sys.exit(1)

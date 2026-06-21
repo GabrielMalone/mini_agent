@@ -10,30 +10,39 @@ from __future__ import annotations
 # The following are lazy-loaded convenience accessors for external code.
 # Internal code should import submodules directly.
 
+
 def __getattr__(name):
     """Lazy import to avoid circular dependencies at package-init time."""
     if name == "AgentConfig":
         from core.config import AgentConfig
+
         return AgentConfig
     if name == "init_session":
         from core.bootstrap import init_session
+
         return init_session
     if name == "run_agent_turn":
         from core.llm import run_agent_turn
+
         return run_agent_turn
     if name == "build_system_prompt":
         from core.prompt import build_system_prompt
+
         return build_system_prompt
     if name == "build_startup_context":
         from core.prompt import build_startup_context
+
         return build_startup_context
     if name == "build_codebase_map":
         from core.codebase_map import build_codebase_map
+
         return build_codebase_map
     if name == "ReadSafetyGate":
         from core.safety import ReadSafetyGate
+
         return ReadSafetyGate
     if name == "WriteSafetyGate":
         from core.safety import WriteSafetyGate
+
         return WriteSafetyGate
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -96,7 +96,7 @@ def _parse_frontmatter(content: str) -> tuple[dict, str]:
         return fm, body
 
     fm_text = fm_match.group(1)
-    body = content[fm_match.end():]
+    body = content[fm_match.end() :]
 
     current_key: str | None = None
     current_list: list[str] = []
@@ -125,7 +125,11 @@ def _parse_frontmatter(content: str) -> tuple[dict, str]:
         if inline_match:
             _flush_list()
             key = inline_match.group(1).lower()
-            items = [i.strip().strip('"').strip("'") for i in inline_match.group(2).split(",") if i.strip()]
+            items = [
+                i.strip().strip('"').strip("'")
+                for i in inline_match.group(2).split(",")
+                if i.strip()
+            ]
             fm[key] = items
             continue
 
@@ -274,16 +278,36 @@ def _get_skills_tool_map() -> dict[str, list[str]]:
     return {
         "test": ["run_tests", "verify", "diagnose_failures"],
         "lsp": ["lsp_definition", "lsp_references", "lsp_hover", "lsp_diagnostics"],
-        "web": ["fetch_url", "open_url", "browser_navigate", "browser_snapshot",
-                "browser_click", "browser_type", "browser_screenshot"],
+        "web": [
+            "fetch_url",
+            "open_url",
+            "browser_navigate",
+            "browser_snapshot",
+            "browser_click",
+            "browser_type",
+            "browser_screenshot",
+        ],
         "search": ["find_usages", "semantic_search", "recall_turn"],
         "tasks": ["task_status"],
         "image": ["read_image"],
-        "desktop": ["desktop_snapshot", "desktop_click", "desktop_type",
-                    "desktop_find", "desktop_screenshot", "desktop_apps",
-                    "desktop_launch", "desktop_quit", "desktop_focus",
-                    "desktop_clipboard", "desktop_windows", "desktop_system_info",
-                    "desktop_key", "desktop_open", "desktop_reveal", "desktop_notify"],
+        "desktop": [
+            "desktop_snapshot",
+            "desktop_click",
+            "desktop_type",
+            "desktop_find",
+            "desktop_screenshot",
+            "desktop_apps",
+            "desktop_launch",
+            "desktop_quit",
+            "desktop_focus",
+            "desktop_clipboard",
+            "desktop_windows",
+            "desktop_system_info",
+            "desktop_key",
+            "desktop_open",
+            "desktop_reveal",
+            "desktop_notify",
+        ],
         "bootstrap": ["init", "session_stats"],
     }
 
@@ -296,7 +320,9 @@ SKILLS: dict[str, list[str]] = _get_skills_tool_map()
 # -- Runtime state -----------------------------------------------------------
 
 _active_skills: set[str] = set()
-_skill_content_injected: set[str] = set()  # Tracks which skill contents have been injected
+_skill_content_injected: set[str] = (
+    set()
+)  # Tracks which skill contents have been injected
 
 
 # -- Skill management API ----------------------------------------------------
@@ -386,7 +412,9 @@ def prune_unused_skills(unused_tools: set[str]) -> int:
         if all(t in unused_tools for t in skill_tools):
             ok, _msg = deactivate_skill(skill_name)
             if ok:
-                _log.info("pruned_unused_skill skill=%s tools=%s", skill_name, skill_tools)
+                _log.info(
+                    "pruned_unused_skill skill=%s tools=%s", skill_name, skill_tools
+                )
                 pruned += 1
     return pruned
 
@@ -495,6 +523,7 @@ CORE_TOOLS: list[str] = [
 
 # -- use_skill tool schema ---------------------------------------------------
 
+
 def _build_use_skill_schema() -> dict:
     """Build the use_skill tool schema with dynamic available skills list."""
     tool_map = _get_skills_tool_map()
@@ -507,9 +536,7 @@ def _build_use_skill_schema() -> dict:
                 "Activate a skill group to gain access to additional tools. "
                 "Call this when you need tools not in the core set. "
                 "Skills stay active for the rest of the session. "
-                "Available skills: "
-                + available
-                + "."
+                "Available skills: " + available + "."
             ),
             "parameters": {
                 "type": "object",

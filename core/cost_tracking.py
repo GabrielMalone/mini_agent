@@ -7,6 +7,7 @@ SessionStats cost accumulation.
 Prices in USD per 1M tokens (matching Reasonix as of 2026-06).
 Display currency conversion happens at the UI boundary.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -51,6 +52,7 @@ def _get_pricing(model: str) -> dict[str, float]:
 @dataclass
 class TurnCost:
     """Cost breakdown for a single turn."""
+
     input_cost: float = 0.0
     output_cost: float = 0.0
     total_cost: float = 0.0
@@ -67,6 +69,7 @@ class SessionCost:
     Thread-safe: all mutations are on the instance, controlled by
     the caller (single-threaded agent loop).
     """
+
     turn_count: int = 0
     total_cost: float = 0.0
     total_cache_hit_tokens: int = 0
@@ -89,10 +92,9 @@ class SessionCost:
         # Cost = (cache-hit tokens / 1M) * cache-hit price
         #      + (cache-miss tokens / 1M) * cache-miss price
         #      + (completion tokens / 1M) * output price
-        input_cost = (
-            (cache_hit_tokens / 1_000_000) * pricing["inputCacheHit"]
-            + (cache_miss_tokens / 1_000_000) * pricing["inputCacheMiss"]
-        )
+        input_cost = (cache_hit_tokens / 1_000_000) * pricing["inputCacheHit"] + (
+            cache_miss_tokens / 1_000_000
+        ) * pricing["inputCacheMiss"]
         output_cost = (completion_tokens / 1_000_000) * pricing["output"]
         total = input_cost + output_cost
 

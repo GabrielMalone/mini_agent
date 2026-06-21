@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
 """Edit operations -- edit_file, edit_lines with fuzzy matching."""
+
 from __future__ import annotations
 
-import difflib
-import os
 import re
 import sys
 
-from tools.result import ToolResult, ErrorClass
+from tools.result import ToolResult
 from tools import _register, _summarize, _TOOL_CONTEXT
 from tools._file_utils import (
-    _canonicalize_for_match, _normalize_quotes, _normalize_unicode_whitespace,
-    _validate_python_syntax, _finalize_edit, _auto_advance_plan, _backup_before_write,
-    _READ_FILES, _BACKUPS, _FILE_CACHE,
+    _normalize_quotes,
+    _normalize_unicode_whitespace,
+    _finalize_edit,
+    _backup_before_write,
+    _READ_FILES,
     _compute_line_hashes,
 )
 
-from core.file_context_tracker import get_tracker
 
 # ---------------------------------------------------------------------------
 # edit_file
@@ -28,11 +28,12 @@ _EditResult = tuple[str, ToolResult]  # (path, result)
 def _normalize_line(s: str) -> str:
     """Collapse whitespace: Unicode ws->space, tabs->spaces, strip, collapse multiple spaces."""
     s = _normalize_unicode_whitespace(s)
-    return ' '.join(s.replace('\t', '    ').split())
+    return " ".join(s.replace("\t", "    ").split())
 
 
-
-def _find_closest_lines(content_lines: list[str], search_lines: list[str]) -> dict | None:
+def _find_closest_lines(
+    content_lines: list[str], search_lines: list[str]
+) -> dict | None:
     """Find the closest matching region in the file for diagnostic diff.
 
     Uses normalized content comparison (pass 4 style) with a sliding window.
@@ -49,7 +50,7 @@ def _find_closest_lines(content_lines: list[str], search_lines: list[str]) -> di
 
     # Score each window: count how many lines match (after normalization)
     for i in range(n_content - n_search + 1):
-        window = content_lines[i:i + n_search]
+        window = content_lines[i : i + n_search]
         norm_window = [_normalize_line(w) for w in window]
         score = sum(1 for a, b in zip(norm_search, norm_window) if a == b)
         if score > best_score:
@@ -60,20 +61,22 @@ def _find_closest_lines(content_lines: list[str], search_lines: list[str]) -> di
 
     # Build a diff hint showing what's different
     diff_parts = []
-    norm_content_window = [_normalize_line(l) for l in content_lines[best_idx:best_idx + n_search]]
+    norm_content_window = [
+        _normalize_line(l) for l in content_lines[best_idx : best_idx + n_search]
+    ]
     for j in range(n_search):
         if norm_search[j] != norm_content_window[j]:
             diff_parts.append(
-                f"line {j+1}: expected '{norm_search[j][:40]}' "
+                f"line {j + 1}: expected '{norm_search[j][:40]}' "
                 f"got '{norm_content_window[j][:40]}'"
             )
 
     return {
-        'line': best_idx + 1,
-        'lines': content_lines[best_idx:best_idx + n_search],
-        'diff_hint': '; '.join(diff_parts[:5]) if diff_parts else '',
-        'match_ratio': match_ratio,
-        'matched_lines': best_score,
+        "line": best_idx + 1,
+        "lines": content_lines[best_idx : best_idx + n_search],
+        "diff_hint": "; ".join(diff_parts[:5]) if diff_parts else "",
+        "match_ratio": match_ratio,
+        "matched_lines": best_score,
     }
 
 
@@ -91,8 +94,8 @@ def _fuzzy_find(content: str, search: str) -> tuple[int, int] | None:
         return None
 
     # -- Line-ending normalization: CRLF -> LF -------
-    content_lf = content.replace('\r\n', '\n').replace('\r', '\n')
-    search_lf = search.replace('\r\n', '\n').replace('\r', '\n')
+    content_lf = content.replace("\r\n", "\n").replace("\r", "\n")
+    search_lf = search.replace("\r\n", "\n").replace("\r", "\n")
 
     # Pass 1: exact substring (against LF-normalized content)
     idx = content_lf.find(search_lf)
@@ -100,9 +103,9 @@ def _fuzzy_find(content: str, search: str) -> tuple[int, int] | None:
         # Map back to original content offsets (CR removal may shift)
         return _map_lf_offset_to_original(content, search_lf, idx)
 
-    content_lines = content_lf.split('\n')
-    search_lines = search_lf.split('\n')
-    if search_lines and search_lines[-1] == '':
+    content_lines = content_lf.split("\n")
+    search_lines = search_lf.split("\n")
+    if search_lines and search_lines[-1] == "":
         search_lines.pop()
     if not search_lines:
         return None
@@ -113,7 +116,7 @@ def _fuzzy_find(content: str, search: str) -> tuple[int, int] | None:
         return result
 
     # Pass 3-4: trailing-whitespace-tolerant, then full indent-tolerant
-    for trim in ('right', 'all'):
+    for trim in ("right", "all"):
         result = _line_match(content_lines, search_lines, trim, content_lf)
         if result is not None:
             return _map_lf_region_to_original(content, result[0], result[1])
@@ -124,16 +127,18 @@ def _fuzzy_find(content: str, search: str) -> tuple[int, int] | None:
 
 
 def _map_lf_offset_to_original(
-    original: str, search: str, lf_idx: int,
+    original: str,
+    search: str,
+    lf_idx: int,
 ) -> tuple[int, int]:
     """Map an LF-normalized match offset back to original content offsets."""
     # Walk original content counting chars; skip CR bytes
     orig_pos = 0
     lf_pos = 0
     while lf_pos < lf_idx and orig_pos < len(original):
-        if original[orig_pos] == '\r':
+        if original[orig_pos] == "\r":
             orig_pos += 1
-            if orig_pos < len(original) and original[orig_pos] == '\n':
+            if orig_pos < len(original) and original[orig_pos] == "\n":
                 orig_pos += 1
             lf_pos += 1  # \r alone maps to \n
         else:
@@ -143,9 +148,9 @@ def _map_lf_offset_to_original(
     # Now find end -- search_len chars in LF space
     remaining = len(search)
     while remaining > 0 and orig_pos < len(original):
-        if original[orig_pos] == '\r':
+        if original[orig_pos] == "\r":
             orig_pos += 1
-            if orig_pos < len(original) and original[orig_pos] == '\n':
+            if orig_pos < len(original) and original[orig_pos] == "\n":
                 orig_pos += 1
         else:
             orig_pos += 1
@@ -154,7 +159,9 @@ def _map_lf_offset_to_original(
 
 
 def _map_lf_region_to_original(
-    original: str, lf_start: int, lf_end: int,
+    original: str,
+    lf_start: int,
+    lf_end: int,
 ) -> tuple[int, int]:
     """Map an LF-normalized region [lf_start, lf_end) back to original offsets."""
     start = _map_lf_offset_to_original(original, "x" * (lf_end - lf_start), lf_start)[0]
@@ -163,7 +170,9 @@ def _map_lf_region_to_original(
 
 
 def _quote_normalized_match(
-    content_lf: str, search_lf: str, original: str,
+    content_lf: str,
+    search_lf: str,
+    original: str,
 ) -> tuple[int, int] | None:
     """Pass 2: try matching after normalizing curly/smart quotes to ASCII.
 
@@ -181,7 +190,9 @@ def _quote_normalized_match(
 
 
 def _preserve_indentation(
-    old_str: str, new_str: str, file_region: str,
+    old_str: str,
+    new_str: str,
+    file_region: str,
 ) -> str:
     """Preserve the file's indentation style when applying a replacement.
 
@@ -195,14 +206,14 @@ def _preserve_indentation(
     This handles the common case where the model outputs refactored code with
     spaces instead of tabs (or vice versa) and we want to match the file's style.
     """
-    old_lines = old_str.split('\n')
-    new_lines = new_str.split('\n')
-    file_lines = file_region.split('\n')
+    old_lines = old_str.split("\n")
+    new_lines = new_str.split("\n")
+    file_lines = file_region.split("\n")
 
     # Extract leading whitespace from each line
     def _leading_ws(s: str) -> str:
-        m = re.match(r'^([ \t]*)', s)
-        return m.group(1) if m else ''
+        m = re.match(r"^([ \t]*)", s)
+        return m.group(1) if m else ""
 
     old_indents = [_leading_ws(l) for l in old_lines]
     new_indents = [_leading_ws(l) for l in new_lines]
@@ -214,8 +225,8 @@ def _preserve_indentation(
 
     result_lines: list[str] = []
     for k, new_line in enumerate(new_lines):
-        new_ws = new_indents[k] if k < len(new_indents) else ''
-        new_content = new_line[len(new_ws):]  # rest of line after indentation
+        new_ws = new_indents[k] if k < len(new_indents) else ""
+        new_content = new_line[len(new_ws) :]  # rest of line after indentation
 
         if k < len(old_indents) and k < len(file_indents):
             old_ws = old_indents[k]
@@ -225,7 +236,7 @@ def _preserve_indentation(
                 # New wanted more/less indentation relative to old baseline
                 if new_ws.startswith(old_ws):
                     # New has old prefix + extra: apply extra to file's indent
-                    extra = new_ws[len(old_ws):]
+                    extra = new_ws[len(old_ws) :]
                     result_lines.append(file_ws + extra + new_content)
                 elif old_ws.startswith(new_ws):
                     # New wants less indent than old: reduce file's indent
@@ -255,23 +266,30 @@ def _preserve_indentation(
             if last_idx >= 0 and last_idx < len(file_indents):
                 old_last = old_indents[last_idx]
                 file_last = file_indents[last_idx]
-                level_diff = _count_indent_levels(new_indents[k]) - _count_indent_levels(old_last) if old_last else _count_indent_levels(new_indents[k])
+                level_diff = (
+                    _count_indent_levels(new_indents[k])
+                    - _count_indent_levels(old_last)
+                    if old_last
+                    else _count_indent_levels(new_indents[k])
+                )
                 new_levels = _count_indent_levels(file_last) + level_diff
-                result_lines.append(_indent_from_levels(new_levels, file_last) + new_content)
+                result_lines.append(
+                    _indent_from_levels(new_levels, file_last) + new_content
+                )
             else:
                 result_lines.append(new_line)
         else:
             result_lines.append(new_line)
 
-    return '\n'.join(result_lines)
+    return "\n".join(result_lines)
 
 
 def _count_indent_levels(ws: str) -> int:
     """Count indentation levels: each tab = 1 level, each 2 spaces = 1 level."""
     if not ws:
         return 0
-    if '\t' in ws:
-        return ws.count('\t')
+    if "\t" in ws:
+        return ws.count("\t")
     space_count = len(ws)
     # Treat each 2 spaces as 1 level (Python standard), with remainder as partial
     levels = space_count // 2
@@ -281,10 +299,10 @@ def _count_indent_levels(ws: str) -> int:
 def _indent_from_levels(levels: int, reference_ws: str) -> str:
     """Generate indentation string from level count, matching reference style."""
     if levels <= 0:
-        return ''
-    if '\t' in (reference_ws or ''):
-        return '\t' * levels
-    return ' ' * (levels * 2)
+        return ""
+    if "\t" in (reference_ws or ""):
+        return "\t" * levels
+    return " " * (levels * 2)
 
 
 def _fuzzy_find_closest(
@@ -316,7 +334,7 @@ def _fuzzy_find_closest(
     best_idx = 0
 
     for i in range(n_content - n_search + 1):
-        window = content_lines[i:i + n_search]
+        window = content_lines[i : i + n_search]
         norm_window = [_normalize_line(w) for w in window]
         score = sum(1 for a, b in zip(norm_search, norm_window) if a == b)
         if score > best_score:
@@ -332,9 +350,10 @@ def _fuzzy_find_closest(
     if match_start is not None:
         start_byte = sum(len(line) + 1 for line in content_lines[:match_start])
         end_byte = start_byte + sum(
-            len(line) + 1 for line in content_lines[match_start:match_start + n_search]
+            len(line) + 1
+            for line in content_lines[match_start : match_start + n_search]
         )
-        if end_byte > start_byte and content_lf[end_byte - 1:end_byte] == '\n':
+        if end_byte > start_byte and content_lf[end_byte - 1 : end_byte] == "\n":
             end_byte -= 1
         return _map_lf_region_to_original(original, start_byte, end_byte)
 
@@ -347,21 +366,21 @@ def _fuzzy_find_closest(
     # (this handles near-perfect matches with minor whitespace differences)
     start_byte = sum(len(line) + 1 for line in content_lines[:best_idx])
     end_byte = start_byte + sum(
-        len(line) + 1 for line in content_lines[best_idx:best_idx + n_search]
+        len(line) + 1 for line in content_lines[best_idx : best_idx + n_search]
     )
-    if end_byte > start_byte and content_lf[end_byte - 1:end_byte] == '\n':
+    if end_byte > start_byte and content_lf[end_byte - 1 : end_byte] == "\n":
         end_byte -= 1
     return _map_lf_region_to_original(original, start_byte, end_byte)
 
 
-def _line_match(content_lines, search_lines, trim, content=''):
-    normalize = str.rstrip if trim == 'right' else str.strip
+def _line_match(content_lines, search_lines, trim, content=""):
+    normalize = str.rstrip if trim == "right" else str.strip
     n_search = len(search_lines)
     n_content = len(content_lines)
     norm_search = [normalize(s) for s in search_lines]
     match_start = None
     for i in range(n_content - n_search + 1):
-        window = content_lines[i:i + n_search]
+        window = content_lines[i : i + n_search]
         if [normalize(w) for w in window] == norm_search:
             if match_start is not None:
                 return None
@@ -369,11 +388,12 @@ def _line_match(content_lines, search_lines, trim, content=''):
     if match_start is None:
         return None
     start_byte = sum(len(line) + 1 for line in content_lines[:match_start])
-    end_byte = start_byte + sum(len(line) + 1 for line in content_lines[match_start:match_start + n_search])
-    if end_byte > start_byte and content[end_byte - 1:end_byte] == '\n':
+    end_byte = start_byte + sum(
+        len(line) + 1 for line in content_lines[match_start : match_start + n_search]
+    )
+    if end_byte > start_byte and content[end_byte - 1 : end_byte] == "\n":
         end_byte -= 1
     return (start_byte, end_byte)
-
 
 
 def _apply_single_edit(
@@ -387,29 +407,38 @@ def _apply_single_edit(
 ) -> _EditResult:
     """Apply an edit to a single file. Returns (path, ToolResult)."""
     if not old:
-        return (path, ToolResult(
-            success=False,
-            content="edit_file: 'old_string' must not be empty.",
-        ))
+        return (
+            path,
+            ToolResult(
+                success=False,
+                content="edit_file: 'old_string' must not be empty.",
+            ),
+        )
     safety_result = wg.check(path)
     if not safety_result.allowed:
-        return (path, ToolResult(
-            success=False,
-            content=f"Edit blocked by safety layer: {safety_result.reason}",
-        ))
+        return (
+            path,
+            ToolResult(
+                success=False,
+                content=f"Edit blocked by safety layer: {safety_result.reason}",
+            ),
+        )
     resolved = safety_result.resolved_path
 
     # --- Read-before-edit enforcement ---
     if resolved not in _READ_FILES:
-        return (path, ToolResult(
-            success=False,
-            content=(
-                f"Edit blocked: '{resolved}' has not been read yet in this session.\n"
-                f"Use read_file first to read the file before editing it.\n"
-                f"This ensures the model sees the current file content and can construct\n"
-                f"an accurate old_string for matching."
+        return (
+            path,
+            ToolResult(
+                success=False,
+                content=(
+                    f"Edit blocked: '{resolved}' has not been read yet in this session.\n"
+                    f"Use read_file first to read the file before editing it.\n"
+                    f"This ensures the model sees the current file content and can construct\n"
+                    f"an accurate old_string for matching."
+                ),
             ),
-        ))
+        )
 
     try:
         with open(resolved, "r", encoding="utf-8", errors="replace") as f:
@@ -427,8 +456,8 @@ def _apply_single_edit(
                 if len(candidates) >= 3:
                     break
             # Build diagnostic: find the closest matching lines and show diff
-            _old_lines = old.split('\n')
-            _content_lines = original.split('\n')
+            _old_lines = old.split("\n")
+            _content_lines = original.split("\n")
             best_match = _find_closest_lines(_content_lines, _old_lines)
             hint = (
                 f"Edit failed: old_string not found in '{resolved}'.\n"
@@ -438,8 +467,8 @@ def _apply_single_edit(
             if best_match:
                 # Show confidence score for the closest match
                 n_search = len(_old_lines)
-                if n_search > 0 and best_match.get('match_ratio', 0) > 0:
-                    pct = int(best_match['match_ratio'] * 100)
+                if n_search > 0 and best_match.get("match_ratio", 0) > 0:
+                    pct = int(best_match["match_ratio"] * 100)
                     hint += (
                         f"\n\nClosest match found at line {best_match['line']} "
                         f"(confidence: {pct}%, {best_match.get('matched_lines', 0)}/{n_search} lines):"
@@ -452,14 +481,17 @@ def _apply_single_edit(
                 if len(_old_lines) > 10:
                     hint += f"    ... ({len(_old_lines) - 10} more lines omitted)\n"
                 hint += f"  Actual (file at line {best_match['line']}):\n"
-                for fl in best_match['lines'][:10]:
+                for fl in best_match["lines"][:10]:
                     hint += f"    | {fl.rstrip()}\n"
-                if len(best_match['lines']) > 10:
+                if len(best_match["lines"]) > 10:
                     hint += f"    ... ({len(best_match['lines']) - 10} more lines omitted)\n"
-                if best_match['diff_hint']:
+                if best_match["diff_hint"]:
                     hint += f"\nDifferences: {best_match['diff_hint']}"
             if candidates:
-                hint += "\nSimilar lines found (did you mean one of these?):\n" + "\n".join(candidates)
+                hint += (
+                    "\nSimilar lines found (did you mean one of these?):\n"
+                    + "\n".join(candidates)
+                )
             if old_first_line:
                 try:
                     memory = getattr(_TOOL_CONTEXT, "_memory_store", None)
@@ -470,7 +502,9 @@ def _apply_single_edit(
                             detail=f"File: {resolved}. Could not find exact match for old_string.",
                         )
                 except Exception as exc:
-                    print(f"  WARNING: backup skipped: {exc}", file=sys.stderr, flush=True)
+                    print(
+                        f"  WARNING: backup skipped: {exc}", file=sys.stderr, flush=True
+                    )
             return (path, ToolResult(success=False, content=hint))
 
         if count == -1:
@@ -497,14 +531,23 @@ def _apply_single_edit(
             updated = original[:start] + preserved_new + original[end:]
             replaced = 1
         else:
-            return (path, ToolResult(success=False, content=f"Invalid count: {count}. Use a positive integer or -1 (all)."))
+            return (
+                path,
+                ToolResult(
+                    success=False,
+                    content=f"Invalid count: {count}. Use a positive integer or -1 (all).",
+                ),
+            )
 
         if preview:
             raw_diff = wg._format_diff(resolved, original, updated)
-            return (path, ToolResult(
-                success=True,
-                content=f"Preview: proposed edit to {resolved}\n{raw_diff}",
-            ))
+            return (
+                path,
+                ToolResult(
+                    success=True,
+                    content=f"Preview: proposed edit to {resolved}\n{raw_diff}",
+                ),
+            )
 
         ok, err = _finalize_edit(resolved, original, updated, wg.workspace_root)
         if not ok:
@@ -512,19 +555,31 @@ def _apply_single_edit(
 
         added = updated.count("\n") - original.count("\n")
         label = f"{replaced} occurrence(s)" if replaced > 1 else "1 occurrence"
-        return (path, ToolResult(
-            success=True,
-            content=(
-                f"OK: replaced {label} in {resolved}"
-                + (f" (+{added} lines)" if added > 0 else f" ({added} lines)" if added < 0 else "")
+        return (
+            path,
+            ToolResult(
+                success=True,
+                content=(
+                    f"OK: replaced {label} in {resolved}"
+                    + (
+                        f" (+{added} lines)"
+                        if added > 0
+                        else f" ({added} lines)"
+                        if added < 0
+                        else ""
+                    )
+                ),
+                diff_preview=diff.preview_text if diff.changed else None,
             ),
-            diff_preview=diff.preview_text if diff.changed else None,
-        ))
+        )
     except Exception as e:
-        return (path, ToolResult(
-            success=False,
-            content=f"Error editing '{resolved}': {e}",
-        ))
+        return (
+            path,
+            ToolResult(
+                success=False,
+                content=f"Error editing '{resolved}': {e}",
+            ),
+        )
 
 
 @_register("edit_file")
@@ -550,7 +605,9 @@ def _edit_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResu
             )
         results: list[_EditResult] = []
         for p in paths:
-            result = _apply_single_edit(p, old, new, count, preview, wg, {**args, "path": p})
+            result = _apply_single_edit(
+                p, old, new, count, preview, wg, {**args, "path": p}
+            )
             results.append(result)
         all_ok = all(r.success for _, r in results)
         lines: list[str] = []
@@ -591,7 +648,6 @@ def _edit_file_anchored(
         AnchorStateManager,
         resolve_anchored_edits,
         apply_resolved_edits,
-        strip_anchors,
     )
     import difflib as _difflib
 
@@ -608,6 +664,7 @@ def _edit_file_anchored(
 
         if isinstance(edits, str):
             import json as _json
+
             try:
                 edits = _json.loads(edits)
             except Exception:
@@ -620,7 +677,9 @@ def _edit_file_anchored(
 
         safety_result = wg.check(path)
         if not safety_result.allowed:
-            all_failures.append(f"{path}: blocked by safety layer: {safety_result.reason}")
+            all_failures.append(
+                f"{path}: blocked by safety layer: {safety_result.reason}"
+            )
             continue
 
         resolved = safety_result.resolved_path
@@ -642,27 +701,36 @@ def _edit_file_anchored(
         lines = content.split("\n")
         anchors = AnchorStateManager.reconcile(resolved, lines)
 
-        file_states.append({
-            "resolved": resolved,
-            "display": path,
-            "lines": lines,
-            "anchors": anchors,
-            "edits": edits,
-        })
+        file_states.append(
+            {
+                "resolved": resolved,
+                "display": path,
+                "lines": lines,
+                "anchors": anchors,
+                "edits": edits,
+            }
+        )
 
     if not file_states and all_failures:
-        return ToolResult(success=False, content="All files failed validation:\n" + "\n".join(all_failures))
+        return ToolResult(
+            success=False,
+            content="All files failed validation:\n" + "\n".join(all_failures),
+        )
 
     # Phase 2: Resolve edits (validate anchors match actual content)
     all_resolved: list[dict] = []  # {file_idx, resolved_edits, failed_edits}
 
     for idx, fs in enumerate(file_states):
-        resolved, failed = resolve_anchored_edits(fs["edits"], fs["lines"], fs["anchors"])
-        all_resolved.append({
-            "file_idx": idx,
-            "resolved_edits": resolved,
-            "failed_edits": failed,
-        })
+        resolved, failed = resolve_anchored_edits(
+            fs["edits"], fs["lines"], fs["anchors"]
+        )
+        all_resolved.append(
+            {
+                "file_idx": idx,
+                "resolved_edits": resolved,
+                "failed_edits": failed,
+            }
+        )
 
     # Check for failures
     total_failed = sum(len(ar["failed_edits"]) for ar in all_resolved)
@@ -674,7 +742,8 @@ def _edit_file_anchored(
                 failure_msgs.append(f"{fs['display']}: {fe['error']}")
         return ToolResult(
             success=False,
-            content="Anchor validation failed -- no edits were applied:\n" + "\n".join(failure_msgs),
+            content="Anchor validation failed -- no edits were applied:\n"
+            + "\n".join(failure_msgs),
         )
 
     # Phase 3: Apply edits (already validated, so this should succeed)
@@ -692,7 +761,9 @@ def _edit_file_anchored(
         new_content = "\n".join(new_lines)
         orig_content = "\n".join(fs["lines"])
 
-        ok, err = _finalize_edit(fs["resolved"], orig_content, new_content, wg.workspace_root)
+        ok, err = _finalize_edit(
+            fs["resolved"], orig_content, new_content, wg.workspace_root
+        )
         if not ok:
             results.append(f"[FAIL] {fs['display']}: {err}")
             all_failures.append(err or "Edit failed")
@@ -703,19 +774,21 @@ def _edit_file_anchored(
 
         # Generate diff
         orig_lines = fs["lines"]
-        diff_lines = list(_difflib.unified_diff(
-            orig_lines, new_lines,
-            fromfile=fs["display"], tofile=fs["display"],
-            lineterm="",
-        ))
+        diff_lines = list(
+            _difflib.unified_diff(
+                orig_lines,
+                new_lines,
+                fromfile=fs["display"],
+                tofile=fs["display"],
+                lineterm="",
+            )
+        )
         diff_text = "\n".join(diff_lines) if diff_lines else "(no visible change)"
 
         additions = sum(e["lines_added"] for e in applied)
         deletions = sum(e["lines_deleted"] for e in applied)
         stats = f" (+{additions}, -{deletions})" if additions or deletions else ""
-        results.append(
-            f"[OK] {fs['display']}{stats}: {len(resolved)} edit(s) applied"
-        )
+        results.append(f"[OK] {fs['display']}{stats}: {len(resolved)} edit(s) applied")
         all_diffs.append(f"--- {fs['display']} ---\n{diff_text}")
 
     final = "\n".join(results)
@@ -737,12 +810,14 @@ def _edit_file_summary(args: dict) -> str:
             for ed in f.get("edits", [])[:3]:  # max 3 edits per file in preview
                 anchor = ed.get("anchor", "")
                 # Extract just the anchor word (before §) for readability
-                anchor_word = anchor.split("\u00a7")[0] if "\u00a7" in anchor else anchor[:20]
+                anchor_word = (
+                    anchor.split("\u00a7")[0] if "\u00a7" in anchor else anchor[:20]
+                )
                 new_text = ed.get("text", "")
                 new_preview = new_text[:60].replace("\n", "\\n").strip()
                 if len(new_text) > 60:
                     new_preview += "..."
-                edit_previews.append(f"{anchor_word}\u2192\"{new_preview}\"")
+                edit_previews.append(f'{anchor_word}\u2192"{new_preview}"')
         preview_str = ", ".join(edit_previews)
         if total_edits > len(edit_previews):
             preview_str += f", +{total_edits - len(edit_previews)} more"
@@ -761,7 +836,7 @@ def _edit_file_summary(args: dict) -> str:
             new_preview += "..."
         preview_flag = args.get("preview", False)
         suffix = " [preview]" if preview_flag else ""
-        return f"edit_file({len(paths)} files: {', '.join(paths[:3])}) \"{old_preview}\" -> \"{new_preview}\"{suffix}"
+        return f'edit_file({len(paths)} files: {", ".join(paths[:3])}) "{old_preview}" -> "{new_preview}"{suffix}'
 
     # Single-file legacy mode
     path = args.get("path", "?")
@@ -775,16 +850,17 @@ def _edit_file_summary(args: dict) -> str:
         new_preview += "..."
     preview_flag = args.get("preview", False)
     suffix = " [preview]" if preview_flag else ""
-    return f"edit_file({path}) \"{old_preview}\" -> \"{new_preview}\"{suffix}"
+    return f'edit_file({path}) "{old_preview}" -> "{new_preview}"{suffix}'
 
 
 # ---------------------------------------------------------------------------
 # edit_lines -- hash-anchored editing (Hashlines pattern from Akay/Howard Chen)
 # ---------------------------------------------------------------------------
 
+
 @_register("edit_lines")
 def _edit_lines(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
-    '''Replace line ranges using hash anchors for reliable first-attempt edits.
+    """Replace line ranges using hash anchors for reliable first-attempt edits.
 
     Each edit specifies {from, from_hash, to, to_hash, new_text}.
     The file is re-read fresh; hashes are recomputed and validated before
@@ -792,7 +868,7 @@ def _edit_lines(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolRes
     in the edits array can refer to the pre-edit file.
 
     On any hash mismatch the ENTIRE batch is rejected with a precise error.
-    '''
+    """
     path = args["path"]
     edits = args["edits"]
 
@@ -864,7 +940,7 @@ def _edit_lines(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolRes
 
     for orig_idx, edit in sorted_edits:
         from_line = edit["from"] - 1  # 0-indexed
-        to_line = edit["to"] - 1      # 0-indexed
+        to_line = edit["to"] - 1  # 0-indexed
         new_text = edit["new_text"]
         new_lines = new_text.split("\n")
 
@@ -878,14 +954,16 @@ def _edit_lines(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolRes
                 ),
             )
 
-        updated_lines[from_line:to_line + 1] = new_lines
+        updated_lines[from_line : to_line + 1] = new_lines
 
     updated = "\n".join(updated_lines)
 
     # Build edit_text from new_text fields for auto-advance matching
     _edit_text = " ".join(e.get("new_text", "") for e in edits)
 
-    ok, err = _finalize_edit(resolved, original, updated, wg.workspace_root, edit_text=_edit_text)
+    ok, err = _finalize_edit(
+        resolved, original, updated, wg.workspace_root, edit_text=_edit_text
+    )
     if not ok:
         return ToolResult(success=False, content=err or "Edit failed")
 
@@ -897,7 +975,13 @@ def _edit_lines(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolRes
         success=True,
         content=(
             f"OK: applied {len(edits)} edit{label} to {resolved}"
-            + (f" (+{added} lines)" if added > 0 else f" ({added} lines)" if added < 0 else "")
+            + (
+                f" (+{added} lines)"
+                if added > 0
+                else f" ({added} lines)"
+                if added < 0
+                else ""
+            )
         ),
         diff_preview=diff.preview_text if diff.changed else None,
     )
@@ -912,8 +996,16 @@ def _edit_lines_summary(args: dict) -> str:
     for ed in edits[:5]:
         from_line = ed.get("from", "?")
         to_line = ed.get("to", "?")
-        from_hash = ed.get("from_hash", "")[:6] + "..." if len(ed.get("from_hash", "")) > 6 else ed.get("from_hash", "")
-        to_hash = ed.get("to_hash", "")[:6] + "..." if len(ed.get("to_hash", "")) > 6 else ed.get("to_hash", "")
+        from_hash = (
+            ed.get("from_hash", "")[:6] + "..."
+            if len(ed.get("from_hash", "")) > 6
+            else ed.get("from_hash", "")
+        )
+        to_hash = (
+            ed.get("to_hash", "")[:6] + "..."
+            if len(ed.get("to_hash", "")) > 6
+            else ed.get("to_hash", "")
+        )
         new_len = len(ed.get("new_text", ""))
         if to_line == from_line:
             range_str = f"L{from_line}"
@@ -925,5 +1017,3 @@ def _edit_lines_summary(args: dict) -> str:
     if len(edits) > 5:
         preview += f", +{len(edits) - 5} more"
     return f"edit_lines({path}, {len(edits)} edits: {preview})"
-
-

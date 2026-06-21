@@ -10,7 +10,9 @@ from conftest import make_gates as _gates
 from tools import ToolResult
 
 
-def _make_mock_response(status=200, content_type="text/html", data=b"<html><body>Hello World</body></html>"):
+def _make_mock_response(
+    status=200, content_type="text/html", data=b"<html><body>Hello World</body></html>"
+):
     """Build a mock urlopen response."""
     mock_resp = MagicMock()
     mock_resp.status = status
@@ -24,8 +26,8 @@ def _make_mock_response(status=200, content_type="text/html", data=b"<html><body
 # Tests
 # ---------------------------------------------------------------------------
 
-class TestFetchUrl(unittest.TestCase):
 
+class TestFetchUrl(unittest.TestCase):
     def setUp(self):
         self.write_gate, self.read_gate = _gates()
 
@@ -33,6 +35,7 @@ class TestFetchUrl(unittest.TestCase):
 
     def test_valid_url_returns_content(self):
         from tools.search_ops import _fetch_url
+
         mock_resp = _make_mock_response(
             data=b"<html><body>Hello World</body></html>",
         )
@@ -50,7 +53,10 @@ class TestFetchUrl(unittest.TestCase):
     def test_invalid_url_returns_error(self):
         from tools.search_ops import _fetch_url
         import urllib.error
-        with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("bad url")):
+
+        with patch(
+            "urllib.request.urlopen", side_effect=urllib.error.URLError("bad url")
+        ):
             with patch("urllib.request.Request", return_value=MagicMock()):
                 result = _fetch_url(
                     {"url": "http://invalid.example"},
@@ -63,6 +69,7 @@ class TestFetchUrl(unittest.TestCase):
 
     def test_non_text_content_type_returns_error(self):
         from tools.search_ops import _fetch_url
+
         mock_resp = _make_mock_response(
             content_type="application/json",
             data=b'{"key": "value"}',
@@ -81,6 +88,7 @@ class TestFetchUrl(unittest.TestCase):
 
     def test_truncation_with_max_chars(self):
         from tools.search_ops import _fetch_url
+
         long_data = b"A" * 5000
         mock_resp = _make_mock_response(data=long_data)
         with patch("urllib.request.urlopen", return_value=mock_resp):
@@ -96,6 +104,7 @@ class TestFetchUrl(unittest.TestCase):
 
     def test_timeout_clamped_to_30(self):
         from tools.search_ops import _fetch_url
+
         mock_resp = _make_mock_response()
         with patch("urllib.request.urlopen", return_value=mock_resp) as mock_urlopen:
             with patch("urllib.request.Request", return_value=MagicMock()):
@@ -111,6 +120,7 @@ class TestFetchUrl(unittest.TestCase):
 
     def test_default_timeout_is_15(self):
         from tools.search_ops import _fetch_url
+
         mock_resp = _make_mock_response()
         with patch("urllib.request.urlopen", return_value=mock_resp) as mock_urlopen:
             with patch("urllib.request.Request", return_value=MagicMock()):
@@ -125,6 +135,7 @@ class TestFetchUrl(unittest.TestCase):
 
     def test_timeout_below_30_preserved(self):
         from tools.search_ops import _fetch_url
+
         mock_resp = _make_mock_response()
         with patch("urllib.request.urlopen", return_value=mock_resp) as mock_urlopen:
             with patch("urllib.request.Request", return_value=MagicMock()):
@@ -139,6 +150,7 @@ class TestFetchUrl(unittest.TestCase):
 
     def test_text_plain_content_type_accepted(self):
         from tools.search_ops import _fetch_url
+
         mock_resp = _make_mock_response(
             content_type="text/plain",
             data=b"Plain text content here.",
@@ -155,7 +167,10 @@ class TestFetchUrl(unittest.TestCase):
 
     def test_generic_exception_returns_error(self):
         from tools.search_ops import _fetch_url
-        with patch("urllib.request.urlopen", side_effect=ValueError("unexpected error")):
+
+        with patch(
+            "urllib.request.urlopen", side_effect=ValueError("unexpected error")
+        ):
             with patch("urllib.request.Request", return_value=MagicMock()):
                 result = _fetch_url(
                     {"url": "http://example.com"},
@@ -168,6 +183,7 @@ class TestFetchUrl(unittest.TestCase):
 
     def test_default_max_chars_is_10000(self):
         from tools.search_ops import _fetch_url
+
         data = b"A" * 500
         mock_resp = _make_mock_response(data=data)
         with patch("urllib.request.urlopen", return_value=mock_resp):

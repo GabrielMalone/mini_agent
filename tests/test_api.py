@@ -21,8 +21,10 @@ from api import (
 # Helper: make a minimal AgentConfig-like object
 # ---------------------------------------------------------------------------
 
+
 class _MockConfig:
     """Minimal mock config with all fields api.py expects."""
+
     def __init__(self, **overrides):
         self.api_provider = overrides.get("api_provider", "deepseek")
         self.api_key = overrides.get("api_key", "test-key")
@@ -38,13 +40,16 @@ class _MockConfig:
         self.response_format = overrides.get("response_format", None)
         self.sub_agent_max_turns = overrides.get("sub_agent_max_turns", 25)
         self.tool_choice = overrides.get("tool_choice", "")
-        self.use_strict_function_calling = overrides.get("use_strict_function_calling", False)
+        self.use_strict_function_calling = overrides.get(
+            "use_strict_function_calling", False
+        )
         self.budget_limit = overrides.get("budget_limit", 0.0)
 
 
 # ---------------------------------------------------------------------------
 # truncate_content
 # ---------------------------------------------------------------------------
+
 
 class TestTruncateContent(unittest.TestCase):
     """Tests for truncate_content()."""
@@ -80,23 +85,27 @@ class TestTruncateContent(unittest.TestCase):
 # format_tool_detail
 # ---------------------------------------------------------------------------
 
+
 class TestFormatToolDetail(unittest.TestCase):
     """Tests for format_tool_detail()."""
 
     def test_short_result_not_truncated(self):
         from tools import ToolResult
+
         result = ToolResult(success=True, content="short result")
         detail = format_tool_detail(result)
         self.assertEqual(detail, "short result")
 
     def test_long_result_truncated(self):
         from tools import ToolResult
+
         result = ToolResult(success=True, content="a" * 500)
         detail = format_tool_detail(result)
         self.assertEqual(len(detail), 303)
 
     def test_default_max_len_300(self):
         from tools import ToolResult
+
         result = ToolResult(success=False, content="b" * 400)
         detail = format_tool_detail(result)
         self.assertEqual(len(detail), 303)
@@ -105,6 +114,7 @@ class TestFormatToolDetail(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # APIError
 # ---------------------------------------------------------------------------
+
 
 class TestAPIError(unittest.TestCase):
     """Tests for APIError exception class."""
@@ -130,12 +140,17 @@ class TestAPIError(unittest.TestCase):
 # _clean_message
 # ---------------------------------------------------------------------------
 
+
 class TestCleanMessage(unittest.TestCase):
     """Tests for _clean_message()."""
 
     def test_strips_underscore_prefixed_fields(self):
-        msg = {"role": "user", "content": "hello", "_internal": "secret",
-               "_tracking": 42}
+        msg = {
+            "role": "user",
+            "content": "hello",
+            "_internal": "secret",
+            "_tracking": 42,
+        }
         result = _clean_message(msg, 0)
         self.assertNotIn("_internal", result)
         self.assertNotIn("_tracking", result)
@@ -214,13 +229,17 @@ class TestCleanMessage(unittest.TestCase):
         }
         for provider in ("deepseek", "claude", "xai"):
             result = _clean_message(msg, 0, provider=provider)
-            self.assertEqual(result["reasoning_content"], "Step-by-step reasoning...",
-                            f"reasoning_content stripped for {provider}")
+            self.assertEqual(
+                result["reasoning_content"],
+                "Step-by-step reasoning...",
+                f"reasoning_content stripped for {provider}",
+            )
 
 
 # ---------------------------------------------------------------------------
 # _strip_orphaned_tool_calls
 # ---------------------------------------------------------------------------
+
 
 class TestStripOrphanedToolCalls(unittest.TestCase):
     """Tests for _strip_orphaned_tool_calls()."""
@@ -236,9 +255,11 @@ class TestStripOrphanedToolCalls(unittest.TestCase):
     def test_covered_tool_calls_not_stripped(self):
         msgs = [
             {"role": "user", "content": "read file"},
-            {"role": "assistant", "content": None, "tool_calls": [
-                {"id": "tc1", "function": {"name": "read_file"}}
-            ]},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [{"id": "tc1", "function": {"name": "read_file"}}],
+            },
             {"role": "tool", "tool_call_id": "tc1", "content": "file content"},
             {"role": "assistant", "content": "done"},
         ]
@@ -250,9 +271,11 @@ class TestStripOrphanedToolCalls(unittest.TestCase):
         # (no tool result after it, no user/system message after it) is stripped.
         msgs = [
             {"role": "user", "content": "read file"},
-            {"role": "assistant", "content": None, "tool_calls": [
-                {"id": "tc1", "function": {"name": "read_file"}}
-            ]},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [{"id": "tc1", "function": {"name": "read_file"}}],
+            },
             # No tool result for tc1 -- and no user/system message after it
         ]
         result = _strip_orphaned_tool_calls(msgs)
@@ -264,9 +287,11 @@ class TestStripOrphanedToolCalls(unittest.TestCase):
         # regardless of intervening user messages -- leaving it in causes a 400.
         msgs = [
             {"role": "user", "content": "read file"},
-            {"role": "assistant", "content": None, "tool_calls": [
-                {"id": "tc1", "function": {"name": "read_file"}}
-            ]},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [{"id": "tc1", "function": {"name": "read_file"}}],
+            },
             {"role": "user", "content": "next request"},
         ]
         result = _strip_orphaned_tool_calls(msgs)
@@ -278,13 +303,15 @@ class TestStripOrphanedToolCalls(unittest.TestCase):
     def test_mixed_covered_and_orphaned(self):
         msgs = [
             {"role": "user", "content": "task"},
-            {"role": "assistant", "tool_calls": [
-                {"id": "tc1", "function": {"name": "read_file"}}
-            ]},
+            {
+                "role": "assistant",
+                "tool_calls": [{"id": "tc1", "function": {"name": "read_file"}}],
+            },
             {"role": "tool", "tool_call_id": "tc1", "content": "result1"},
-            {"role": "assistant", "tool_calls": [
-                {"id": "tc2", "function": {"name": "write_file"}}
-            ]},
+            {
+                "role": "assistant",
+                "tool_calls": [{"id": "tc2", "function": {"name": "write_file"}}],
+            },
             # tc2 has no tool result -- orphaned
         ]
         result = _strip_orphaned_tool_calls(msgs)
@@ -306,6 +333,7 @@ class TestStripOrphanedToolCalls(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # _build_payload
 # ---------------------------------------------------------------------------
+
 
 class TestBuildPayload(unittest.TestCase):
     """Tests for _build_payload()."""
@@ -438,11 +466,13 @@ class TestBuildPayload(unittest.TestCase):
 # _inject_strict_tools
 # ---------------------------------------------------------------------------
 
+
 class TestClearAPICache(unittest.TestCase):
     """Tests for clear_api_cache()."""
 
     def test_clear_cache(self):
         from api import _clean_messages_cache
+
         # Populate cache
         msgs = [{"role": "user", "content": "test"}]
         _clean_messages_cache[id(msgs)] = (1, "deepseek", msgs)
@@ -455,15 +485,18 @@ class TestClearAPICache(unittest.TestCase):
 # LLM Semaphore
 # ---------------------------------------------------------------------------
 
+
 class TestLLMSemaphore(unittest.TestCase):
     """Tests for the _LLM_SEMAPHORE rate limiter."""
 
     def test_semaphore_exists(self):
         from api import _LLM_SEMAPHORE
+
         self.assertIsInstance(_LLM_SEMAPHORE, threading.Semaphore)
 
     def test_semaphore_default_value(self):
         from api import _LLM_SEMAPHORE
+
         # Should be 2 by default (or whatever env sets)
         self.assertGreaterEqual(_LLM_SEMAPHORE._value, 0)
 

@@ -9,6 +9,7 @@ The balance URL is derived from the API base URL: if the chat
 endpoint is https://api.deepseek.com/v1/chat/completions, the
 balance endpoint is https://api.deepseek.com/user/balance.
 """
+
 from __future__ import annotations
 
 import json
@@ -19,15 +20,17 @@ from dataclasses import dataclass, field
 @dataclass
 class BalanceInfo:
     """One currency's balance entry."""
-    currency: str          # "CNY" | "USD"
-    total_balance: str     # total available (granted + topped-up)
-    granted_balance: str   # unexpired promotional credit
-    topped_up_balance: str # paid-in credit
+
+    currency: str  # "CNY" | "USD"
+    total_balance: str  # total available (granted + topped-up)
+    granted_balance: str  # unexpired promotional credit
+    topped_up_balance: str  # paid-in credit
 
 
 @dataclass
 class Balance:
     """Wallet balance normalized for display."""
+
     available: bool = False
     infos: list[BalanceInfo] = field(default_factory=list)
 
@@ -68,6 +71,7 @@ def _balance_url_from_api_url(api_url: str) -> str:
           -> https://api.deepseek.com/user/balance
     """
     from urllib.parse import urlparse
+
     parsed = urlparse(api_url)
     return f"{parsed.scheme}://{parsed.netloc}/user/balance"
 
@@ -115,10 +119,12 @@ def fetch_balance(api_url: str, api_key: str, timeout: float = 12.0) -> Balance 
     for entry in infos_raw:
         if not isinstance(entry, dict):
             continue
-        infos.append(BalanceInfo(
-            currency=str(entry.get("currency", "")),
-            total_balance=str(entry.get("total_balance", "0")),
-            granted_balance=str(entry.get("granted_balance", "0")),
-            topped_up_balance=str(entry.get("topped_up_balance", "0")),
-        ))
+        infos.append(
+            BalanceInfo(
+                currency=str(entry.get("currency", "")),
+                total_balance=str(entry.get("total_balance", "0")),
+                granted_balance=str(entry.get("granted_balance", "0")),
+                topped_up_balance=str(entry.get("topped_up_balance", "0")),
+            )
+        )
     return Balance(available=available, infos=infos)
