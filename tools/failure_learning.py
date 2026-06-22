@@ -303,7 +303,7 @@ class FailurePatternStore:
                         best_sim = sim
                         best_id = pid
 
-                if best_id is not None and best_sim > 0.4:
+                if best_id is not None and best_sim > 0.2:
                     row = conn.execute(
                         "SELECT failure_count, success_count FROM failure_patterns"
                         " WHERE id = ?",
@@ -319,6 +319,38 @@ class FailurePatternStore:
                             " WHERE id = ?",
                             (new_sc, confidence, best_id),
                         )
+                        # Auto-populate fix_strategy when a previously-failing
+                        # pattern succeeds -- captures what the agent did differently.
+                        if fc > 0:
+                            existing_fix = conn.execute(
+                                "SELECT fix_strategy FROM failure_patterns"
+                                " WHERE id = ?",
+                                (best_id,),
+                            ).fetchone()
+                            if existing_fix and not (existing_fix[0] or "").strip():
+                                import json as _json
+                                safe = {
+                                    k: v
+                                    for k, v in (args or {}).items()
+                                    if not k.startswith("_")
+                                }
+                                pairs = [
+                                    f"{k}={_json.dumps(v)}"
+                                    for k, v in list(safe.items())[:5]
+                                ]
+                                if pairs:
+                                    fix = (
+                                        f"Use: {tool_name}("
+                                        f"{', '.join(pairs)})"
+                                    )
+                                else:
+                                    fix = f"Provide valid args for {tool_name}."
+                                conn.execute(
+                                    "UPDATE failure_patterns"
+                                    " SET fix_strategy = ?"
+                                    " WHERE id = ?",
+                                    (fix, best_id),
+                                )
                         conn.commit()
             except sqlite3.Error:
                 pass  # Non-critical; don't warn

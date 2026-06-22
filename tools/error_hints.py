@@ -344,7 +344,7 @@ _FAILURE_PATTERNS: dict[str, dict[str, str]] = {
 }
 
 
-def _learn_from_failure(name: str, result: "ToolResult | None") -> None:
+def _learn_from_failure(name: str, result: "ToolResult | None", args: dict | None = None) -> None:
     """Detect failure patterns, escalate knowledge, and inject recovery hints.
 
     On first failure: store a low-importance knowledge entry.
@@ -449,6 +449,7 @@ def _learn_from_failure(name: str, result: "ToolResult | None") -> None:
                 pattern_store.record_failure(
                     tool_name=name,
                     error_content=content,
+                    args=args,
                     fix_strategy=fix_strategy,
                 )
             except Exception:

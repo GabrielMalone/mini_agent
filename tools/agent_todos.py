@@ -172,11 +172,23 @@ def _plan(args: dict, _wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResult:
     """Declare a structured task plan. Pass an empty steps list to clear."""
     steps = args["steps"]
     if not isinstance(steps, list):
-        return ToolResult(
-            success=False,
-            content="'steps' must be an array.",
-            hint="Provide an array of step descriptions, or an empty array to clear.",
-        )
+        # Auto-repair: if the LLM sent a multi-line string, split into steps
+        if isinstance(steps, str) and steps.strip():
+            import re as _re
+            has_newlines = "\n" in steps
+            # Try numbered list: "1. Do X\n2. Do Y"
+            numbered = _re.split(r"\n\s*\d+[\.\)]\s*", steps.strip())
+            if len(numbered) > 1:
+                steps = [s.strip() for s in numbered if s.strip()]
+            elif has_newlines:
+                # Multi-line but not numbered: split by line
+                steps = [s.strip() for s in steps.split("\n") if s.strip()]
+        if not isinstance(steps, list):
+            return ToolResult(
+                success=False,
+                content="'steps' must be an array.",
+                hint="Provide an array of step descriptions, or an empty array to clear.",
+            )
     # Empty list -> clear the current plan
     if not steps:
         had_plan = bool(getattr(_TOOL_CONTEXT, "_plan_steps", []))

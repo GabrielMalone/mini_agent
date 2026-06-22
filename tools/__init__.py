@@ -1002,7 +1002,7 @@ def execute_tool(
     # --- Auto-learn from tool failures (pattern detection + escalation) ---
     if not result.success:
         log_tool_failure(name, result.content)
-        _learn_from_failure(name, result)
+        _learn_from_failure(name, result, args)
     else:
         log_tool_success(name)
         # --- Store idempotent result for write tools (2026 best practice) ---
@@ -1010,20 +1010,17 @@ def execute_tool(
 
         if name in _IDEM_TOOLS:
             store_idempotent(name, args, result)
-        # Only record success when this tool has known failure patterns;
-        # skips unnecessary DB queries for the vast majority of successful calls.
-        in_memory = _TOOL_CONTEXT.__dict__.get("_failure_patterns", {})
-        if any(k.startswith(name + ":") for k in in_memory):
-            pattern_store = getattr(_TOOL_CONTEXT, "_failure_pattern_store", None)
-            if pattern_store is not None:
-                try:
-                    pattern_store.record_success(name, args)
-                except Exception:
-                    _log.warning(
-                        "FailurePatternStore.record_success failed", exc_info=True
-                    )
-            # Clear in-memory counters on success -- the agent recovered
-            _TOOL_CONTEXT.__dict__.pop("_failure_patterns", None)
+        # Record success for cross-session pattern learning
+        pattern_store = getattr(_TOOL_CONTEXT, "_failure_pattern_store", None)
+        if pattern_store is not None:
+            try:
+                pattern_store.record_success(name, args)
+            except Exception:
+                _log.warning(
+                    "FailurePatternStore.record_success failed", exc_info=True
+                )
+        # Clear in-memory counters on success -- the agent recovered
+        _TOOL_CONTEXT.__dict__.pop("_failure_patterns", None)
 
     # --- Cache invalidation: invalidate cache entries for modified files ---
     # instead of clearing the entire cache.  This preserves session-level

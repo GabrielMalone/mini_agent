@@ -4,6 +4,17 @@ Self-modification audit trail -- what the agent changed and why.
 
 ## 2026-06-22
 
+### Self-learning fix_strategy auto-population
+
+- **tools/failure_learning.py**: `record_success()` now auto-populates `fix_strategy` when a previously-failing pattern succeeds — captures what the agent did differently (e.g., `"Use: plan(steps=[\"step1\", \"step2\"])"`). Lowered args similarity threshold from 0.4 to 0.2 since the agent necessarily changed args to succeed.
+- **tools/error_hints.py**: `_learn_from_failure()` now accepts and passes `args` to `record_failure()` for proper args_signature fingerprinting.
+- **tools/__init__.py**: `execute_tool()` now calls `record_success()` on every successful tool call (not just when in-memory failure patterns exist), fixing cross-session pattern learning. Also passes `args` to `_learn_from_failure()`.
+- **Root cause**: Three bugs: (1) `record_success` was only called when in-memory patterns existed, missing DB-persisted cross-session patterns. (2) `args` were never passed to `record_failure`, so `args_signature` was always `""`. (3) `fix_strategy` was never populated from successful tool calls.
+
+### plan tool: auto-repair string steps
+
+- **tools/agent_todos.py**: `_plan()` now auto-repairs when the LLM sends `steps` as a string instead of an array. Multi-line strings (numbered lists like "1. X\n2. Y" or plain newline-separated) are split into array steps automatically. Single-line strings are still rejected with the original error. Fixes the common papercut where plan() fails because the model sends a string, forcing fallback to todo_write.
+
 ### replace_symbol decorator byte-range fix
 
 - **_extract_definitions in ast_tools.py**: Decorators are sibling nodes, not children, in tree-sitter Python grammar. Before this fix, replacing a decorated class/function would leave the original decorator and duplicate it if the replacement also included it. Now walks `prev_sibling` to find decorator nodes and expands the byte range to include them.
