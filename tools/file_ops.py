@@ -26,6 +26,7 @@ from tools._file_utils import (
     _backup_before_write,
     _run_ruff_check,
     _lint_error_set,
+    _changed_lines_in_updated,
     _READ_FILES,
     _FILE_CACHE,
     _FILE_CACHE_MAX,
@@ -282,7 +283,9 @@ def _write_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolRes
         if original_is_valid and os.environ.get("MINI_AGENT_LINT_ON_EDIT") != "0":
             original_errors = _lint_error_set(_prev, safety_result.resolved_path)
             updated_errors = _lint_error_set(content, safety_result.resolved_path)
-            new_errors = updated_errors - original_errors
+            changed_lines = _changed_lines_in_updated(_prev, content)
+            new_errors = {(code, line) for (code, line) in updated_errors
+                          if line in changed_lines and (code, line) not in original_errors}
             if new_errors:
                 lint_error = _run_ruff_check(content, safety_result.resolved_path)
                 return ToolResult(

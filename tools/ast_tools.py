@@ -131,9 +131,21 @@ def _extract_definitions(
             if not name:
                 continue
 
-            start_line = node.start_point[0] + 1
+            # Walk backwards through sibling decorators to include them in the range.
+            # tree-sitter treats decorators as separate sibling nodes, so naively
+            # replacing a class/function node would leave its decorators behind
+            # (causing duplicates or dangling decorators).
+            dec_start_byte = node.start_byte
+            dec_start_line = node.start_point[0]
+            prev = node.prev_sibling
+            while prev and prev.type == "decorator":
+                dec_start_byte = prev.start_byte
+                dec_start_line = prev.start_point[0]
+                prev = prev.prev_sibling
+
+            start_line = dec_start_line + 1
             end_line = node.end_point[0] + 1
-            start_byte = node.start_byte
+            start_byte = dec_start_byte
             end_byte = node.end_byte
 
             key = f"{start_line}:{name}"

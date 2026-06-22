@@ -2,6 +2,14 @@
 
 Self-modification audit trail -- what the agent changed and why.
 
+## 2026-06-22
+
+### replace_symbol decorator byte-range fix
+
+- **_extract_definitions in ast_tools.py**: Decorators are sibling nodes, not children, in tree-sitter Python grammar. Before this fix, replacing a decorated class/function would leave the original decorator and duplicate it if the replacement also included it. Now walks `prev_sibling` to find decorator nodes and expands the byte range to include them.
+- **New tests**: `TestReplaceSymbolWithDecorators` (3 tests) in test_ast_tools.py covering decorated class, decorated function, and decorator-stripping scenarios.
+- **Full test suite**: 1403 passed, 0 failed.
+
 ## 2026-06-21
 
 ### write_file lint gate

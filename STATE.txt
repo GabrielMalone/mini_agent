@@ -1,5 +1,5 @@
 # mini_agent Architecture Map
-# Last updated: 2026-06-21 -- write_file now runs ruff lint gate (matching edit_file behavior)
+# Last updated: 2026-06-22 -- replace_symbol decorator byte-range fix
 #
 # This file is the agent's map of the codebase. Update it after completed changes.
 # Behavioral rules live in AGENTS.md. Long-term facts live in core memory.

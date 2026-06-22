@@ -1,28 +1,22 @@
 # Session Handoff
 # Auto-generated at session end. Read at next session start for continuity.
 
-## Last Session: 2026-06-21 14:57 UTC
+## Last Session: 2026-06-22 17:04 UTC
 
 ### What I Changed
-### Commits
-```
-3132faa [mini_agent checkpoint] pre-replace_symbol (2026-06-21 09:54:51)
-```
-```
-STATE.txt                             |    2 +-
- memory/memory.py                      |    2 -
- mini_agent_electron/backend/server.py |    1 +
- tests/test_file_ops_extended.py       |    6 +-
- tools/desktop_ops.py                  | 2201 ++++++++++++++++-----------------
- 5 files changed, 1098 insertions(+), 1114 deletions(-)
-```
+
+**replace_symbol decorator byte-range fix** (main task):
+- `tools/ast_tools.py` — `_extract_definitions`: walks `prev_sibling` to find decorator nodes and expands byte range to include them. Previously, decorators were left behind (duplicated if replacement included them, dangling if not).
+- `tests/test_ast_tools.py` — added `TestReplaceSymbolWithDecorators` class (3 tests): decorated class, decorated function, decorator stripping.
+
+**Prompt token analysis** (ad-hoc query):
+- Analyzed `~/.mini_agent/logs/prompts.log`: 918 turns, avg 36,641 tokens/prompt. DeepSeek V4-Pro at ~$0.013/turn is negligible. No action needed.
 
 ### What's Pending
-None
+None.
 
 ### Modified Files
-- STATE.txt
-- memory/memory.py
-- mini_agent_electron/backend/server.py
-- tests/test_file_ops_extended.py
-- tools/desktop_ops.py
+- tools/ast_tools.py (+12 lines in _extract_definitions)
+- tests/test_ast_tools.py (+67 lines: TestReplaceSymbolWithDecorators)
+- STATE.txt (timestamp update)
+- CHANGELOG.md (+8 lines: new entry)

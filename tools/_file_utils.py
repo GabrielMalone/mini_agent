@@ -358,6 +358,25 @@ def _lint_error_set(content: str, filepath: str) -> frozenset[tuple[str, int]]:
     return frozenset(errors)
 
 
+def _changed_lines_in_updated(original: str, updated: str) -> set[int]:
+    """Return set of 1-indexed line numbers in *updated* that differ from *original*.
+
+    Uses difflib.SequenceMatcher to identify changed/added regions so the lint
+    gate only flags errors on lines the edit actually touched -- not pre-existing
+    errors on untouched lines that happen to shift due to insertions/deletions.
+    """
+    import difflib
+
+    changed: set[int] = set()
+    for tag, _i1, _i2, j1, j2 in difflib.SequenceMatcher(
+        None, original.splitlines(), updated.splitlines()
+    ).get_opcodes():
+        if tag != "equal":
+            for line_no in range(j1 + 1, j2 + 1):  # 0-indexed → 1-indexed
+                changed.add(line_no)
+    return changed
+
+
 def _finalize_edit(
     resolved: str,
     original: str,
@@ -388,11 +407,13 @@ def _finalize_edit(
 
     # 2. Lint gate: run ruff on .py files (opt-out via MINI_AGENT_LINT_ON_EDIT=0).
     #    Skip if the original wasn't valid Python (e.g. test fixtures).
-    #    Only block if the edit *introduced* new (code, line) errors.
+    #    Only block if the edit introduced new errors on lines it actually touched.
     if original_is_valid and os.environ.get("MINI_AGENT_LINT_ON_EDIT") != "0":
         original_errors = _lint_error_set(original, resolved)
         updated_errors = _lint_error_set(updated, resolved)
-        new_errors = updated_errors - original_errors
+        changed_lines = _changed_lines_in_updated(original, updated)
+        new_errors = {(code, line) for (code, line) in updated_errors
+                      if line in changed_lines and (code, line) not in original_errors}
         if new_errors:
             lint_error = _run_ruff_check(updated, resolved)
             return (False, lint_error)

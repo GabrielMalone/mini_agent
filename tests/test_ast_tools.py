@@ -80,3 +80,75 @@ class TestRenameSymbol(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestReplaceSymbolWithDecorators(unittest.TestCase):
+    """replace_symbol must include decorators in the replaced byte range."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.ws_root = self.tmp
+        self.rg = ReadSafetyGate(self.ws_root)
+        self.wg = WriteSafetyGate(self.ws_root)
+        self.mod = os.path.join(self.tmp, "mod.py")
+
+    def test_decorated_class_with_decorator_in_replacement(self):
+        """Replacing a decorated class should work when decorator is included."""
+        Path(self.mod).write_text(
+            "@dataclass\nclass Old:\n    x: int = 0\n"
+        )
+        r = _replace_symbol(
+            {
+                "path": self.mod,
+                "symbol": "Old",
+                "text": "@dataclass\nclass New:\n    y: str = 'bar'\n",
+            },
+            self.wg,
+            self.rg,
+        )
+        self.assertTrue(r.success, r.content)
+        content = Path(self.mod).read_text()
+        self.assertIn("@dataclass", content)
+        self.assertIn("class New:", content)
+        self.assertNotIn("class Old:", content)
+        # Should NOT have duplicate decorator
+        self.assertEqual(content.count("@dataclass"), 1)
+
+    def test_decorated_function_with_decorator_in_replacement(self):
+        """Replacing a decorated function should work when decorator is included."""
+        Path(self.mod).write_text(
+            "@staticmethod\ndef old_func():\n    return 1\n"
+        )
+        r = _replace_symbol(
+            {
+                "path": self.mod,
+                "symbol": "old_func",
+                "text": "@staticmethod\ndef new_func():\n    return 2\n",
+            },
+            self.wg,
+            self.rg,
+        )
+        self.assertTrue(r.success, r.content)
+        content = Path(self.mod).read_text()
+        self.assertIn("@staticmethod", content)
+        self.assertIn("def new_func():", content)
+        self.assertEqual(content.count("@staticmethod"), 1)
+
+    def test_decorated_class_without_decorator_strips_it(self):
+        """Without decorator in replacement, decorator is removed (full control)."""
+        Path(self.mod).write_text(
+            "@property\ndef old_prop(self):\n    return self._x\n"
+        )
+        r = _replace_symbol(
+            {
+                "path": self.mod,
+                "symbol": "old_prop",
+                "text": "def new_prop(self):\n    return self._y\n",
+            },
+            self.wg,
+            self.rg,
+        )
+        self.assertTrue(r.success, r.content)
+        content = Path(self.mod).read_text()
+        self.assertNotIn("@property", content)
+        self.assertIn("def new_prop(self):", content)
