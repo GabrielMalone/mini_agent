@@ -4,6 +4,13 @@ Self-modification audit trail -- what the agent changed and why.
 
 ## 2026-06-23
 
+### Fix: Streaming text wrapping — eliminate "one long unbroken line" during token streaming
+
+- **Root cause 1:** `StreamingMessage` and `DeferredMarkdown` used `<pre>` with only `white-space: pre-wrap` which doesn't break long unbroken tokens (code, paths, URLs). Changed to `<div>` with `word-break: break-word; overflow-wrap: break-word`.
+- **Root cause 2:** `useSmoothStream` chunked by raw character count, splitting text mid-word and making it appear jumbled. Now seeks forward to the next word boundary (space, newline, punctuation) before advancing the display pointer — text always lands on a word boundary.
+- **Files:** `StreamingMessage.tsx` (1 line), `DeferredMarkdown.tsx` (2 lines), `useSmoothStream.ts` (+8 lines)
+- **Tests:** Build + smoke test PASS.
+
 ### Fix: Auto-read before edit — eliminate wasted turn cycles from read-before-edit guard
 
 - **Root cause:** `_write_file`, `_apply_single_edit`, and `_edit_file_anchored` all had a read-before-edit guard that rejected writes/edits to files not yet `read_file`'d in the session. The LLM would get a failure, then waste a turn doing `read_file` + re-editing.

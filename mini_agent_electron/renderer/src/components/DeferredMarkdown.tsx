@@ -22,9 +22,9 @@ const DeferredMarkdown = memo(function DeferredMarkdown({ text, markdown = true,
   if (!markdown) {
     return (
       <div className={cls}>
-        <pre style={{ whiteSpace: 'pre-wrap', margin: 0, fontFamily: 'inherit', fontSize: 'inherit' }}>
+        <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', overflowWrap: 'break-word', margin: 0, fontFamily: 'inherit', fontSize: 'inherit' }}>
           {text}
-        </pre>
+        </div>
       </div>
     );
   }
@@ -36,9 +36,9 @@ const DeferredMarkdown = memo(function DeferredMarkdown({ text, markdown = true,
           {parsed}
         </ReactMarkdown>
       ) : (
-        <pre style={{ whiteSpace: 'pre-wrap', margin: 0, fontFamily: 'inherit', fontSize: 'inherit' }}>
+        <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', overflowWrap: 'break-word', margin: 0, fontFamily: 'inherit', fontSize: 'inherit' }}>
           {text}
-        </pre>
+        </div>
       )}
     </div>
   );

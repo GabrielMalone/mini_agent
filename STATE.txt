@@ -1,11 +1,12 @@
 # mini_agent Architecture Map
-# Last updated: 2026-06-23 -- Auto-read before edit: read-before-edit guard now transparent instead of rejecting
+# Last updated: 2026-06-23 -- Streaming text wrapping: word-boundary chunking + break-word on streaming containers
 #
 # This file is the agent's map of the codebase. Update it after completed changes.
 # Behavioral rules live in AGENTS.md. Long-term facts live in core memory.
 
 ## Active Decisions
 
+- **Streaming text wrapping (2026-06-23)** — `StreamingMessage` and `DeferredMarkdown` now use `<div>` with `word-break: break-word; overflow-wrap: break-word` instead of `<pre>` with only `pre-wrap` — long tokens (code, paths, URLs) now wrap instead of forming a single unbroken horizontal line. `useSmoothStream` chunks at word boundaries (seeks forward to space/newline/punctuation) instead of raw character count — text never splits mid-word.
 - **Auto-read before edit: transparent guard (2026-06-23)** — Three guard sites (`_write_file`, `_apply_single_edit`, `_edit_file_anchored`) previously rejected writes/edits to files not yet `read_file`'d, causing wasted turn cycles. Now auto-mark files as read (`_READ_FILES.add(resolved)`) since the file is read immediately after the guard by the existing code path (syntax validation for `write_file`, `open(resolved, "r")` for edits). Net: -14 lines, 0 wasted turns.
 - **Tool cards final sweep: mark stuck "running" cards on turn_complete (2026-06-23)** — `stream:turn_complete` handler now sweeps all tool cards: any card with `status === 'running'` is marked `ok` with an `endTime`. This is a defense-in-depth measure — all the existing tool_end matching layers (tool_call_id, tool_name, LIFO, card-search fallback) can fail in edge cases (empty tool_call_id, parallel same-name races, stale toolCardIndexRef), but when a turn completes we know definitively that all tools are done. Cards are only mutated if `changed=true`.
 - **Session creation fix: IPC handler alignment (2026-06-23)** — `session:new` and `session:switch` IPC handlers were `ipcMain.handle()` but never returned; Python backend never sent response messages. Fixed by aligning with the `send`+`once` pattern used by `listSessions`/`deleteSession`: preload.js uses `ipcRenderer.send`+`once`, main.js uses `ipcMain.on`+`win.webContents.send`, server.py sends `session_new_result`/`session_switch_result` responses with try/except error handling.

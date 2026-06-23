@@ -28,7 +28,14 @@ export default function useSmoothStream(opts?: SmoothStreamOpts): SmoothStreamRe
         return;
       }
       const step = Math.max(1, Math.ceil(behind / factor));
-      indexRef.current = Math.min(indexRef.current + step, full.length);
+      // Seek forward to the next word boundary so text never splits mid-word
+      const target = Math.min(indexRef.current + step, full.length);
+      const wordBreakRx = /[\s\n.,;:!?)\]}>]/;
+      let boundary = target;
+      for (let i = target; i < full.length && i < target + 12; i++) {
+        if (wordBreakRx.test(full[i])) { boundary = i + 1; break; }
+      }
+      indexRef.current = boundary;
       setDisplayedText(full.slice(0, indexRef.current));
 
       if (indexRef.current < full.length) {

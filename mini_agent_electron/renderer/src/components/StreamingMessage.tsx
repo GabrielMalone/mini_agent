@@ -53,9 +53,9 @@ const StreamingMessage = memo(function StreamingMessage({ text }: StreamingMessa
   const isStreaming = text !== throttled;
 
   return isStreaming ? (
-    <pre style={{ whiteSpace: 'pre-wrap', margin: 0, fontFamily: 'inherit', fontSize: 'inherit' }}>
+    <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', overflowWrap: 'break-word', margin: 0, fontFamily: 'inherit', fontSize: 'inherit' }}>
       {text}
-    </pre>
+    </div>
   ) : (
     <ReactMarkdown remarkPlugins={[remarkGfm]}>
       {throttled || text}
