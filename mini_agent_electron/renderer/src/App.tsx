@@ -356,7 +356,40 @@ function AppShell() {
       }
 
       if (cardId == null) {
-        console.warn('[App] tool_end for "%s" could not be matched to any card', tName);
+        // Stack is out of sync with running cards — fall back to searching
+        // all running cards by tool_name. This handles edge cases like:
+        // - tool_end arriving before tool_start (stack empty, but card exists)
+        // - stack entry already popped by another tool_end (parallel race)
+        // - dropped tool_start IPC messages
+        if (tName) {
+          startTransition(() => {
+            setToolCards((prev) => {
+              let matchIdx = -1;
+              for (let i = prev.length - 1; i >= 0; i--) {
+                if (prev[i].status === 'running' && prev[i].toolName === tName) {
+                  matchIdx = i;
+                  break;
+                }
+              }
+              if (matchIdx === -1) {
+                console.warn('[App] tool_end for "%s" could not be matched to any running card', tName);
+                return prev;
+              }
+              const matched = prev[matchIdx];
+              const now = Date.now();
+              const status = data.ok ? 'ok' : 'err';
+              const code = data.content || matched.output || '';
+              const diffPreview = data.diff_preview || null;
+              const errorDetail = !data.ok ? (data.detail || '') : '';
+              const { _enter, ...clean } = matched as any;
+              const updated = [...prev];
+              updated[matchIdx] = { ...clean, status, endTime: now, output: code, diffPreview, errorDetail };
+              return updated;
+            });
+          });
+        } else {
+          console.warn('[App] tool_end with no tool_name could not be matched to any card');
+        }
         return;
       }
 
