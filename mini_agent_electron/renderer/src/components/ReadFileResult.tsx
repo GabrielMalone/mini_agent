@@ -105,11 +105,11 @@ export default function ReadFileResult({ content, toolName }: ReadFileResultProp
       <CodeBlock
         code={source}
         fontSize="0.78em"
-        language={lang}
+        language={lang ?? undefined}
         highlight={true}
         lineNumbers={true}
         startLine={startLine}
-        lineHashes={lineHashes ?? undefined}
+        lineHashes={lineHashes.filter((h): h is string => h != null)}
         wrap={true}
       />
     </div>

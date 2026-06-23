@@ -79,7 +79,7 @@ function AppShell() {
     applyTheme, cycleTheme,
   } = useTheme();
 
-  const inputRef = useRef<{ focus: () => void } | null>(null);
+  const inputRef = useRef<{ focus: () => void; blur: () => void } | null>(null);
   const thinkingLogRef = useRef<HTMLDivElement | null>(null);
   const chatLogRef = useRef<HTMLDivElement | null>(null);
   const toolsLogRef = useRef<HTMLDivElement | null>(null);
@@ -395,7 +395,29 @@ function AppShell() {
             });
           });
         } else {
-          console.warn('[App] tool_end with no tool_name could not be matched to any card');
+          // No tool_name or tool_call_id — match any running card (most recent first)
+          startTransition(() => {
+            setToolCards((prev) => {
+              let matchIdx = -1;
+              for (let i = prev.length - 1; i >= 0; i--) {
+                if (prev[i].status === 'running') {
+                  matchIdx = i;
+                  break;
+                }
+              }
+              if (matchIdx === -1) return prev;
+              const matched = prev[matchIdx];
+              const now = Date.now();
+              const status = data.ok ? 'ok' : 'err';
+              const code = data.content || matched.output || '';
+              const diffPreview = data.diff_preview || null;
+              const errorDetail = !data.ok ? (data.detail || '') : '';
+              const { _enter, ...clean } = matched as any;
+              const updated = [...prev];
+              updated[matchIdx] = { ...clean, status, endTime: now, output: code, diffPreview, errorDetail };
+              return updated;
+            });
+          });
         }
         return;
       }

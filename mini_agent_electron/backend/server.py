@@ -333,9 +333,7 @@ class StreamCallbacks:
         tool_name: str = "",
         tool_call_id: str = "",
     ) -> None:
-        msg: dict = {"type": "tool_end", "ok": ok, "detail": detail, "content": content}
-        if tool_name:
-            msg["tool_name"] = tool_name
+        msg: dict = {"type": "tool_end", "ok": ok, "detail": detail, "content": content, "tool_name": tool_name}
         if tool_call_id:
             msg["tool_call_id"] = tool_call_id
         if diff_preview:

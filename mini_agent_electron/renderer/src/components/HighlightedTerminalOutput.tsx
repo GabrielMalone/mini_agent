@@ -13,7 +13,7 @@ import AnsiBlock from './AnsiBlock';
 
 // -- strip ANSI escape sequences --------------------------------------------
 
-function stripAnsi(text) {
+function stripAnsi(text: string) {
   if (!text) return '';
   return text
     .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
@@ -36,7 +36,7 @@ function stripAnsi(text) {
  */
 const LS_LINE_RE = /^([d\-lcbps])([r\-wxsStT]{9})(\s+.*)$/;
 
-function looksLikeLsOutput(text) {
+function looksLikeLsOutput(text: string) {
   if (!text) return false;
   const lines = text.split('\n').filter(Boolean);
   if (lines.length === 0) return false;
@@ -67,7 +67,7 @@ const CSS = {
   normal: 'color:#D4D4D4',                    // default text
 };
 
-function colorizeLsLine(line) {
+function colorizeLsLine(line: string): string {
   const m = line.match(LS_LINE_RE);
   if (!m) {
     // Non-matching line (e.g. "total 48") — render as-is, muted
@@ -141,22 +141,22 @@ function colorizeLsLine(line) {
   return html;
 }
 
-function highlightLsOutput(text) {
+function highlightLsOutput(text: string): string {
   const lines = text.split('\n');
   return lines.map((line: string, i: number) => {
     const trimmed = line.trimEnd();
     if (!trimmed) return ''; // preserve blank lines
     return colorizeLsLine(trimmed);
-  }).filter(h => h !== '').join('\n');
+  }).filter((h: string) => h !== '').join('\n');
 }
 
-function esc(s) {
+function esc(s: string) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 // -- is it an ls command? ----------------------------------------------------
 
-function isLsCommand(command) {
+function isLsCommand(command: string): boolean {
   if (!command) return false;
   const cmd = command.replace(/^\/sh\s+/, '').trim();
   return /^(ls|ll|dir|vdir)(\s|$)/.test(cmd);
@@ -191,7 +191,7 @@ const CMD_LANG_MAP = {
   'docker build': 'docker',
 };
 
-function guessLangFromCommand(command) {
+function guessLangFromCommand(command: string): string | null {
   if (!command) return null;
   const cmd = command.replace(/^\/sh\s+/, '').trim();
 
@@ -210,8 +210,8 @@ function guessLangFromCommand(command) {
       if (EXT_TO_LANG[ext]) return EXT_TO_LANG[ext];
     }
 
-    const basename = clean.split('/').pop().toLowerCase();
-    if (EXT_TO_LANG[basename]) return EXT_TO_LANG[basename];
+    const basename = clean.split('/').pop()?.toLowerCase();
+    if (basename && EXT_TO_LANG[basename]) return EXT_TO_LANG[basename];
   }
 
   return null;
@@ -300,7 +300,7 @@ function ShikiHighlightedOutput({ text, command }: { text: string; command: stri
   );
 }
 
-export default function HighlightedTerminalOutput({ text, command }) {
+export default function HighlightedTerminalOutput({ text, command }: { text: string; command: string }) {
   // 1. ls commands → custom per-file-type coloring
   if (isLsCommand(command) && looksLikeLsOutput(text)) {
     return <LsHighlightedOutput text={text} />;

@@ -86,7 +86,8 @@ export default function Header({ modelName, cacheHitRate, subagentRunning, loadi
   useEffect(() => {
     if (!modelPickerOpen) return;
     const close = (e: MouseEvent) => {
-      if (!e.target.closest('.model-dropdown') && !e.target.closest('#header-model')) {
+      const target = e.target as HTMLElement | null;
+      if (target && !target.closest('.model-dropdown') && !target.closest('#header-model')) {
         setModelPickerOpen(false);
       }
     };
