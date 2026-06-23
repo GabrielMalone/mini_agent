@@ -14,9 +14,12 @@ import { useState, useRef, useCallback, useEffect } from 'react';
  *  - Browser batches rAF callbacks before paint (less jank)
  *  - Better battery life on laptops
  *
+ * @param {Object} [opts]
+ * @param {number} [opts.factor=4] - catch-up divisor (higher = faster)
  * @returns {{ displayedText: string, addChunk: (text: string) => void, reset: () => void, flush: () => string }}
- */
-export default function useSmoothStream() {
+*/
+export default function useSmoothStream(opts) {
+  const factor = opts?.factor ?? 4;
   const [displayedText, setDisplayedText] = useState('');
   const fullRef = useRef('');
   const indexRef = useRef(0);
@@ -35,7 +38,7 @@ export default function useSmoothStream() {
       }
       // Smooth exponential catch-up: advance by ceil(behind / 4).
       // Far behind -> big jumps.  Close -> 1 char per frame.
-      const step = Math.max(1, Math.ceil(behind / 4));
+      const step = Math.max(1, Math.ceil(behind / factor));
       indexRef.current = Math.min(indexRef.current + step, full.length);
       setDisplayedText(full.slice(0, indexRef.current));
 
@@ -64,6 +67,18 @@ export default function useSmoothStream() {
     fullRef.current = '';
     indexRef.current = 0;
     setDisplayedText('');
+    // Reset tick so it can be re-lazy-initialized on next addChunk
+    tickRef.current = null;
+  }, []);
+
+  // Cleanup rAF on unmount
+  useEffect(() => {
+    return () => {
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+    };
   }, []);
 
   const flush = useCallback(() => {

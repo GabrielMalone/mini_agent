@@ -2,11 +2,24 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import ShellInput from './ShellInput';
 
 // ---------------------------------------------------------------------------
-// TerminalPanel — resizable terminal input area with command history
-//
-// Shows recently typed commands above the ShellInput, with a drag handle at
-// the top edge that lets the user expand the panel up to ~25% of the viewport.
-// /sh command output is rendered in the chat area (TerminalBlock), not here.
+/**
+ * TerminalPanel — resizable terminal input area with command history.
+ *
+ * Shows recently typed commands above the ShellInput, with a drag handle at
+ * the top edge that lets the user expand the panel up to ~25% of the viewport.
+ * /sh command output is rendered in the chat area (TerminalBlock), not here.
+ *
+ * @param {Object} props
+ * @param {Array<{id: number, text: string, timestamp: number}>} [props.userCommands=[]]
+ * @param {Array<{id: number, command: string, lines: string[], exitCode: number, timestamp: number}>} [props.shellOutput=[]]
+ * @param {string} props.inputValue
+ * @param {(value: string) => void} props.onInputChange
+ * @param {(text: string) => void} props.onSubmit
+ * @param {boolean} [props.disabled]
+ * @param {string[]} [props.commandHistory=[]]
+ * @param {boolean} [props.isLive=false]
+ * @param {React.RefObject} props.inputRef
+ */
 // ---------------------------------------------------------------------------
 
 const MIN_HEIGHT = 48;   // collapsed: just the input line

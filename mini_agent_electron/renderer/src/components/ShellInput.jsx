@@ -350,8 +350,8 @@ const ShellInput = forwardRef(function ShellInput({
       view.destroy();
       viewRef.current = null;
     };
-  // We only want to re-create the editor when `disabled` changes
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // Editor only recreated when `disabled` changes — other deps use
+  // separate effects or refs to update the existing editor in place.
   }, [disabled]);
 
   // --- sync placeholder changes without full editor rebuild ---
