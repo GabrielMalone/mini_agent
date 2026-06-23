@@ -385,7 +385,12 @@ def _execute_groups(
     for group_idx, group in enumerate(groups):
         if on_tool_start is not None:
             for i in group:
-                on_tool_start(tool_summary(remaining[i]), parallel=len(group) > 1)
+                tc = remaining[i]
+                on_tool_start(
+                    tool_summary(tc),
+                    parallel=len(group) > 1,
+                    tool_name=tc.get("function", {}).get("name", ""),
+                )
 
         if len(group) == 1:
             i = group[0]
@@ -530,7 +535,10 @@ def _execute_tools(
         # Cycle detected -- fall back to sequential execution
         if on_tool_start is not None:
             for tc in remaining:
-                on_tool_start(tool_summary(tc))
+                on_tool_start(
+                    tool_summary(tc),
+                    tool_name=tc.get("function", {}).get("name", ""),
+                )
         results: list[tuple[dict, "ToolResult"]] = []
         for i, tc in enumerate(remaining):
             if cancel_event is not None and cancel_event.is_set():

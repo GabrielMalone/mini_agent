@@ -13,10 +13,12 @@ export interface StreamTokenData {
 export interface StreamToolStartData {
   summary?: string;
   tool_name?: string;
+  parallel?: boolean;
 }
 
 export interface StreamToolOutputData {
   line?: string;
+  tool_name?: string;
 }
 
 export interface StreamToolEndData {
@@ -24,6 +26,7 @@ export interface StreamToolEndData {
   content?: string;
   diff_preview?: string | null;
   detail?: string;
+  tool_name?: string;
 }
 
 export interface StreamTurnCompleteData {

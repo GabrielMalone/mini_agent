@@ -186,16 +186,17 @@ function AppShell() {
     }));
 
     unsubs.push(api.on('stream:tool_start', (data) => {
-      const summary = data.summary || data.tool_name || '?';
-      const parenIdx = summary.indexOf('(');
-      let toolName, toolArgs;
-      if (parenIdx > 0) {
-        toolName = summary.slice(0, parenIdx);
-        toolArgs = summary.slice(parenIdx);
-      } else {
-        toolName = summary;
-        toolArgs = '';
-      }
+      // Prefer explicit tool_name from backend; fall back to parsing summary
+      const toolName = data.tool_name || (() => {
+        const s = data.summary || '?';
+        const parenIdx = s.indexOf('(');
+        return parenIdx > 0 ? s.slice(0, parenIdx) : s;
+      })();
+      const toolArgs = (() => {
+        const s = data.summary || '';
+        const parenIdx = s.indexOf('(');
+        return parenIdx > 0 ? s.slice(parenIdx) : '';
+      })();
       const cardId = ++toolCardIdRef.current;
       startTransition(() => {
         setToolCards((prev) => {

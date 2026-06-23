@@ -313,8 +313,13 @@ class StreamCallbacks:
             return
         send_msg({"type": "token", "text": text})
 
-    def on_tool_start(self, summary: str, parallel: bool = False) -> None:
-        send_msg({"type": "tool_start", "summary": summary, "parallel": parallel})
+    def on_tool_start(
+        self, summary: str, parallel: bool = False, tool_name: str = ""
+    ) -> None:
+        msg: dict = {"type": "tool_start", "summary": summary, "parallel": parallel}
+        if tool_name:
+            msg["tool_name"] = tool_name
+        send_msg(msg)
 
     def on_tool_end(
         self,
