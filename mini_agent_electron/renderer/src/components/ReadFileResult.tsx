@@ -109,7 +109,7 @@ export default function ReadFileResult({ content, toolName }: ReadFileResultProp
         highlight={true}
         lineNumbers={true}
         startLine={startLine}
-        lineHashes={lineHashes}
+        lineHashes={lineHashes ?? undefined}
         wrap={true}
       />
     </div>

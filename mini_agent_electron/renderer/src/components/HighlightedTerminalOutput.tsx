@@ -143,7 +143,7 @@ function colorizeLsLine(line) {
 
 function highlightLsOutput(text) {
   const lines = text.split('\n');
-  return lines.map((line, i) => {
+  return lines.map((line: string, i: number) => {
     const trimmed = line.trimEnd();
     if (!trimmed) return ''; // preserve blank lines
     return colorizeLsLine(trimmed);
