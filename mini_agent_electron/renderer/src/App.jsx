@@ -1,9 +1,6 @@
 import { useState, useRef, useEffect, useCallback, startTransition, useDeferredValue } from 'react';
 import useSmoothStream from './hooks/useSmoothStream';
 import useTheme from './hooks/useTheme';
-import RoundedFrame from './components/RoundedFrame';
-import AgentTree from './components/AgentTree';
-import CharStream from './components/CharStream';
 import TerminalBlock from './components/TerminalBlock';
 import ErrorBoundary from './components/ErrorBoundary';
 import SettingsPanel from './components/SettingsPanel';
@@ -144,7 +141,9 @@ function AppShell() {
     const unsub = api.on('backend:status', onStatus);
     api.getStatus?.().then((data) => { if (data) onStatus(data); });
     return () => unsub();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Dependencies intentionally left minimal — this effect subscribes once on mount.
+  // React guarantees state setters are stable; api is a global reference.
+  }, []);
 
   // Discord bot status listener
   useEffect(() => {
@@ -294,6 +293,13 @@ function AppShell() {
             b.id === activeId
               ? { ...b, output: agentText ? `${agentText}\n\nError: ${data.message}` : `Error: ${data.message}`, status: 'err' }
               : b
+          )
+        );
+        // Clean up any running tool cards on error
+        toolOutputStack.current.length = 0;
+        setToolCards((prev) =>
+          prev.map((card) =>
+            card.status === 'running' ? { ...card, status: 'err', endTime: Date.now(), errorDetail: data.message } : card
           )
         );
       });
@@ -455,7 +461,9 @@ function AppShell() {
     }));
 
     return () => unsubs.forEach((u) => u());
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Dependencies intentionally left minimal — this effect subscribes once on mount.
+  // State setters from React are stable; api, startTimer, stopTimer are refs/globals.
+  }, []);
 
   // Submit handler -- creates terminal blocks, supports slash commands.
   // Regular text: if a turn is running, queue as an interjection;

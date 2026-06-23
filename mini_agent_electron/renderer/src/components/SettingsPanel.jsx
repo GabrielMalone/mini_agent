@@ -35,8 +35,11 @@ export default function SettingsPanel({ onSaved }) {
 
     setSaving(true);
     try {
-      await window.miniAgent.saveApiKey(provider, apiKey.trim());
-      await window.miniAgent.restartBackend();
+      const saveTimeout = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Save timed out after 30s. Check backend.')), 30000)
+      );
+      await Promise.race([window.miniAgent.saveApiKey(provider, apiKey.trim()), saveTimeout]);
+      await Promise.race([window.miniAgent.restartBackend(), saveTimeout]);
       // The backend:status event (ready:true) will trigger onSaved
     } catch (e) {
       setError(e.message || 'Failed to save. Try again.');

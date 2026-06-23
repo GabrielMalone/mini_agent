@@ -20,16 +20,19 @@ export default function StatusBar({
     if (!api) return;
     const script = BOT_SCRIPTS[botName];
     if (!script) return;
-    const current = botStatus[botName];
-    setBotStatus((prev) => ({ ...prev, [botName]: !current }));
+    const wasRunning = botStatus[botName];
+    const nextState = !wasRunning;
+    setBotStatus((prev) => ({ ...prev, [botName]: nextState }));
     try {
-      if (current) {
+      if (wasRunning) {
         await api.stopBot(script);
       } else {
         await api.startBot(script);
       }
     } catch (e) {
-      setBotStatus((prev) => ({ ...prev, [botName]: current }));
+      // Only revert if the optimistic state is still in place —
+      // a backend status event may have corrected it already.
+      setBotStatus((prev) => ({ ...prev, [botName]: prev[botName] === nextState ? wasRunning : prev[botName] }));
     }
   }, [botStatus, setBotStatus]);
 

@@ -36,7 +36,12 @@ function setThemeDom(id) {
 export default function useTheme() {
   const [theme, setTheme] = useState(() => {
     const stored = localStorage.getItem('mini_agent_theme');
-    if (stored && THEMES.some((t) => t.id === stored)) return stored;
+    if (stored && THEMES.some((t) => t.id === stored)) {
+      // Set DOM attribute synchronously to prevent flash of unstyled content
+      document.documentElement.setAttribute('data-theme', stored);
+      return stored;
+    }
+    document.documentElement.setAttribute('data-theme', 'dark');
     return 'dark';
   });
   const [themePickerOpen, setThemePickerOpen] = useState(false);

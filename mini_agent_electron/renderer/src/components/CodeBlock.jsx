@@ -129,6 +129,8 @@ export function guessLanguage(toolName, code) {
 // -- singleton highlighter --------------------------------------------------
 
 let highlighterPromise = null;
+let highlighterAttempts = 0;
+const MAX_ATTEMPTS = 3;
 
 export function getHighlighter() {
   if (!highlighterPromise) {
@@ -137,9 +139,13 @@ export function getHighlighter() {
       themes: ['dark-plus'],
       engine: createJavaScriptRegexEngine(),
     }).catch((err) => {
-      // Reset so the next attempt can retry (e.g. after a hot-reload)
       highlighterPromise = null;
-      console.warn('[CodeBlock] Shiki highlighter init failed:', err);
+      highlighterAttempts++;
+      if (highlighterAttempts < MAX_ATTEMPTS) {
+        console.warn(`[CodeBlock] Shiki init failed (attempt ${highlighterAttempts}/${MAX_ATTEMPTS}):`, err);
+      } else {
+        console.error('[CodeBlock] Shiki init failed after max retries, giving up:', err);
+      }
       throw err;
     });
   }

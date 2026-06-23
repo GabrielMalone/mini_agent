@@ -32,6 +32,25 @@ export default function TerminalPanel({
   const draggingRef = useRef(false);
   const dragStartYRef = useRef(0);
   const dragStartHRef = useRef(0);
+  const moveHandlerRef = useRef(null);
+  const upHandlerRef = useRef(null);
+
+  // Cleanup drag listeners on unmount (prevents leak if unmount during drag)
+  useEffect(() => {
+    return () => {
+      if (moveHandlerRef.current) {
+        document.removeEventListener('mousemove', moveHandlerRef.current);
+        moveHandlerRef.current = null;
+      }
+      if (upHandlerRef.current) {
+        document.removeEventListener('mouseup', upHandlerRef.current);
+        upHandlerRef.current = null;
+      }
+      draggingRef.current = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, []);
 
   // Compute expanded height from viewport
   const getExpandedHeight = useCallback(() => {
@@ -83,10 +102,14 @@ export default function TerminalPanel({
       draggingRef.current = false;
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
+      moveHandlerRef.current = null;
+      upHandlerRef.current = null;
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
     };
 
+    moveHandlerRef.current = onMouseMove;
+    upHandlerRef.current = onMouseUp;
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onMouseUp);
     document.body.style.cursor = 'ns-resize';

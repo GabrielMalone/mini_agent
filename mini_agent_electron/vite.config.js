@@ -7,6 +7,11 @@ export default defineConfig({
     // Electron loads from file:// -- the crossorigin attribute Vite adds to
     // <script type="module"> tags triggers a CORS check that fails because
     // file:// has no HTTP headers. Strip it from the built HTML.
+    //
+    // NOTE: This regex is fragile -- it assumes the crossorigin attribute
+    // appears as a standalone token with optional value. If Vite changes its
+    // output format (e.g. different quoting or attribute ordering), this may
+    // silently stop matching and CORS errors will reappear.
     {
       name: 'remove-crossorigin',
       transformIndexHtml(html) {

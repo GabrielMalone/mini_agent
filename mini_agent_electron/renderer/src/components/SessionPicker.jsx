@@ -15,6 +15,8 @@ export default function SessionPicker({ sessionName, onSwitch }) {
 
   const dropdownRef = useRef(null);
   const inputRef = useRef(null);
+  const currentRef = useRef(current);
+  currentRef.current = current;
 
   // Sync external session name
   useEffect(() => {
@@ -88,7 +90,7 @@ export default function SessionPicker({ sessionName, onSwitch }) {
         // Refresh the list
         setSessions((prev) => prev.filter((s) => s !== name));
         // If we deleted current, the backend switches to default -- update current
-        if (name === current) {
+        if (name === currentRef.current) {
           setCurrent('default');
         }
       } else {

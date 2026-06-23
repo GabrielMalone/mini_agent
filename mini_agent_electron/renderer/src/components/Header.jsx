@@ -51,11 +51,8 @@ export default function Header({ modelName, cacheHitRate, subagentRunning, loadi
   const [modelDropdownPos, setModelDropdownPos] = useState(null);
 
   // Position the model dropdown relative to the header model span
-  useEffect(() => {
-    if (!modelPickerOpen || !modelRef.current) {
-      setModelDropdownPos(null);
-      return;
-    }
+  const recalcPosition = useCallback(() => {
+    if (!modelRef.current) return;
     const rect = modelRef.current.getBoundingClientRect();
     const dropdownW = 240;
     let left = rect.left;
@@ -66,7 +63,17 @@ export default function Header({ modelName, cacheHitRate, subagentRunning, loadi
       top: rect.bottom + 4,
       left,
     });
-  }, [modelPickerOpen]);
+  }, []);
+
+  useEffect(() => {
+    if (!modelPickerOpen) {
+      setModelDropdownPos(null);
+      return;
+    }
+    recalcPosition();
+    window.addEventListener('resize', recalcPosition);
+    return () => window.removeEventListener('resize', recalcPosition);
+  }, [modelPickerOpen, recalcPosition]);
 
   // Close model picker on outside click
   useEffect(() => {

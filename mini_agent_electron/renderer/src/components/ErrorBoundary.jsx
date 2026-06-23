@@ -2,7 +2,11 @@ import { Component } from 'react';
 
 /**
  * Catches render errors in the tree so the UI doesn't whitescreen.
- */
+ * Also catches unhandled window errors and promise rejections.
+ *
+* @typedef {{ error: Error|null }} ErrorBoundaryState
+* @typedef {{ children: React.ReactNode }} ErrorBoundaryProps
+*/
 export default class ErrorBoundary extends Component {
   constructor(props) {
     super(props);
@@ -15,6 +19,22 @@ export default class ErrorBoundary extends Component {
 
   componentDidCatch(error, info) {
     console.error('[ErrorBoundary]', error, info.componentStack);
+  }
+
+  componentDidMount() {
+    this._errorHandler = (event) => {
+      this.setState({ error: event.error || new Error(event.message || 'Unhandled error') });
+    };
+    window.addEventListener('error', this._errorHandler);
+    this._unhandledHandler = (event) => {
+      this.setState({ error: event.reason || new Error('Unhandled promise rejection') });
+    };
+    window.addEventListener('unhandledrejection', this._unhandledHandler);
+  }
+
+  componentWillUnmount() {
+    window.removeEventListener('error', this._errorHandler);
+    window.removeEventListener('unhandledrejection', this._unhandledHandler);
   }
 
   render() {

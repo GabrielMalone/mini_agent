@@ -14,11 +14,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
  *  - Browser batches rAF callbacks before paint (less jank)
  *  - Better battery life on laptops
  *
- * Returns:
- *   displayedText  -- current visible text (animating)
- *   addChunk       -- call with each incoming token chunk
- *   reset          -- clear the stream
- *   flush          -- instantly display all buffered text
+ * @returns {{ displayedText: string, addChunk: (text: string) => void, reset: () => void, flush: () => string }}
  */
 export default function useSmoothStream() {
   const [displayedText, setDisplayedText] = useState('');
@@ -27,26 +23,30 @@ export default function useSmoothStream() {
   const rafRef = useRef(null);
   const tickRef = useRef(null);
 
-  tickRef.current = () => {
-    const full = fullRef.current;
-    const behind = full.length - indexRef.current;
-    if (behind <= 0) {
-      rafRef.current = null;
-      return;
-    }
-    // Smooth exponential catch-up: advance by ceil(behind / 4).
-    // Far behind -> big jumps.  Close -> 1 char per frame.
-    const step = Math.max(1, Math.ceil(behind / 4));
-    indexRef.current = Math.min(indexRef.current + step, full.length);
-    setDisplayedText(full.slice(0, indexRef.current));
+  // Keep tickRef.current stable across renders to avoid stale
+  // closure issues in rAF callbacks scheduled by earlier renders
+  if (!tickRef.current) {
+    tickRef.current = () => {
+      const full = fullRef.current;
+      const behind = full.length - indexRef.current;
+      if (behind <= 0) {
+        rafRef.current = null;
+        return;
+      }
+      // Smooth exponential catch-up: advance by ceil(behind / 4).
+      // Far behind -> big jumps.  Close -> 1 char per frame.
+      const step = Math.max(1, Math.ceil(behind / 4));
+      indexRef.current = Math.min(indexRef.current + step, full.length);
+      setDisplayedText(full.slice(0, indexRef.current));
 
-    // Schedule next frame if still behind
-    if (indexRef.current < full.length) {
-      rafRef.current = requestAnimationFrame(tickRef.current);
-    } else {
-      rafRef.current = null;
-    }
-  };
+      // Schedule next frame if still behind
+      if (indexRef.current < full.length) {
+        rafRef.current = requestAnimationFrame(tickRef.current);
+      } else {
+        rafRef.current = null;
+      }
+    };
+  }
 
   const addChunk = useCallback((text) => {
     if (!text) return;

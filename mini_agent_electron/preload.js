@@ -32,13 +32,16 @@ contextBridge.exposeInMainWorld('miniAgent', {
   // --- Session management ---
   // List sessions in current workspace. Returns promise resolving to {sessions, current, error?}.
   listSessions: () => {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('session:list timed out'));
+      }, 10000);
       const handler = (_event, data) => {
-        ipcRenderer.removeListener('session:list_result', handler);
+        clearTimeout(timeout);
         resolve(data);
       };
-      ipcRenderer.on('session:list_result', handler);
-      ipcRenderer.invoke('session:list');
+      ipcRenderer.once('session:list_result', handler);
+      ipcRenderer.send('session:list');
     });
   },
 
@@ -50,13 +53,16 @@ contextBridge.exposeInMainWorld('miniAgent', {
 
   // Delete a session. Returns promise resolving to {ok, message?}.
   deleteSession: (name) => {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('session:delete timed out'));
+      }, 10000);
       const handler = (_event, data) => {
-        ipcRenderer.removeListener('session:delete_result', handler);
+        clearTimeout(timeout);
         resolve(data);
       };
-      ipcRenderer.on('session:delete_result', handler);
-      ipcRenderer.invoke('session:delete', name);
+      ipcRenderer.once('session:delete_result', handler);
+      ipcRenderer.send('session:delete', name);
     });
   },
 

@@ -11,7 +11,9 @@ import remarkGfm from 'remark-gfm';
  *
  * The markdown view lags up to 80ms behind the incoming text, which is
  * imperceptible.  When streaming stops, a final flush catches it up.
- */
+ *
+ * @param {{ text: string }} props
+*/
 const StreamingMessage = memo(function StreamingMessage({ text }) {
   const [throttled, setThrottled] = useState('');
   const lastUpdateRef = useRef(0);
@@ -42,8 +44,10 @@ const StreamingMessage = memo(function StreamingMessage({ text }) {
     }
 
     return () => {
-      // Don't clear the timer here -- we want the deferred update to fire.
-      // The timer cleans itself up.
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
     };
   }, [text]);
 
