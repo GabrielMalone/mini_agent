@@ -413,6 +413,28 @@ function spawnPythonBackend(workspacePath) {
   console.log(`Using Python: ${pythonBin}${pythonArgs.length ? ' ' + pythonArgs[0] : ' (bundled)'}`);
   console.log(`DEEPSEEK_API_KEY: ${env.DEEPSEEK_API_KEY ? 'set' : 'not set'}`);
 
+  // Check Python version (skip for bundled binary which embeds its own Python)
+  if (pythonArgs.length > 0) {
+    try {
+      const versionOutput = require('child_process').execSync(
+        `"${pythonBin}" --version`, { encoding: 'utf-8', timeout: 5000 }
+      ).trim();
+      const match = versionOutput.match(/Python (\d+)\.(\d+)/);
+      if (match) {
+        const major = parseInt(match[1], 10);
+        const minor = parseInt(match[2], 10);
+        if (major < 3 || (major === 3 && minor < 10)) {
+          console.error(`Python ${major}.${minor} detected, but mini_agent requires Python 3.10+.`);
+          return null;
+        }
+        console.log(`Python version: ${versionOutput}`);
+      }
+    } catch (e) {
+      console.error(`Failed to check Python version: ${e.message}`);
+      return null;
+    }
+  }
+
   const proc = spawn(pythonBin, pythonArgs, {
     env,
     cwd: path.join(__dirname, '..'),

@@ -1565,6 +1565,19 @@ def main() -> None:
     _heartbeat_stop = threading.Event()
     _start_heartbeat(_heartbeat_stop)
 
+    # --- Startup smoke test: verify the agent can read a workspace file ---
+    try:
+        smoke_path = os.path.join(runner.workspace, "CHANGELOG.md")
+        if not os.path.isfile(smoke_path):
+            smoke_path = os.path.join(runner.workspace, "README.md")
+        if os.path.isfile(smoke_path):
+            with open(smoke_path, "r", encoding="utf-8", errors="replace") as _sf:
+                _sf.read(256)  # small read, just verifying FS access works
+        send_msg({"type": "status", "startup_ok": True})
+    except Exception as _smoke_err:
+        send_msg({"type": "status", "startup_ok": False, "error": str(_smoke_err)[:200]})
+        print(f"[server] Startup smoke test failed: {_smoke_err}", file=sys.stderr, flush=True)
+
     # Send initial ready + status
     send_msg({"type": "ready", "model": runner.config.model})
     runner.send_status()
