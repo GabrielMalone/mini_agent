@@ -323,8 +323,11 @@ class StreamCallbacks:
         turn_id: int = 0,
         diff_preview=None,
         content: str = "",
+        tool_name: str = "",
     ) -> None:
         msg: dict = {"type": "tool_end", "ok": ok, "detail": detail, "content": content}
+        if tool_name:
+            msg["tool_name"] = tool_name
         if diff_preview:
             msg["diff_preview"] = diff_preview
         send_msg(msg)

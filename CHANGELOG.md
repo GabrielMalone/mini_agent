@@ -2,6 +2,15 @@
 
 Self-modification audit trail -- what the agent changed and why.
 
+## 2026-06-23
+
+### Fix: Batch edit_file parallel tool card matching
+
+- **core/llm.py** `_append_tool_result`: Extract `tool_name` from `tc["function"]["name"]` and pass to `on_tool_end` callback (+2 lines)
+- **mini_agent_electron/backend/server.py** `StreamCallbacks.on_tool_end`: Added `tool_name` parameter, forwarded in IPC msg dict (+3 lines)
+- **mini_agent_electron/renderer/src/App.tsx**: `tool_start` stores `toolName` in stack entry; `tool_end` matches by `data.tool_name` via `findIndex+splice`, with LIFO fallback for backward compatibility (+12 lines). Fixed `toolOutputStack` useRef type to include `toolName: string`.
+- **Root cause**: When tools run in parallel via `ThreadPoolExecutor`, `on_tool_end` fires in completion order (not start order). The frontend used a LIFO stack to match `tool_start→tool_end`, so parallel tools completing out of start order updated the wrong cards — breaking the UI.
+
 ## 2026-06-22
 
 ### Self-learning fix_strategy auto-population

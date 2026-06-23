@@ -1056,12 +1056,14 @@ def _append_tool_result(
 ) -> None:
     """Append a tool result message and fire the on_tool_end callback."""
     detail = format_tool_detail(result, max_len=TOOL_DETAIL_DISPLAY_LENGTH)
+    tool_name = tc.get("function", {}).get("name", "")
     if on_tool_end is not None:
         on_tool_end(
             result.success,
             detail,
             diff_preview=result.diff_preview,
             content=result.content,
+            tool_name=tool_name,
         )
     # --- Truncate oversized tool results before appending to messages ---
     # Large tool results (e.g. run_shell returning 244K chars of log output)

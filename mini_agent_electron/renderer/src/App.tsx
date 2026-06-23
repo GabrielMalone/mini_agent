@@ -87,7 +87,7 @@ function AppShell() {
   const submitTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const turnStartRef = useRef<number | null>(null);
-  const toolOutputStack = useRef<Array<{ cardId: number; buffer: string }>>([]); // stack of buffers for parallel tool calls
+  const toolOutputStack = useRef<Array<{ cardId: number; buffer: string; toolName: string }>>([]); // stack of buffers for parallel tool calls
   const lineIdRef = useRef(0); // monotonically increasing ID for stable React keys
   const nextLineId = useCallback(() => ++lineIdRef.current, []);
 
@@ -207,7 +207,7 @@ function AppShell() {
           }];
         });
       });
-      toolOutputStack.current.push({ cardId, buffer: '' });
+      toolOutputStack.current.push({ cardId, buffer: '', toolName });
     }));
 
     unsubs.push(api.on('stream:tool_output', (data) => {
@@ -232,13 +232,24 @@ function AppShell() {
       const stack = toolOutputStack.current;
       // Guard: if tool_end fires without a matching tool_start, don't silently drop
       if (stack.length === 0) return;
-      let cardId = null;
+      let cardId: number | null = null;
       let finalBuffer = '';
-      while (stack.length > 0) {
+      // Match by tool_name when available (parallel execution), fallback to LIFO
+      const tName = (data as any).tool_name || '';
+      if (tName) {
+        const idx = stack.findIndex((e) => e.toolName === tName);
+        if (idx !== -1) {
+          const entry = stack[idx];
+          finalBuffer = entry.buffer;
+          cardId = entry.cardId;
+          stack.splice(idx, 1);
+        }
+      }
+      if (cardId == null && stack.length > 0) {
+        // Fallback: LIFO pop (sequential execution, or tool_name not available)
         const top = stack.pop()!;
         finalBuffer = top.buffer;
         cardId = top.cardId;
-        break;
       }
       const now = Date.now();
       const status = data.ok ? 'ok' : 'err';

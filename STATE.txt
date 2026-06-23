@@ -6,6 +6,7 @@
 
 ## Active Decisions
 
+- **Parallel tool card matching fix (2026-06-23)** — When tools run in parallel via ThreadPoolExecutor, on_tool_end fires in completion order. Frontend now matches tool_end→tool_start by `tool_name` (with LIFO fallback) instead of relying on a LIFO stack that breaks when parallel tools complete out of start order. Added `tool_name` to `StreamCallbacks.on_tool_end` IPC message.
 - **TypeScript strict mode + UI smoke test (2026-06-23)** — Frontend migrated to TypeScript with `strict: true`. All components have explicit `interface Props`. Shared types in `renderer/src/types.ts`. ESLint uses `typescript-eslint` parser. UI smoke test (`electron . --smoke-test`) renders the full React tree and exits 1 if any console.error fires. Smoke test runs automatically via `postbuild` hook — `npm run build` fails if the UI can't render.
 - **Self-learning fix_strategy (2026-06-22)** — record_success auto-populates fix_strategy from successful args. Args now passed to record_failure. Success recorded on every call, not just in-memory patterns.
 - **Plan auto-repair (2026-06-22)** — _plan() in agent_todos.py auto-splits string steps into arrays (numbered list or newline-separated). Single-line strings still rejected.
