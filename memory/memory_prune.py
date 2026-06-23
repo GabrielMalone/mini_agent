@@ -739,6 +739,7 @@ def _strip_orphaned_tool_messages(
     # Pass 2: handle orphaned assistant(tool_calls).
     seen_ids: set[str] = set()
     orphan_indices: set[int] = set()
+    orphaned_tc_ids: set[str] = set()  # IDs of orphaned tool calls to strip
     for i in range(len(pass1) - 1, -1, -1):
         m = pass1[i]
         role = m.get("role", "")
@@ -753,9 +754,24 @@ def _strip_orphaned_tool_messages(
                     return pass1[:i]
                 else:
                     orphan_indices.add(i)
+                    # Also collect ALL tc_ids of the stripped assistant so
+                    # their tool messages are stripped too — even the "matched"
+                    # ones are orphaned once the assistant is removed.  Otherwise
+                    # Pass 3 appends orphaned tool messages (pending_ids empty →
+                    # else branch), causing 400: "role 'tool' must be a response
+                    # to a preceding message with 'tool_calls'".
+                    orphaned_tc_ids.update(tc_ids)
 
     if orphan_indices:
-        pass2 = [m for i, m in enumerate(pass1) if i not in orphan_indices]
+        pass2 = [
+            m
+            for i, m in enumerate(pass1)
+            if i not in orphan_indices
+            and not (
+                m.get("role") == "tool"
+                and m.get("tool_call_id", "") in orphaned_tc_ids
+            )
+        ]
     else:
         pass2 = pass1
 
