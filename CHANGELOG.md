@@ -4,6 +4,13 @@ Self-modification audit trail -- what the agent changed and why.
 
 ## 2026-06-23
 
+### Fix: Input window audit — slash command disabled state + timeout
+
+- **Root cause:** `handleSubmit` in App.tsx didn't set `isLive` or `inputDisabled` for slash commands, allowing concurrent turns
+- **Fix:** Added `setIsLive(true)` + `setInputDisabled(true)` in slash command branch + 120s timeout fallback (matching regular submit)
+- **Also:** Removed redundant `setInputValue('')` in interjection branch
+- **Files:** `mini_agent_electron/renderer/src/App.tsx`
+
 ### Fix: Tool card stuck-in-running — tool_call_id matching for same-name batches
 
 - **core/llm.py**: All 5 `on_tool_start()` call sites + `_append_tool_result()` (on_tool_end) now pass

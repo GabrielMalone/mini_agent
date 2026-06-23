@@ -1,5 +1,5 @@
 # mini_agent Architecture Map
-# Last updated: 2026-06-23 -- Tool card stuck-in-running (round 2)
+# Last updated: 2026-06-23 -- Input window audit fixes
 #
 # This file is the agent's map of the codebase. Update it after completed changes.
 # Behavioral rules live in AGENTS.md. Long-term facts live in core memory.
