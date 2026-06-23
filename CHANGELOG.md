@@ -4,6 +4,23 @@ Self-modification audit trail -- what the agent changed and why.
 
 ## 2026-06-23
 
+### Feat: Smooth tool card transitions — animated collapse, completion pulse, icon crossfade
+
+- **ToolCard.tsx:** Body, diff, and error sections now stay in the DOM when collapsed, using a CSS `.collapsed` class instead of conditional rendering. This enables CSS transitions to animate the collapse/expand.
+- **style.css:** Added `transition: max-height 0.35s ease, opacity 0.25s ease` to `.tool-card-body`, `.tool-card-diff`, and `.tool-card-error`, with `.collapsed` state setting max-height/opacity to 0. No more abrupt minimize.
+- **style.css:** Status icon crossfade (spinner → check/x) eased from 0.2s to 0.3s.
+- **style.css:** New `@keyframes toolCompletePulse` — green check icon does a subtle scale pulse (1→1.4→1) when a tool finishes successfully.
+- **style.css:** Chevron rotation transition smoothed to 0.25s ease.
+- **Files:** `ToolCard.tsx` (+2/-4 lines), `style.css` (+38 lines)
+- **Build:** tsc clean on ToolCard.tsx, Vite build passes.
+
+### Feat: Startup audit fixes — Python version check + startup smoke test
+
+- **main.js:** `spawnPythonBackend()` now checks `python3 --version` and requires ≥3.10 before spawning. Skips check for bundled binary (no `pythonArgs`). Returns `null` on failure, which triggers the existing restart throttle — prevents silent hangs when a too-old Python is on PATH.
+- **server.py:** After `init_session()` completes, reads the first 256 bytes of a workspace file (CHANGELOG.md or README.md) to verify filesystem access. Sends `{type: "status", startup_ok: true/false}` to the frontend. Catches and reports exceptions so the UI can surface startup failures before the user types anything.
+- **Files:** `mini_agent_electron/main.js` (+22 lines), `mini_agent_electron/backend/server.py` (+13 lines)
+- **Commit:** `3b59c7d`
+
 ### Fix: Input disabled after slash commands — backend:response now re-enables
 
 - **Root cause:** Slash commands set `setInputDisabled(true)` and relied on a 120s timeout to re-enable. The backend processes quickly and sends `backend:response`, but that handler only updated the output block — it never called `setInputDisabled(false)`. Input stayed frozen until the timeout expired.

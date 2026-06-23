@@ -1871,7 +1871,7 @@ html, body {
   top: 50%; left: 50%;
   transform: translate(-50%, -50%);
   opacity: 0;
-  transition: opacity 0.2s ease;
+  transition: opacity 0.3s ease;
   pointer-events: none;
 }
 .tool-card-icon-spinner.active,
@@ -1880,6 +1880,9 @@ html, body {
   opacity: 1;
 }
 .tool-card-icon-check { color: var(--green); font-size: 0.9em; }
+.tool-card-icon-check.active {
+  animation: toolCompletePulse 0.5s ease-out;
+}
 .tool-card-icon-x     { color: var(--red);   font-size: 0.9em; }
 
 .tool-card-name {
@@ -1913,7 +1916,7 @@ html, body {
 .tool-card-chevron {
   font-size: 0.65em;
   color: var(--dim);
-  transition: transform 0.2s;
+  transition: transform 0.25s ease;
   flex-shrink: 0;
 }
 .tool-card-chevron.expanded {
@@ -1925,6 +1928,13 @@ html, body {
   border-top: 1px solid var(--border);
   max-height: 300px;
   overflow-y: auto;
+  transition: max-height 0.35s ease, opacity 0.25s ease, border-top-width 0.25s ease;
+}
+.tool-card-body.collapsed {
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  border-top-width: 0;
 }
 
 .tool-card-waiting {
@@ -1943,6 +1953,13 @@ html, body {
   border-top: 1px solid var(--border);
   max-height: 200px;
   overflow-y: auto;
+  transition: max-height 0.35s ease, opacity 0.25s ease, border-top-width 0.25s ease;
+}
+.tool-card-diff.collapsed {
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  border-top-width: 0;
 }
 
 .tool-card-error {
@@ -1952,6 +1969,15 @@ html, body {
   border-top: 1px solid var(--border);
   white-space: pre-wrap;
   word-break: break-word;
+  transition: max-height 0.35s ease, opacity 0.25s ease, padding 0.25s ease, border-top-width 0.25s ease;
+}
+.tool-card-error.collapsed {
+  max-height: 0;
+  opacity: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  overflow: hidden;
+  border-top-width: 0;
 }
 
 /* Tool card panel (container) */
@@ -2402,6 +2428,12 @@ html, body {
     opacity: 1;
     transform: scale(1);
   }
+}
+
+@keyframes toolCompletePulse {
+  0%   { transform: translate(-50%, -50%) scale(1); }
+  30%  { transform: translate(-50%, -50%) scale(1.4); }
+  100% { transform: translate(-50%, -50%) scale(1); }
 }
 
 @keyframes fadeInUp {

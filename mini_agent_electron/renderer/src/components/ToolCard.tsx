@@ -72,38 +72,40 @@ const ToolCard = memo(function ToolCard({ tool, theme }: ToolCardProps) {
         </span>
       </div>
 
-      {!collapsed && (hasOutput || isRunning) && (
-        <div className="tool-card-body" ref={bodyRef}>
-          {isRunning && !hasOutput && (
-            <div className="tool-card-waiting dim">waiting for output...</div>
-          )}
-          {hasOutput && isSingleLine && (
-            <div className="tool-card-output-single dim">{tool.output}</div>
-          )}
-          {hasOutput && !isSingleLine && (
-            <ToolOutput
-              output={tool.output}
-              toolName={tool.toolName}
-              theme={theme}
-            />
-          )}
-        </div>
-      )}
+      <div className={`tool-card-body${collapsed ? ' collapsed' : ''}`} ref={bodyRef}>
+        {(hasOutput || isRunning) && (
+          <>
+            {isRunning && !hasOutput && (
+              <div className="tool-card-waiting dim">waiting for output...</div>
+            )}
+            {hasOutput && isSingleLine && (
+              <div className="tool-card-output-single dim">{tool.output}</div>
+            )}
+            {hasOutput && !isSingleLine && (
+              <ToolOutput
+                output={tool.output}
+                toolName={tool.toolName}
+                theme={theme}
+              />
+            )}
+          </>
+        )}
+      </div>
 
-      {!collapsed && hasDiff && (
-        <div className="tool-card-diff">
+      <div className={`tool-card-diff${collapsed ? ' collapsed' : ''}`}>
+        {hasDiff && (
           <CodeBlock
-            code={tool.diffPreview}
+            code={tool.diffPreview ?? ''}
             language="diff"
             fontSize="0.68em"
             theme={theme}
           />
-        </div>
-      )}
+        )}
+      </div>
 
-      {!collapsed && isErr && tool.errorDetail && (
-        <div className="tool-card-error">{tool.errorDetail}</div>
-      )}
+      <div className={`tool-card-error${collapsed ? ' collapsed' : ''}`}>
+        {isErr && tool.errorDetail && tool.errorDetail}
+      </div>
     </div>
   );
 });
