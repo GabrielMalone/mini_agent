@@ -9,6 +9,7 @@
     "dev": "electron . --dev",
     "build": "npx vite build",
     "lint": "npx eslint renderer/src/ --quiet",
+    "test:smoke": "electron . --smoke-test",
     "prebuild": "npm run lint",
     "dev:renderer": "npx vite --config vite.config.ts",
     "dist": "npm run build && electron-builder",

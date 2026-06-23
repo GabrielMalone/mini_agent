@@ -891,6 +891,9 @@ function setupIPC() {
 // Window
 // ---------------------------------------------------------------------------
 
+/** True when --smoke-test is on the command line. */
+const SMOKE_TEST = process.argv.includes('--smoke-test');
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1200,
@@ -962,10 +965,34 @@ function createWindow() {
   });
   win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
     console.error(`[main] renderer FAILED to load: ${errorDescription} (code ${errorCode}) URL: ${validatedURL}`);
+    if (SMOKE_TEST) {
+      console.error('[smoke-test] FAIL: page failed to load');
+      app.exit(1);
+    }
   });
   win.webContents.on('page-title-updated', (_event, title) => {
     console.log(`[main] page title: "${title}"`);
   });
+
+  // ── Smoke test: collect renderer errors, exit after render ──
+  if (SMOKE_TEST) {
+    const rendererErrors = [];
+    win.webContents.on('console-message', (_event, level, message) => {
+      if (level >= 3) rendererErrors.push(message); // 3 = error
+    });
+    win.webContents.on('did-finish-load', () => {
+      setTimeout(() => {
+        if (rendererErrors.length > 0) {
+          console.error(`[smoke-test] FAIL: ${rendererErrors.length} renderer error(s):`);
+          rendererErrors.forEach((e) => console.error('  ', e));
+          app.exit(1);
+        } else {
+          console.log('[smoke-test] PASS: App rendered with zero errors');
+          app.exit(0);
+        }
+      }, 4000);
+    });
+  }
 
   return win;
 }
