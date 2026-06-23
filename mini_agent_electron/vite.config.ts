@@ -14,7 +14,7 @@ export default defineConfig({
     // silently stop matching and CORS errors will reappear.
     {
       name: 'remove-crossorigin',
-      transformIndexHtml(html) {
+      transformIndexHtml(html: string) {
         return html.replace(/\s+crossorigin(?:="[^"]*")?/g, '');
       },
     },
@@ -24,10 +24,10 @@ export default defineConfig({
     // before React's module script executes.
     {
       name: 'css-before-module-scripts',
-      enforce: 'post',
-      transformIndexHtml(html) {
+      enforce: 'post' as const,
+      transformIndexHtml(html: string) {
         const linkRegex = /<link\s+rel=["']stylesheet["'][^>]*>/gi;
-        const links = [];
+        const links: string[] = [];
         let cleaned = html.replace(linkRegex, (match) => {
           links.push(match);
           return '';

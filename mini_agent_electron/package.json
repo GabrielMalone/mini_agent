@@ -10,7 +10,7 @@
     "build": "npx vite build",
     "lint": "npx eslint renderer/src/ --quiet",
     "prebuild": "npm run lint",
-    "dev:renderer": "npx vite --config vite.config.js",
+    "dev:renderer": "npx vite --config vite.config.ts",
     "dist": "npm run build && electron-builder",
     "dist:mac": "npm run build && electron-builder --mac",
     "dist:win": "npm run build && electron-builder --win",
