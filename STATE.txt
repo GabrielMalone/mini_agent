@@ -1,11 +1,12 @@
 # mini_agent Architecture Map
-# Last updated: 2026-06-23 -- Pass 3 orphaned tool message defense-in-depth
+# Last updated: 2026-06-23 -- Frontend tool panel audit (7 fixes)
 #
 # This file is the agent's map of the codebase. Update it after completed changes.
 # Behavioral rules live in AGENTS.md. Long-term facts live in core memory.
 
 ## Active Decisions
 
+- **Frontend tool panel audit (2026-06-23)** — 7 fixes to App.tsx, ToolCard.tsx, style.css: silent tool_end drops now console.warn, tool_output before tool_start race buffered as orphans, card array capped at 50 with stale index cleanup, CSS animation moved from nth-child to data-enter attribute, args parsing uses lastIndexOf for parens in paths, status icons crossfade via opacity transition.
 - **Parallel tool hang prevention (2026-06-23)** — `_execute_groups` now uses `future.result(timeout=150)` with TimeoutError/Exception handling. Prevents a single hung tool thread from blocking `as_completed()` and freezing the agent loop.
 - **Pass 2 orphan tool message stripping (2026-06-23)** — Pass 2 now collects ALL `tool_call_id`s of stripped `assistant(tool_calls)` blocks and filters their tool messages from output. Fixes 400 errors where Pass 3 appended orphaned tool messages via its `else` branch (pending_ids empty). Root cause: Pass 2 stripped the assistant but left its tool messages intact.
 - **API 400 defense-in-depth: Pass 3 interleaved message stripping (2026-06-23)** — `_strip_orphaned_tool_messages` now has a Pass 3 (truncate=False only) that strips non-tool messages (user/system) interleaved between `assistant(tool_calls)` and `tool` results. Prevents API 400 errors even when the primary fix misses an injection path. 8 errors in api_error.log.

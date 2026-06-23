@@ -4,6 +4,23 @@ Self-modification audit trail -- what the agent changed and why.
 
 ## 2026-06-23
 
+### Fix: Frontend tool panel audit — 7 fixes
+
+- **mini_agent_electron/renderer/src/App.tsx**: 
+  - Silent `tool_end` drops now `console.warn` when unmatched (was swallowing silently)
+  - `tool_output` before `tool_start` race: orphan output lines buffered until tool_start arrives (5s safety timeout)
+  - Card array capped at 50; stale `toolCardIndexRef` entries pruned on cap
+  - Args parsing: `indexOf('(')` → `lastIndexOf('(')` for paths with parens
+  - New cards get `_enter: true` attribute, stripped on tool_end, for CSS animation targeting
+- **mini_agent_electron/renderer/src/components/ToolCard.tsx**: 
+  - Status icons (spinner/check/cross) now render simultaneously with opacity crossfade via `.active` class toggle
+  - `data-enter` attribute passed through to DOM for CSS targeting
+- **mini_agent_electron/renderer/style.css**: 
+  - Animation moved from `:nth-last-child(-n+6)` hack to `[data-enter="true"]` attribute selector
+  - `@starting-style` updated to match new selector
+  - New icon wrapper classes (`.tool-card-icon-spinner/check/x`) with `opacity` crossfade transition
+  - `.tool-card-status` gets `position: relative` for absolute icon positioning
+
 ### Fix: Parallel tool hang prevention — timeout on future.result()
 
 - **core/llm.py** `_execute_groups`: Added `future.result(timeout=150)` with TimeoutError and Exception handling. Previously, if one parallel tool thread hung (e.g., git checkpoint lock contention), `as_completed()` blocked forever, freezing the agent loop. Now timed-out tools return a failure ToolResult, and crashed threads are caught gracefully.
