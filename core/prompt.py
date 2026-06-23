@@ -190,6 +190,63 @@ def build_memory_snapshot(core_memory_content: str) -> str:
     )
 
 
+# ---------------------------------------------------------------------------
+# Observations + session summaries snapshot (proactive injection)
+# ---------------------------------------------------------------------------
+
+
+def build_observations_snapshot(memory_store) -> str:
+    """Build a snapshot of recent observations and session summaries.
+
+    Unlike core memory (which is frozen at session start), this snapshot
+    includes recent structured observations and the most recent session
+    summary so the agent benefits from past work without needing to remember
+    to call read_observations explicitly.
+
+    Returns an empty string if there's nothing to inject.
+    """
+    parts: list[str] = []
+
+    # Recent observations (last 5, any type)
+    try:
+        obs_list = memory_store.query_observations(limit=5)
+        if obs_list:
+            lines = ["## Recent Observations"]
+            for o in obs_list:
+                title = o.title or "(untitled)"
+                narrative = (o.narrative or "")[:300]
+                facts = ", ".join(o.facts[:5]) if o.facts else ""
+                lines.append(f"- [{o.type}] {title}")
+                if narrative:
+                    lines.append(f"  {narrative}")
+                if facts:
+                    lines.append(f"  Facts: {facts}")
+            parts.append("\n".join(lines))
+    except Exception:
+        pass  # best-effort; never block startup
+
+    # Most recent session summary
+    try:
+        summary = memory_store.get_most_recent_summary()
+        if summary is not None:
+            rendered = summary.render_for_context() if hasattr(summary, "render_for_context") else ""
+            if rendered and isinstance(rendered, str):
+                parts.append("## Previous Session Summary\n" + rendered)
+    except Exception:
+        pass  # best-effort
+
+    # Filter out any non-string items (defensive against mocks in tests)
+    string_parts = [p for p in parts if isinstance(p, str)]
+    if not string_parts:
+        return ""
+
+    return (
+        "[OBSERVATIONS & SESSION CONTEXT -- auto-injected at session start]\n"
+        + "\n\n".join(string_parts)
+        + "\n[END OBSERVATIONS & SESSION CONTEXT]\n"
+    )
+
+
 # Public immutable system prompt -- the ONLY content in the system message.
 # Because it never changes, DeepSeek's prefix-based disk cache can reuse the
 # KV-cache across every session (hours to days).  All dynamic content (date,
@@ -278,6 +335,7 @@ def build_startup_context(
     workspace: str,
     *,
     knowledge: list[dict] | None = None,
+    memory_store=None,
 ) -> str:
     """Generate a one-shot system message describing the workspace at startup.
 
@@ -287,6 +345,10 @@ def build_startup_context(
     If *knowledge* is provided (list of {summary, category, detail} dicts from
     the project_knowledge table), it is appended as a "Project Learnings" section
     so the agent benefits from past session experience.
+
+    If *memory_store* is provided, recent observations and the most recent
+    session summary are also injected so the agent benefits from past work
+    without needing to call read_observations explicitly.
     """
     import subprocess as _sp
     from core.config import TREE_TRUNCATION_LINES, GIT_LOG_COUNT, GIT_LOG_TIMEOUT
@@ -372,4 +434,11 @@ def build_startup_context(
                 lines.append(f"- [{cat}] {e.get('summary', '')[:200]}")
         if lines:
             parts.append("\n".join(lines))
+
+    # 5. Observations + session summaries (proactive injection)
+    if memory_store is not None:
+        obs_snapshot = build_observations_snapshot(memory_store)
+        if obs_snapshot:
+            parts.append(obs_snapshot)
+
     return "\n\n".join(parts) + "\n"

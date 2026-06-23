@@ -488,7 +488,7 @@ def init_session(
     core_memory = memory.get_core_memory() if memory else ""
     memory_snapshot = build_memory_snapshot(core_memory)
 
-    startup_ctx = build_startup_context(workspace, knowledge=knowledge)
+    startup_ctx = build_startup_context(workspace, knowledge=knowledge, memory_store=memory)
     session_header = build_session_header(config)
     system_prompt = build_system_prompt(config)
     messages: list[dict] = [

@@ -79,7 +79,7 @@ def switch_session(
                 saved.insert(0, {"role": "user", "content": summary})
 
     knowledge = memory.get_top_knowledge(limit=15) if not memory._skip_load else []
-    startup_ctx = build_startup_context(workspace, knowledge=knowledge)
+    startup_ctx = build_startup_context(workspace, knowledge=knowledge, memory_store=memory)
     session_header = build_session_header(current_config)
     messages: list[dict] = [
         {"role": "system", "content": build_system_prompt(current_config)},

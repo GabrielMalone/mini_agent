@@ -868,7 +868,7 @@ class AgentRunner:
                 {
                     "role": "user",
                     "content": build_startup_context(
-                        self.config.workspace, knowledge=knowledge
+                        self.config.workspace, knowledge=knowledge, memory_store=self.memory
                     ),
                 },
             ]
