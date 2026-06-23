@@ -3,7 +3,25 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import CodeBlock from './CodeBlock';
 
-interface LogLineData {
+const markdownComponents = {
+  code({ className, children, inline }: { className?: string; children: React.ReactNode; inline?: boolean }) {
+    const match = /language-(\w+)/.exec(className || '');
+    const lang = match ? match[1] : undefined;
+    const code = String(children).replace(/\n$/, '');
+    return <CodeBlock code={code} language={lang} inline={inline} highlight={false} />;
+  },
+};
+
+function escapeHtml(text: string | undefined | null): string {
+  if (!text) return '';
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+export interface LogLineData {
   component?: React.ReactNode;
   cls?: string;
   toolName?: string;
@@ -14,24 +32,6 @@ interface LogLineData {
 
 interface LogLineProps {
   line: LogLineData;
-}
-
-const markdownComponents = {
-  code({ className, children, inline, ...props }: { className?: string; children: React.ReactNode; inline?: boolean }) {
-    const match = /language-(\w+)/.exec(className || '');
-    const lang = match ? match[1] : undefined;
-    const code = String(children).replace(/\n$/, '');
-    return <CodeBlock code={code} language={lang} inline={inline} highlight={false} />;
-  },
-};
-
-function escapeHtml(text: string): string {
-  if (!text) return '';
-  return String(text)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
 }
 
 const LogLine = memo(function LogLine({ line }: LogLineProps) {
@@ -49,14 +49,17 @@ const LogLine = memo(function LogLine({ line }: LogLineProps) {
   }
 
   if (line.markdown) {
+    // react-markdown's components type conflicts with our simplified p component
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const components: any = {
+      p: ({ children }: any) => <span>{children}</span>,
+      ...markdownComponents,
+    };
     return (
       <div className={`md-line ${line.cls || ''}`} style={{ whiteSpace: 'normal' }}>
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
-          components={{
-            p: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
-            ...markdownComponents,
-          }}
+          components={components}
         >
           {line.text}
         </ReactMarkdown>
@@ -64,8 +67,7 @@ const LogLine = memo(function LogLine({ line }: LogLineProps) {
     );
   }
 
-  return <div className={line.cls || ''}>{escapeHtml(line.text || '')}</div>;
+  return <div className={line.cls || ''}>{escapeHtml(line.text)}</div>;
 });
 
 export default LogLine;
-export type { LogLineData };

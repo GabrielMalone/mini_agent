@@ -1,27 +1,25 @@
-import { memo } from 'react';
+import { memo, type ReactNode } from 'react';
 import DeferredMarkdown from './DeferredMarkdown';
 import StreamingMessage from './StreamingMessage';
 import ToolCard from './ToolCard';
 import HighlightedTerminalOutput from './HighlightedTerminalOutput';
+import type { ChatBlock } from '../types';
 
-// ---------------------------------------------------------------------------
-// TerminalBlock -- Warp-style command block with left notch
-//
-// Props:
-//   block           - { id, command, output, status, timestamp, toolCards?, thinkingBlocks? }
-//   streamingOutput - live streaming text (only for running block)
-//   isRunning       - true if this block is the active streaming block
-//   onEdit(command) - called when user clicks the command area
-//   theme           - theme object for ToolCards
-// ---------------------------------------------------------------------------
+interface TerminalBlockProps {
+  block: ChatBlock;
+  streamingOutput?: string;
+  isRunning?: boolean;
+  onEdit?: (cmd: string) => void;
+  theme?: string;
+}
 
-const STATUS_COLORS = {
+const STATUS_COLORS: Record<string, string> = {
   ok: 'var(--green)',
   err: 'var(--red)',
   running: 'var(--pulse)',
 };
 
-function formatElapsed(ms) {
+function formatElapsed(ms: number): string {
   const sec = Math.floor(ms / 1000);
   if (sec < 60) return `${sec}s`;
   const min = Math.floor(sec / 60);
@@ -34,7 +32,7 @@ const TerminalBlock = memo(function TerminalBlock({
   isRunning,
   onEdit,
   theme,
-}) {
+}: TerminalBlockProps) {
   const { id, command, output, status, timestamp, toolCards, thinkingBlocks } = block;
   const notchColor = STATUS_COLORS[status] || 'var(--dim)';
 
@@ -49,12 +47,8 @@ const TerminalBlock = memo(function TerminalBlock({
       className={`terminal-block terminal-block--${status}`}
       data-block-id={id}
     >
-      {/* Left notch */}
       <div className="terminal-block__notch" style={{ borderColor: notchColor }} />
-
-      {/* Body */}
       <div className="terminal-block__body">
-        {/* Command bar */}
         <div
           className="terminal-block__command"
           onClick={handleCommandClick}
@@ -83,7 +77,6 @@ const TerminalBlock = memo(function TerminalBlock({
           )}
         </div>
 
-        {/* Output area */}
         {(displayOutput || isRunning) && (
           <div className="terminal-block__output">
             {isRunning && streamingOutput ? (
@@ -98,7 +91,6 @@ const TerminalBlock = memo(function TerminalBlock({
           </div>
         )}
 
-        {/* Tool cards inline */}
         {toolCards && toolCards.length > 0 && (
           <div className="terminal-block__tools">
             {toolCards.map((card) => (
@@ -107,7 +99,6 @@ const TerminalBlock = memo(function TerminalBlock({
           </div>
         )}
 
-        {/* Thinking blocks inline */}
         {thinkingBlocks && thinkingBlocks.length > 0 && (
           <div className="terminal-block__thinking">
             {thinkingBlocks.map((text, i) => (

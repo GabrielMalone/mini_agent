@@ -4,38 +4,30 @@ import SearchResults from './SearchResults';
 import ReadFileResult from './ReadFileResult';
 import ShellResults from './ShellResults';
 import AstResult from './AstResult';
+import type { ToolCardData } from '../types';
 
-/**
- * ToolCard -- Dirac-inspired card-based tool display.
- *
- * Each tool call gets a card with:
- *   - Header: tool name + status indicator (spinner / check / X)
- *   - Body: collapsible output (syntax-highlighted code or plain text)
- *   - Footer: result summary + optional diff preview
- *
- * Cards auto-collapse after a delay when the tool completes OK,
- * but stay expanded on errors so the user can inspect.
- */
+const AUTO_COLLAPSE_MS = 3000;
 
-const AUTO_COLLAPSE_MS = 3000; // delay before auto-collapsing successful cards
+interface ToolCardProps {
+  tool: ToolCardData;
+  theme?: string;
+}
 
-const ToolCard = memo(function ToolCard({ tool, theme }) {
+const ToolCard = memo(function ToolCard({ tool, theme }: ToolCardProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [manuallyToggled, setManuallyToggled] = useState(false);
-  const bodyRef = useRef(null);
+  const bodyRef = useRef<HTMLDivElement | null>(null);
 
   const isRunning = tool.status === 'running';
   const isOk = tool.status === 'ok';
   const isErr = tool.status === 'err';
 
-  // Auto-collapse successful cards after a delay (unless user toggled manually)
   useEffect(() => {
     if (!isOk || manuallyToggled) return;
     const timer = setTimeout(() => setCollapsed(true), AUTO_COLLAPSE_MS);
     return () => clearTimeout(timer);
   }, [isOk, manuallyToggled, tool.id]);
 
-  // Don't auto-collapse errors
   useEffect(() => {
     if (isErr) setCollapsed(false);
   }, [isErr, tool.id]);
@@ -55,7 +47,6 @@ const ToolCard = memo(function ToolCard({ tool, theme }) {
 
   return (
     <div className={`tool-card tool-card-${tool.status}`}>
-      {/* Header */}
       <div className="tool-card-header" onClick={toggle}>
         <span className="tool-card-status">
           {isRunning && <span className="tool-card-spinner" />}
@@ -75,7 +66,6 @@ const ToolCard = memo(function ToolCard({ tool, theme }) {
         </span>
       </div>
 
-      {/* Body */}
       {!collapsed && (hasOutput || isRunning) && (
         <div className="tool-card-body" ref={bodyRef}>
           {isRunning && !hasOutput && (
@@ -94,7 +84,6 @@ const ToolCard = memo(function ToolCard({ tool, theme }) {
         </div>
       )}
 
-      {/* Diff preview (write/edit tools) */}
       {!collapsed && hasDiff && (
         <div className="tool-card-diff">
           <CodeBlock
@@ -106,7 +95,6 @@ const ToolCard = memo(function ToolCard({ tool, theme }) {
         </div>
       )}
 
-      {/* Error detail */}
       {!collapsed && isErr && tool.errorDetail && (
         <div className="tool-card-error">{tool.errorDetail}</div>
       )}
@@ -114,10 +102,13 @@ const ToolCard = memo(function ToolCard({ tool, theme }) {
   );
 });
 
+interface ToolOutputProps {
+  output: string;
+  toolName: string;
+  theme?: string;
+}
 
-// -- ToolOutput: dispatches to specialized component based on tool name ---
-
-function ToolOutput({ output, toolName, theme }) {
+function ToolOutput({ output, toolName, theme }: ToolOutputProps) {
   const name = toolName || '';
 
   if (/^search_files\(|^find_symbol\(|^find_usages\(|^semantic_search\(|^web_search\(/.test(name)) {
@@ -133,7 +124,6 @@ function ToolOutput({ output, toolName, theme }) {
     return <AstResult content={output} toolName={name} />;
   }
 
-  // Fallback: generic CodeBlock with wrap
   return <CodeBlock code={output} fontSize="0.72em" toolName={name} theme={theme} wrap={true} />;
 }
 

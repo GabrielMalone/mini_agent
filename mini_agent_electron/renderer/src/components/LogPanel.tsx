@@ -1,12 +1,15 @@
-import { useRef, useEffect, memo } from 'react';
-import LogLine from './LogLine';
+import { useRef, useEffect, memo, type ReactNode } from 'react';
+import LogLine, { type LogLineData } from './LogLine';
 
-/**
- * Auto-scrolling log container -- memoized so it only re-renders when
- * its `lines` or `children` props actually change, not on every parent tick.
- */
-const LogPanel = memo(function LogPanel({ id, className, lines, children }) {
-  const ref = useRef(null);
+interface LogPanelProps {
+  id?: string;
+  className?: string;
+  lines?: LogLineData[];
+  children?: ReactNode;
+}
+
+const LogPanel = memo(function LogPanel({ id, className, lines, children }: LogPanelProps) {
+  const ref = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (ref.current) ref.current.scrollTop = ref.current.scrollHeight;
   }, [lines, children]);

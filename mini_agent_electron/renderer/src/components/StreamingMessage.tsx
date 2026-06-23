@@ -2,23 +2,15 @@ import { useState, useEffect, useRef, memo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
-/**
- * Renders streaming text with markdown.  ReactMarkdown is expensive, so we
- * throttle re-parses to ~80ms intervals.  Key insight: we ALWAYS render
- * ReactMarkdown -- we just update the text fed to it at a lower rate.
- * Toggling between <pre> and ReactMarkdown causes visible flicker because
- * the DOM structure changes (block -> inline reflow).
- *
- * The markdown view lags up to 80ms behind the incoming text, which is
- * imperceptible.  When streaming stops, a final flush catches it up.
- *
- * @param {{ text: string }} props
-*/
-const StreamingMessage = memo(function StreamingMessage({ text }) {
+interface StreamingMessageProps {
+  text: string;
+}
+
+const StreamingMessage = memo(function StreamingMessage({ text }: StreamingMessageProps) {
   const [throttled, setThrottled] = useState('');
   const lastUpdateRef = useRef(0);
-  const pendingRef = useRef(null);
-  const timerRef = useRef(null);
+  const pendingRef = useRef<string | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const now = performance.now();
@@ -28,7 +20,6 @@ const StreamingMessage = memo(function StreamingMessage({ text }) {
       lastUpdateRef.current = now;
       setThrottled(text);
     } else {
-      // Store the latest text but don't render yet
       pendingRef.current = text;
       if (!timerRef.current) {
         const remaining = 80 - elapsed;
@@ -51,7 +42,6 @@ const StreamingMessage = memo(function StreamingMessage({ text }) {
     };
   }, [text]);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
@@ -60,9 +50,6 @@ const StreamingMessage = memo(function StreamingMessage({ text }) {
 
   if (!text || !text.trim()) return null;
 
-  // During active streaming (text differs from throttled), render plain <pre>
-  // to avoid ReactMarkdown parse cost on every throttle tick.
-  // On flush, throttled catches up and we swap to ReactMarkdown.
   const isStreaming = text !== throttled;
 
   return isStreaming ? (
