@@ -4,6 +4,14 @@ Self-modification audit trail -- what the agent changed and why.
 
 ## 2026-06-23
 
+### Fix: Parallel tool hang prevention — timeout on future.result()
+
+- **core/llm.py** `_execute_groups`: Added `future.result(timeout=150)` with TimeoutError and Exception handling. Previously, if one parallel tool thread hung (e.g., git checkpoint lock contention), `as_completed()` blocked forever, freezing the agent loop. Now timed-out tools return a failure ToolResult, and crashed threads are caught gracefully.
+
+### Fix: Pass 2 orphan stripping leaves tool messages behind (API 400)
+
+- **memory/memory_prune.py** `_strip_orphaned_tool_messages` Pass 2: When stripping an orphaned `assistant(tool_calls)`, Pass 2 now also collects ALL `tool_call_id`s of the stripped block and filters their tool messages from the output. Previously, tool messages belonging to stripped assistants survived Pass 2 untouched, then Pass 3 appended them via its `else` branch (pending_ids empty), causing 400 errors: "role 'tool' must be a response to a preceding message with 'tool_calls'". The bug manifested when two `assistant(tool_calls)` blocks were interleaved with a non-tool message and the first block had missing tool results.
+
 ### Fix: Pass 3 pending_ids clobber causing API 400 errors
 
 - **memory/memory_prune.py** `_strip_orphaned_tool_messages` Pass 3: Fixed a bug where `pending_ids` was overwritten (`pending_ids = set()`) when a new `assistant(tool_calls)` arrived while the previous block still had uncollected tool results. This caused tool messages from the first block to appear after the second `assistant(tool_calls)` without a matching `tool_call_id`, triggering 400 errors: "Messages with role 'tool' must be a response to a preceding message with 'tool_calls'". Fixed by merging (`pending_ids.add(tcid)`) instead of clobbering. Also tightened the tool-message guard: tool results whose `tool_call_id` is not in `pending_ids` are now dropped (previously appended unconditionally).
