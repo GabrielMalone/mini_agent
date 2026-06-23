@@ -853,7 +853,7 @@ function AppShell() {
                 {thinking.displayedText && (
                   <div className="thinking-block thinking-block--live">
                     <div className="thinking-block__header">
-                      <span className="thinking-block__chevron">\u25bc</span>
+                      <span className="thinking-block__chevron">{'\u25bc'}</span>
                       <span className="thinking-block__time dim">streaming...</span>
                     </div>
                     <div className="thinking-block__body">
