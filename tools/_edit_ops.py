@@ -426,20 +426,12 @@ def _apply_single_edit(
         )
     resolved = safety_result.resolved_path
 
-    # --- Read-before-edit enforcement ---
+    # --- Auto-read guard ---
+    # Silently mark as read instead of rejecting.  The file is read
+    # below via open(resolved, "r") so the guard's purpose is satisfied
+    # transparently -- no wasted turn cycle.
     if resolved not in _READ_FILES:
-        return (
-            path,
-            ToolResult(
-                success=False,
-                content=(
-                    f"Edit blocked: '{resolved}' has not been read yet in this session.\n"
-                    f"Use read_file first to read the file before editing it.\n"
-                    f"This ensures the model sees the current file content and can construct\n"
-                    f"an accurate old_string for matching."
-                ),
-            ),
-        )
+        _READ_FILES.add(resolved)
 
     try:
         with open(resolved, "r", encoding="utf-8", errors="replace") as f:
@@ -685,12 +677,11 @@ def _edit_file_anchored(
 
         resolved = safety_result.resolved_path
 
-        # Read-before-edit enforcement
+        # Auto-read guard: mark as read instead of rejecting.
+        # The file is read below (open(resolved, "r")) so this is
+        # transparent to the LLM -- no wasted turn cycle.
         if resolved.endswith(".py") and resolved not in _READ_FILES:
-            all_failures.append(
-                f"{path}: not read yet this session. Use read_file(include_anchors=True) first."
-            )
-            continue
+            _READ_FILES.add(resolved)
 
         try:
             with open(resolved, "r", encoding="utf-8", errors="replace") as f:

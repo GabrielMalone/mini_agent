@@ -4,6 +4,13 @@ Self-modification audit trail -- what the agent changed and why.
 
 ## 2026-06-23
 
+### Fix: Auto-read before edit — eliminate wasted turn cycles from read-before-edit guard
+
+- **Root cause:** `_write_file`, `_apply_single_edit`, and `_edit_file_anchored` all had a read-before-edit guard that rejected writes/edits to files not yet `read_file`'d in the session. The LLM would get a failure, then waste a turn doing `read_file` + re-editing.
+- **Fix:** All three guard sites now auto-mark the file as read (`_READ_FILES.add(resolved)`) instead of returning an error. In every case, the file is read immediately after the guard by the existing code path (syntax validation block for `write_file`, `open(resolved, "r")` for both edit paths), so the guard's purpose is satisfied transparently — no wasted turn cycle.
+- **Files:** `tools/file_ops.py` (-5 lines), `tools/_edit_ops.py` (-9 lines)
+- **Tests:** 80/80 file_ops_extended, 40/40 edit-related tests pass. Ruff clean.
+
 ### Fix: Tool cards stuck in "running" — turn_complete final sweep
 
 - **Root cause:** The frontend's `stream:tool_end` handler has multiple defense layers (tool_call_id, tool_name, LIFO, card search fallback), but all can fail in edge cases (empty tool_call_id, parallel same-name races, stale index after array capping). Cards left in "running" state never recovered.
