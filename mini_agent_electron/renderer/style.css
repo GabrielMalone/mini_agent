@@ -214,9 +214,169 @@
   --overlay:        #272822;
 }
 
+/* -- One Dark Pro ---------------------------------------------------------- */
+[data-theme="one-dark"] {
+  --bg:             #282c34;
+  --bg-rgb:         40, 44, 52;
+  --surface:        #21252b;
+  --surface-rgb:    33, 37, 43;
+  --border:         #181a1f;
+  --accent:         #61afef;
+  --accent-rgb:     97, 175, 239;
+  --text:           #abb2bf;
+  --dim:            #5c6370;
+  --green:          #98c379;
+  --yellow:         #e5c07b;
+  --red:            #e06c75;
+  --thinking:       #5c6370;
+  --pulse:          #61afef;
+  --final-thought:  #abb2bf;
+  --overlay:        #282c34;
+}
+
+/* -- GitHub Dark ----------------------------------------------------------- */
+[data-theme="github-dark"] {
+  --bg:             #0d1117;
+  --bg-rgb:         13, 17, 23;
+  --surface:        #161b22;
+  --surface-rgb:    22, 27, 34;
+  --border:         #30363d;
+  --accent:         #58a6ff;
+  --accent-rgb:     88, 166, 255;
+  --text:           #c9d1d9;
+  --dim:            #8b949e;
+  --green:          #3fb950;
+  --yellow:         #d2991d;
+  --red:            #f85149;
+  --thinking:       #8b949e;
+  --pulse:          #58a6ff;
+  --final-thought:  #c9d1d9;
+  --overlay:        #0d1117;
+}
+
+/* -- Night Owl ------------------------------------------------------------- */
+[data-theme="night-owl"] {
+  --bg:             #011627;
+  --bg-rgb:         1, 22, 39;
+  --surface:        #01111d;
+  --surface-rgb:    1, 17, 29;
+  --border:         #1d3b53;
+  --accent:         #82aaff;
+  --accent-rgb:     130, 170, 255;
+  --text:           #d6deeb;
+  --dim:            #637777;
+  --green:          #c5e478;
+  --yellow:         #ffc98b;
+  --red:            #ef5350;
+  --thinking:       #637777;
+  --pulse:          #82aaff;
+  --final-thought:  #d6deeb;
+  --overlay:        #011627;
+}
+
+/* -- Everforest Dark ------------------------------------------------------- */
+[data-theme="everforest"] {
+  --bg:             #2d353b;
+  --bg-rgb:         45, 53, 59;
+  --surface:        #232a2e;
+  --surface-rgb:    35, 42, 46;
+  --border:         #3d484d;
+  --accent:         #a7c080;
+  --accent-rgb:     167, 192, 128;
+  --text:           #d3c6aa;
+  --dim:            #7a8478;
+  --green:          #a7c080;
+  --yellow:         #dbbc7f;
+  --red:            #e67e80;
+  --thinking:       #7a8478;
+  --pulse:          #a7c080;
+  --final-thought:  #d3c6aa;
+  --overlay:        #2d353b;
+}
+
+/* -- Ayu Mirage ------------------------------------------------------------ */
+[data-theme="ayu-mirage"] {
+  --bg:             #1f2430;
+  --bg-rgb:         31, 36, 48;
+  --surface:        #171b24;
+  --surface-rgb:    23, 27, 36;
+  --border:         #2a2e3a;
+  --accent:         #ffcc66;
+  --accent-rgb:     255, 204, 102;
+  --text:           #cbccc6;
+  --dim:            #707a8c;
+  --green:          #bae67e;
+  --yellow:         #ffd580;
+  --red:            #f28779;
+  --thinking:       #707a8c;
+  --pulse:          #ffcc66;
+  --final-thought:  #cbccc6;
+  --overlay:        #1f2430;
+}
+
+/* -- Shades of Purple ------------------------------------------------------ */
+[data-theme="shades-of-purple"] {
+  --bg:             #2d2b55;
+  --bg-rgb:         45, 43, 85;
+  --surface:        #1e1d3f;
+  --surface-rgb:    30, 29, 63;
+  --border:         #3a3775;
+  --accent:         #fad000;
+  --accent-rgb:     250, 208, 0;
+  --text:           #ffffff;
+  --dim:            #a599e9;
+  --green:          #9eff91;
+  --yellow:         #fad000;
+  --red:            #ff628c;
+  --thinking:       #a599e9;
+  --pulse:          #fad000;
+  --final-thought:  #ffffff;
+  --overlay:        #2d2b55;
+}
+
+/* -- Synthwave 84 ---------------------------------------------------------- */
+[data-theme="synthwave"] {
+  --bg:             #262335;
+  --bg-rgb:         38, 35, 53;
+  --surface:        #1e1b2e;
+  --surface-rgb:    30, 27, 46;
+  --border:         #3d2b5a;
+  --accent:         #ff7edb;
+  --accent-rgb:     255, 126, 219;
+  --text:           #ffffff;
+  --dim:            #848bbd;
+  --green:          #72f1b8;
+  --yellow:         #ffcc00;
+  --red:            #fe4450;
+  --thinking:       #848bbd;
+  --pulse:          #ff7edb;
+  --final-thought:  #ffffff;
+  --overlay:        #262335;
+}
+
+/* -- Kanagawa -------------------------------------------------------------- */
+[data-theme="kanagawa"] {
+  --bg:             #1f1f28;
+  --bg-rgb:         31, 31, 40;
+  --surface:        #16161d;
+  --surface-rgb:    22, 22, 29;
+  --border:         #363646;
+  --accent:         #7e9cd8;
+  --accent-rgb:     126, 156, 216;
+  --text:           #dcd7ba;
+  --dim:            #727169;
+  --green:          #98bb6c;
+  --yellow:         #e6c384;
+  --red:            #c34043;
+  --thinking:       #727169;
+  --pulse:          #7e9cd8;
+  --final-thought:  #dcd7ba;
+  --overlay:        #1f1f28;
+}
+
 /* ---------------------------------------------------------------------------
-   Reset & Base
-   --------------------------------------------------------------------------- */
+  Reset & Base
+  --------------------------------------------------------------------------- */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 html, body {

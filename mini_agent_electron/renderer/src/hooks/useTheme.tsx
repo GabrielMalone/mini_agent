@@ -14,6 +14,14 @@ const THEME_COLORS: Record<string, string> = {
   solarized:    '#2aa198',
   'tokyo-night':'#7aa2f7',
   monokai:      '#a6e22e',
+  'one-dark':         '#61afef',
+  'github-dark':       '#58a6ff',
+  'night-owl':         '#82aaff',
+  everforest:          '#a7c080',
+  'ayu-mirage':        '#ffcc66',
+  'shades-of-purple':  '#fad000',
+  synthwave:           '#ff7edb',
+  kanagawa:            '#7e9cd8',
 };
 
 export const THEMES: ThemeEntry[] = [
@@ -27,6 +35,14 @@ export const THEMES: ThemeEntry[] = [
   { name: 'Solarized',    id: 'solarized',    icon: <svg viewBox="0 0 12 12" width="10" height="10"><circle cx="6" cy="6" r="4" fill={THEME_COLORS.solarized}/></svg> },
   { name: 'Tokyo Night',  id: 'tokyo-night',  icon: <svg viewBox="0 0 12 12" width="10" height="10"><circle cx="6" cy="6" r="4" fill={THEME_COLORS['tokyo-night']}/></svg> },
   { name: 'Monokai',      id: 'monokai',      icon: <svg viewBox="0 0 12 12" width="10" height="10"><circle cx="6" cy="6" r="4" fill={THEME_COLORS.monokai}/></svg> },
+  { name: 'One Dark Pro',       id: 'one-dark',         icon: <svg viewBox="0 0 12 12" width="10" height="10"><circle cx="6" cy="6" r="4" fill={THEME_COLORS['one-dark']}/></svg> },
+  { name: 'GitHub Dark',         id: 'github-dark',      icon: <svg viewBox="0 0 12 12" width="10" height="10"><circle cx="6" cy="6" r="4" fill={THEME_COLORS['github-dark']}/></svg> },
+  { name: 'Night Owl',           id: 'night-owl',        icon: <svg viewBox="0 0 12 12" width="10" height="10"><circle cx="6" cy="6" r="4" fill={THEME_COLORS['night-owl']}/></svg> },
+  { name: 'Everforest',          id: 'everforest',       icon: <svg viewBox="0 0 12 12" width="10" height="10"><circle cx="6" cy="6" r="4" fill={THEME_COLORS.everforest}/></svg> },
+  { name: 'Ayu Mirage',          id: 'ayu-mirage',       icon: <svg viewBox="0 0 12 12" width="10" height="10"><circle cx="6" cy="6" r="4" fill={THEME_COLORS['ayu-mirage']}/></svg> },
+  { name: 'Shades of Purple',    id: 'shades-of-purple', icon: <svg viewBox="0 0 12 12" width="10" height="10"><circle cx="6" cy="6" r="4" fill={THEME_COLORS['shades-of-purple']}/></svg> },
+  { name: 'Synthwave 84',        id: 'synthwave',        icon: <svg viewBox="0 0 12 12" width="10" height="10"><circle cx="6" cy="6" r="4" fill={THEME_COLORS.synthwave}/></svg> },
+  { name: 'Kanagawa',            id: 'kanagawa',         icon: <svg viewBox="0 0 12 12" width="10" height="10"><circle cx="6" cy="6" r="4" fill={THEME_COLORS.kanagawa}/></svg> },
 ];
 
 function setThemeDom(id: string): void {
