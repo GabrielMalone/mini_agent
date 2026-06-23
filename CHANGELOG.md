@@ -11,6 +11,13 @@ Self-modification audit trail -- what the agent changed and why.
 - **Files:** `mini_agent_electron/renderer/src/App.tsx` (+5 lines)
 - **Tests:** Build + smoke test PASS. TypeScript compiles clean (0 new errors).
 
+### Fix: Input disabled after /sh commands — shell_output handler now re-enables
+
+- **Root cause:** `/sh` commands send `shell_output` IPC messages, not `backend:response`. The previous fix (above) only added re-enable logic to the `backend:response` handler. `/sh ls`, `/sh cat`, etc. would leave input frozen until the 120s timeout.
+- **Fix:** `stream:shell_output` handler now calls `clearTimeout(submitTimeoutRef)`, `setIsLive(false)`, `setInputDisabled(false)`, and `inputRef.current?.focus()` when `data.exit_code !== undefined` (the final message from the backend).
+- **Files:** `mini_agent_electron/renderer/src/App.tsx` (+6 lines)
+- **Tests:** Build + smoke test PASS.
+
 ### Fix: Streaming text wrapping — eliminate "one long unbroken line" during token streaming
 
 - **Root cause 1:** `StreamingMessage` and `DeferredMarkdown` used `<pre>` with only `white-space: pre-wrap` which doesn't break long unbroken tokens (code, paths, URLs). Changed to `<div>` with `word-break: break-word; overflow-wrap: break-word`.
