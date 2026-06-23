@@ -4,6 +4,12 @@ Self-modification audit trail -- what the agent changed and why.
 
 ## 2026-06-23
 
+### Fix: Tool cards stuck in "running" — turn_complete final sweep
+
+- **Root cause:** The frontend's `stream:tool_end` handler has multiple defense layers (tool_call_id, tool_name, LIFO, card search fallback), but all can fail in edge cases (empty tool_call_id, parallel same-name races, stale index after array capping). Cards left in "running" state never recovered.
+- **Fix:** Added a final sweep in `stream:turn_complete` that marks any cards still with `status === 'running'` as `ok` with an endTime. When a turn completes, all tools are definitely done.
+- **Files:** `mini_agent_electron/renderer/src/App.tsx`
+
 ### Fix: New session creation via UI always fails
 
 - **Root cause:** `session:new` and `session:switch` IPC handlers used `ipcMain.handle()` but never returned a value; the Python backend processed the session but never sent a response message. The renderer's `ipcRenderer.invoke()` promise resolved with undefined, but the session list never updated.

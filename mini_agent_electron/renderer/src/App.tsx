@@ -445,6 +445,18 @@ function AppShell() {
       setIsLive(false);
       setInputDisabled(false);
       inputRef.current?.focus();
+      // Final sweep: mark any cards still "running" as ok (turn done = all tools done)
+      setToolCards((prev) => {
+        let changed = false;
+        const updated = prev.map((card) => {
+          if (card.status === 'running') {
+            changed = true;
+            return { ...card, status: 'ok' as const, endTime: Date.now() };
+          }
+          return card;
+        });
+        return changed ? updated : prev;
+      });
     }));
 
     unsubs.push(api.on('stream:error', (data) => {
