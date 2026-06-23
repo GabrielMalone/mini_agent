@@ -167,8 +167,13 @@ export interface ChatBlock {
   output: string;
   status: 'ok' | 'err' | 'running';
   timestamp: number;
-  toolCards?: ToolCardData[];
-  thinkingBlocks?: string[];
+}
+
+export interface ThinkingBlock {
+  id: number;
+  text: string;
+  timestamp: number;
+  collapsed?: boolean;
 }
 
 // ---- User commands / shell output ------------------------------------------

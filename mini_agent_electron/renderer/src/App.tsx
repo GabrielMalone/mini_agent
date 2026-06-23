@@ -1,17 +1,17 @@
 import { useState, useRef, useEffect, useCallback, startTransition, useDeferredValue } from 'react';
-import type { ChatBlock, UserCommand, ShellOutputEntry, ToolCardData, BackendStatusData, BalanceData } from './types';
+import type { ChatBlock, ThinkingBlock, UserCommand, ShellOutputEntry, ToolCardData, BackendStatusData, BalanceData } from './types';
 import useSmoothStream from './hooks/useSmoothStream';
 import useTheme from './hooks/useTheme';
 import TerminalBlock from './components/TerminalBlock';
 import ErrorBoundary from './components/ErrorBoundary';
 import SettingsPanel from './components/SettingsPanel';
 import ToolCard from './components/ToolCard';
+import DeferredMarkdown from './components/DeferredMarkdown';
 import Header from './components/Header';
 import StatusBar from './components/StatusBar';
 import TerminalPanel from './components/TerminalPanel';
 import RoundedFrame from './components/RoundedFrame';
 import AgentTree from './components/AgentTree';
-import CharStream from './components/CharStream';
 
 
 // ---------------------------------------------------------------------------
@@ -59,7 +59,8 @@ function AppShell() {
   const [turnCountVal, setTurnCountVal] = useState<number | null>(null);
   const [elapsedSec, setElapsedSec] = useState<number | null>(null);
   const [inputDisabled, setInputDisabled] = useState(false);
-  const [thinkingBlocks, setThinkingBlocks] = useState<string[]>([]);
+  const [thinkingBlocks, setThinkingBlocks] = useState<ThinkingBlock[]>([]);
+  const thinkingIdCounterRef = useRef(0);
   const deferredThinkingBlocks = useDeferredValue(thinkingBlocks);
   const [botStatus, setBotStatus] = useState<Record<string, boolean>>({});
   const [provider, setProvider] = useState('deepseek');
@@ -184,7 +185,10 @@ function AppShell() {
     unsubs.push(api.on('stream:thinking_end', () => {
       inThinkingRef.current = false;
       const flushed = thinking.flush();
-      if (flushed) startTransition(() => setThinkingBlocks((prev) => [...prev.slice(-99), flushed]));
+      if (flushed) {
+        const id = ++thinkingIdCounterRef.current;
+        startTransition(() => setThinkingBlocks((prev) => [...prev.slice(-49), { id, text: flushed, timestamp: Date.now() }]));
+      }
     }));
 
     unsubs.push(api.on('stream:tool_start', (data) => {
@@ -730,7 +734,10 @@ function AppShell() {
     inThinkingRef.current = false;
     const agentText = chatStream.flush();
     const thinkText = thinking.flush();
-    if (thinkText) startTransition(() => setThinkingBlocks((prev) => [...prev.slice(-99), thinkText]));
+    if (thinkText) {
+      const id = ++thinkingIdCounterRef.current;
+      startTransition(() => setThinkingBlocks((prev) => [...prev.slice(-49), { id, text: thinkText, timestamp: Date.now() }]));
+    }
     thinking.reset();
     const activeId = activeBlockIdRef.current;
     if (agentText) {
@@ -756,7 +763,7 @@ function AppShell() {
   useEffect(() => {
     const el = thinkingLogRef.current;
     if (el) requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
-  }, [thinking.displayedText]);
+  }, [thinkingBlocks, thinking.displayedText]);
 
   // Auto-scroll chat log
   useEffect(() => {
@@ -805,10 +812,41 @@ function AppShell() {
           <RoundedFrame id="thinking-frame">
             <div ref={thinkingLogRef} className="thinking-log">
               <div className="frame-content">
-                {deferredThinkingBlocks.map((block, i) => (
-                  <CharStream key={i} text={block} className="thinking" />
+                {deferredThinkingBlocks.map((block) => (
+                  <div key={block.id} className="thinking-block">
+                    <div
+                      className="thinking-block__header"
+                      onClick={() => {
+                        startTransition(() =>
+                          setThinkingBlocks((prev) =>
+                            prev.map((b) => (b.id === block.id ? { ...b, collapsed: !b.collapsed } : b))
+                          )
+                        );
+                      }}
+                      role="button"
+                      tabIndex={0}
+                    >
+                      <span className="thinking-block__chevron">{block.collapsed ? '\u25b6' : '\u25bc'}</span>
+                      <span className="thinking-block__time dim">{new Date(block.timestamp).toLocaleTimeString()}</span>
+                    </div>
+                    {!block.collapsed && (
+                      <div className="thinking-block__body">
+                        <DeferredMarkdown text={block.text} cls="thinking" />
+                      </div>
+                    )}
+                  </div>
                 ))}
-                {thinking.displayedText && <CharStream text={thinking.displayedText} className="thinking" />}
+                {thinking.displayedText && (
+                  <div className="thinking-block thinking-block--live">
+                    <div className="thinking-block__header">
+                      <span className="thinking-block__chevron">\u25bc</span>
+                      <span className="thinking-block__time dim">streaming...</span>
+                    </div>
+                    <div className="thinking-block__body">
+                      <DeferredMarkdown text={thinking.displayedText} cls="thinking" />
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </RoundedFrame>

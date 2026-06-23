@@ -687,6 +687,45 @@ html, body {
   );
 }
 
+/* Thinking blocks -- collapsible markdown chunks */
+.thinking-block {
+  margin-bottom: 4px;
+}
+
+.thinking-block__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  padding: 2px 0;
+  user-select: none;
+  opacity: 0.7;
+}
+.thinking-block__header:hover {
+  opacity: 1;
+}
+
+.thinking-block__chevron {
+  font-size: 0.7em;
+  width: 14px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.thinking-block__time {
+  font-size: 0.75em;
+}
+
+.thinking-block__body {
+  padding-left: 20px;
+  font-size: 0.85em;
+  line-height: 1.4;
+}
+
+.thinking-block--live .thinking-block__body {
+  opacity: 0.85;
+}
+
 /* Hide scrollbars everywhere (Windows + macOS + Linux) */
 * {
   scrollbar-width: none;               /* Firefox */

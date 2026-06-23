@@ -1,7 +1,7 @@
 import { memo, type ReactNode } from 'react';
 import DeferredMarkdown from './DeferredMarkdown';
 import StreamingMessage from './StreamingMessage';
-import ToolCard from './ToolCard';
+
 import HighlightedTerminalOutput from './HighlightedTerminalOutput';
 import type { ChatBlock } from '../types';
 
@@ -33,7 +33,7 @@ const TerminalBlock = memo(function TerminalBlock({
   onEdit,
   theme,
 }: TerminalBlockProps) {
-  const { id, command, output, status, timestamp, toolCards, thinkingBlocks } = block;
+  const { id, command, output, status, timestamp } = block;
   const notchColor = STATUS_COLORS[status] || 'var(--dim)';
 
   const displayOutput = isRunning ? (streamingOutput || output) : output;
@@ -91,21 +91,7 @@ const TerminalBlock = memo(function TerminalBlock({
           </div>
         )}
 
-        {toolCards && toolCards.length > 0 && (
-          <div className="terminal-block__tools">
-            {toolCards.map((card) => (
-              <ToolCard key={card.id} tool={card} theme={theme} />
-            ))}
-          </div>
-        )}
 
-        {thinkingBlocks && thinkingBlocks.length > 0 && (
-          <div className="terminal-block__thinking">
-            {thinkingBlocks.map((text, i) => (
-              <div key={i} className="terminal-block__think-chunk">{text}</div>
-            ))}
-          </div>
-        )}
       </div>
     </div>
   );
