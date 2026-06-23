@@ -876,6 +876,11 @@ def run_agent_turn(
 
     clear_idempotent()
 
+    # --- Auto-start golden trace recording ---
+    from tools import start_trace as _start_trace
+
+    _start_trace()
+
     # --- Console title hint for glazewm/zebar workspace detection ---
     # Set the terminal/console title so glazewm can detect when the agent is
     # actively processing a turn (via the "[RUNNING]" marker in the title).
@@ -1026,6 +1031,13 @@ def run_agent_turn(
 
         # No hard cap -- runs until agent stops calling tools or is cancelled
     finally:
+        # --- Save golden trace ---
+        try:
+            from tools import stop_trace as _stop_trace
+
+            _stop_trace()
+        except Exception:
+            pass
         # Restore console title (glazewm detection marker)
         _set_console_title("mini_agent")
         # Only close the session if we created it; caller-managed sessions

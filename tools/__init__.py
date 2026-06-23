@@ -40,6 +40,66 @@ from logging_setup import (
 
 _log = get_logger("tools")
 
+# ── Trace recorder integration ──────────────────────────────────
+# Set by start_trace(), read by execute_tool() on every success.
+_TRACE_RECORDER = None  # TraceRecorder | None
+
+
+def start_trace(name: str = "auto"):
+    """Begin recording tool calls for golden trace regression testing."""
+    from tools.trace_replay import TraceRecorder  # noqa: F811
+
+    global _TRACE_RECORDER
+    _TRACE_RECORDER = TraceRecorder(name)
+    return _TRACE_RECORDER
+
+
+def stop_trace():
+    """Stop recording, save, and auto-compare against previous golden trace."""
+    global _TRACE_RECORDER
+    if _TRACE_RECORDER is None:
+        return None
+
+    from tools.trace_replay import TraceReplayer
+
+    current_tool_names = _TRACE_RECORDER.tool_names
+
+    # Load previous trace BEFORE saving (save overwrites the file)
+    previous_tools: list[str] | None = None
+    try:
+        replayer = TraceReplayer("auto")
+        trace_file = replayer._storage_dir / "auto.json"
+        if trace_file.exists():
+            replayer.load()
+            previous_tools = [c["tool"] for c in replayer._trace.tool_calls]
+    except Exception:
+        pass
+
+    path = _TRACE_RECORDER.save()
+    _TRACE_RECORDER = None
+
+    # Auto-compare against the previous golden trace (drift detection)
+    if previous_tools is not None:
+        try:
+            result = replayer.compare(current_tool_names)
+            pct = result.drift_percentage
+            if pct == 0:
+                summary = "[trace] identical to previous run"
+            elif pct < 20:
+                summary = f"[trace] {pct:.0f}% drift from previous run"
+            else:
+                summary = f"[trace] {pct:.0f}% drift"
+            print(f"  {summary}", flush=True)
+        except Exception:
+            pass  # Never let trace comparison break the agent
+
+    return path
+
+
+def get_trace_recorder():
+    """Return the active trace recorder, if any."""
+    return _TRACE_RECORDER
+
 # Hardcoded core schema for remember -- always present even if schema.py is missing
 # Bootstrap guard: if the canonical "remember" schema is missing from schema.py
 # (e.g. corrupted install), insert a minimal fallback so the tool still works.
@@ -1005,6 +1065,12 @@ def execute_tool(
         _learn_from_failure(name, result, args)
     else:
         log_tool_success(name)
+        # --- Record to golden trace if active ---
+        if _TRACE_RECORDER is not None:
+            try:
+                _TRACE_RECORDER.record_tool_call(name, args, result=result.content)
+            except Exception:
+                _log.warning("trace recorder failed for %s", name, exc_info=True)
         # --- Store idempotent result for write tools (2026 best practice) ---
         from tools.idempotency import store_idempotent, _IDEMPOTENT_TOOLS as _IDEM_TOOLS
 
