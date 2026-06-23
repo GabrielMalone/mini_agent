@@ -54,7 +54,7 @@ function ansiToElements(text) {
       const style = {
         color: seg.fg ? ANSI_COLORS[seg.fg]?.color || seg.fg : undefined,
         backgroundColor: seg.bg ? ANSI_COLORS[seg.bg]?.color || seg.bg : undefined,
-        fontWeight: seg.decoration === 'bold' || seg.decoration === 'bold' ? 'bold' : undefined,
+        fontWeight: seg.decoration === 'bold' ? 'bold' : undefined,
         opacity: seg.decoration === 'dim' ? 0.55 : undefined,
         fontStyle: seg.decoration === 'italic' ? 'italic' : undefined,
         textDecoration: seg.decoration === 'underline' ? 'underline' : undefined,

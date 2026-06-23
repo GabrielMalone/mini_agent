@@ -354,7 +354,16 @@ const ShellInput = forwardRef(function ShellInput({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [disabled]);
 
-  // --- sync external value changes -----------------------------------------
+  // --- sync placeholder changes without full editor rebuild ---
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({
+      effects: placeholderCompartment.current.reconfigure(
+        placeholderExt(placeholder)
+      ),
+    });
+  }, [placeholder]);
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;

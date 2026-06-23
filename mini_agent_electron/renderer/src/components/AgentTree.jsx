@@ -173,9 +173,6 @@ function AgentTreeInner({ agents }) {
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [hoveredAgent, setHoveredAgent] = useState(null);
   const [tooltipPos, setTooltipPos] = useState(null);
-  const [debugInfo, setDebugInfo] = useState({
-    agentCount: 0, nodeCount: 0, edgeCount: 0, error: '',
-  });
 
   const { fitView } = useReactFlow();
   const prevCountRef = useRef(0);
@@ -186,7 +183,6 @@ function AgentTreeInner({ agents }) {
     if (ids.length === 0) {
       setNodes([]);
       setEdges([]);
-      setDebugInfo({ agentCount: 0, nodeCount: 0, edgeCount: 0, error: 'empty' });
       return;
     }
 
@@ -267,12 +263,6 @@ function AgentTreeInner({ agents }) {
 
         setNodes(newNodes);
         setEdges(newEdges);
-        setDebugInfo({
-          agentCount: ids.length,
-          nodeCount: newNodes.length,
-          edgeCount: newEdges.length,
-          error: '',
-        });
 
         // Auto-fit on first load or when agent count changes
         if (prevCountRef.current !== ids.length) {
@@ -283,10 +273,6 @@ function AgentTreeInner({ agents }) {
         }
       } catch (err) {
         console.error('[AgentTree] ELK layout failed:', err);
-        setDebugInfo({
-          agentCount: ids.length, nodeCount: 0, edgeCount: 0,
-          error: err?.message || String(err),
-        });
       }
     }
 

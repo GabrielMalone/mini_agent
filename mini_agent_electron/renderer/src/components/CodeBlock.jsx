@@ -72,7 +72,10 @@ export const EXT_TO_LANG = {
 };
 
 export function guessLanguage(toolName, code) {
-  const content = code || '';
+  // Fast path: no code to inspect
+  if (!code) return 'text';
+
+  const content = code;
   const firstLine = content.trimStart().split('\n')[0];
 
   // Shebang lines

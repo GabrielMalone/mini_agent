@@ -56,9 +56,16 @@ const StreamingMessage = memo(function StreamingMessage({ text }) {
 
   if (!text || !text.trim()) return null;
 
-  // Always render ReactMarkdown with the throttled text.
-  // When streaming ends, throttled === text and we show the final version.
-  return (
+  // During active streaming (text differs from throttled), render plain <pre>
+  // to avoid ReactMarkdown parse cost on every throttle tick.
+  // On flush, throttled catches up and we swap to ReactMarkdown.
+  const isStreaming = text !== throttled;
+
+  return isStreaming ? (
+    <pre style={{ whiteSpace: 'pre-wrap', margin: 0, fontFamily: 'inherit', fontSize: 'inherit' }}>
+      {text}
+    </pre>
+  ) : (
     <ReactMarkdown remarkPlugins={[remarkGfm]}>
       {throttled || text}
     </ReactMarkdown>

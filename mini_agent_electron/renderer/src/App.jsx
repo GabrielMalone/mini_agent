@@ -34,6 +34,7 @@ function AppShell() {
   // Each card: { id, toolName, toolArgs, status, output, startTime, endTime, diffPreview, errorDetail }
   const [toolCards, setToolCards] = useState([]);
   const toolCardIdRef = useRef(0);
+  const toolCardIndexRef = useRef(new Map()); // cardId -> array index for O(1) lookup
 
   // Deferred values keep the UI responsive during heavy streaming
   const deferredBlocks = useDeferredValue(blocks);
@@ -194,10 +195,14 @@ function AppShell() {
       }
       const cardId = ++toolCardIdRef.current;
       startTransition(() => {
-        setToolCards((prev) => [...prev, {
-          id: cardId, toolName, toolArgs, status: 'running', output: '',
-          startTime: Date.now(), endTime: null, diffPreview: null, errorDetail: null,
-        }]);
+        setToolCards((prev) => {
+          const idx = prev.length;
+          toolCardIndexRef.current.set(cardId, idx);
+          return [...prev, {
+            id: cardId, toolName, toolArgs, status: 'running', output: '',
+            startTime: Date.now(), endTime: null, diffPreview: null, errorDetail: null,
+          }];
+        });
       });
       toolOutputStack.current.push({ cardId, buffer: '' });
     }));
@@ -208,14 +213,22 @@ function AppShell() {
       const top = stack[stack.length - 1];
       top.buffer += data.line || '';
       startTransition(() => {
-        setToolCards((prev) =>
-          prev.map((c) => c.id === top.cardId ? { ...c, output: top.buffer } : c)
-        );
+        setToolCards((prev) => {
+          const idx = toolCardIndexRef.current.get(top.cardId);
+          if (idx == null) return prev; // card removed, skip
+          const card = prev[idx];
+          if (!card || card.id !== top.cardId) return prev;
+          const updated = [...prev];
+          updated[idx] = { ...card, output: top.buffer };
+          return updated;
+        });
       });
     }));
 
     unsubs.push(api.on('stream:tool_end', (data) => {
       const stack = toolOutputStack.current;
+      // Guard: if tool_end fires without a matching tool_start, don't silently drop
+      if (stack.length === 0) return;
       let cardId = null;
       let finalBuffer = '';
       while (stack.length > 0) {
@@ -231,11 +244,15 @@ function AppShell() {
         const diffPreview = data.diff_preview || null;
         const errorDetail = !data.ok ? (data.detail || '') : '';
         startTransition(() => {
-          setToolCards((prev) =>
-            prev.map((c) =>
-              c.id === cardId ? { ...c, status, endTime: now, output: code, diffPreview, errorDetail } : c
-            )
-          );
+          setToolCards((prev) => {
+            const idx = toolCardIndexRef.current.get(cardId);
+            if (idx == null) return prev;
+            const card = prev[idx];
+            if (!card || card.id !== cardId) return prev;
+            const updated = [...prev];
+            updated[idx] = { ...card, status, endTime: now, output: code, diffPreview, errorDetail };
+            return updated;
+          });
         });
       }
     }));

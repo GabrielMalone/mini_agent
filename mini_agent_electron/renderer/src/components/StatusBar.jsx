@@ -1,5 +1,6 @@
-import { useRef, useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import SessionPicker from './SessionPicker';
+import useDropdownPosition from '../hooks/useDropdownPosition';
 
 const BOT_SCRIPTS = { 'mini-agent': 'workspace_bot.py', 'emotion-game': 'discord_bot.py' };
 
@@ -11,8 +12,7 @@ export default function StatusBar({
   handleWorkspaceClick, handleSessionSwitch,
 }) {
   const [botMenuOpen, setBotMenuOpen] = useState(false);
-  const botMenuToggleRef = useRef(null);
-  const [botMenuPos, setBotMenuPos] = useState(null);
+  const [botMenuPos, botMenuToggleRef] = useDropdownPosition(botMenuOpen);
   // plan UI removed — plan feature doesn't work
 
   const handleBotToggle = useCallback(async (botName) => {
@@ -32,24 +32,6 @@ export default function StatusBar({
       setBotStatus((prev) => ({ ...prev, [botName]: current }));
     }
   }, [botStatus, setBotStatus]);
-
-  // Position the bot menu relative to the bot indicators span
-  useEffect(() => {
-    if (!botMenuOpen || !botMenuToggleRef.current) {
-      setBotMenuPos(null);
-      return;
-    }
-    const rect = botMenuToggleRef.current.getBoundingClientRect();
-    const menuW = 200;
-    let left = rect.left;
-    if (left + menuW > window.innerWidth - 8) {
-      left = Math.max(4, window.innerWidth - menuW - 8);
-    }
-    setBotMenuPos({
-      bottom: window.innerHeight - rect.top + 4,
-      left,
-    });
-  }, [botMenuOpen]);
 
   // Close bot menu on outside click
   useEffect(() => {
