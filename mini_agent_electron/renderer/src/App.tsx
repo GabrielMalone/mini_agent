@@ -88,6 +88,8 @@ function AppShell() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const turnStartRef = useRef<number | null>(null);
   const toolOutputStack = useRef<Array<{ cardId: number; buffer: string; toolName: string }>>([]); // stack of buffers for parallel tool calls
+  const orphanOutputs = useRef<Array<{ toolName: string; lines: string[] }>>([]); // buffered output lines before tool_start arrives
+  const orphanTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null); // timeout to flush orphans
   const lineIdRef = useRef(0); // monotonically increasing ID for stable React keys
   const nextLineId = useCallback(() => ++lineIdRef.current, []);
 
@@ -189,34 +191,97 @@ function AppShell() {
       // Prefer explicit tool_name from backend; fall back to parsing summary
       const toolName = data.tool_name || (() => {
         const s = data.summary || '?';
-        const parenIdx = s.indexOf('(');
+        const parenIdx = s.lastIndexOf('(');
         return parenIdx > 0 ? s.slice(0, parenIdx) : s;
       })();
       const toolArgs = (() => {
         const s = data.summary || '';
-        const parenIdx = s.indexOf('(');
+        const parenIdx = s.lastIndexOf('(');
         return parenIdx > 0 ? s.slice(parenIdx) : '';
       })();
       const cardId = ++toolCardIdRef.current;
+      // Set a data-enter attribute for CSS animation targeting
+      // (avoids nth-child animation churn on new card insertion)
+      const cardWithEnter: any = {
+        id: cardId, toolName, toolArgs, status: 'running', output: '',
+        startTime: Date.now(), endTime: null, diffPreview: null, errorDetail: null,
+        _enter: true,
+      };
       startTransition(() => {
         setToolCards((prev) => {
-          const idx = prev.length;
+          // Cap at 50 cards to prevent unbounded growth
+          const capped = prev.length >= 50 ? prev.slice(prev.length - 49) : prev;
+          // Clean up index entries for pruned cards
+          if (prev.length >= 50) {
+            const keptIds = new Set(capped.map((c) => c.id));
+            for (const id of toolCardIndexRef.current.keys()) {
+              if (!keptIds.has(id)) toolCardIndexRef.current.delete(id);
+            }
+          }
+          const idx = capped.length;
           toolCardIndexRef.current.set(cardId, idx);
-          return [...prev, {
-            id: cardId, toolName, toolArgs, status: 'running', output: '',
-            startTime: Date.now(), endTime: null, diffPreview: null, errorDetail: null,
-          }];
+          return [...capped, cardWithEnter];
         });
       });
       toolOutputStack.current.push({ cardId, buffer: '', toolName });
+
+      // Drain any orphan output lines buffered before tool_start arrived
+      const orphans = orphanOutputs.current;
+      const matchedOrphans = orphans.filter((o) => o.toolName === toolName);
+      if (matchedOrphans.length > 0) {
+        const entry = toolOutputStack.current.find((e) => e.cardId === cardId);
+        if (entry) {
+          const merged = matchedOrphans.flatMap((o) => o.lines).join('');
+          entry.buffer += merged;
+          startTransition(() => {
+            setToolCards((prev) => {
+              const idx = toolCardIndexRef.current.get(cardId);
+              if (idx == null) return prev;
+              const card = prev[idx];
+              if (!card || card.id !== cardId) return prev;
+              const updated = [...prev];
+              updated[idx] = { ...card, output: entry.buffer };
+              return updated;
+            });
+          });
+        }
+        // Remove consumed orphans
+        orphanOutputs.current = orphans.filter((o) => o.toolName !== toolName);
+      }
+
+      // Clear orphan flush timeout if no orphans remain
+      if (orphanOutputs.current.length === 0 && orphanTimeoutRef.current) {
+        clearTimeout(orphanTimeoutRef.current);
+        orphanTimeoutRef.current = null;
+      }
     }));
 
     unsubs.push(api.on('stream:tool_output', (data) => {
       const stack = toolOutputStack.current;
-      if (stack.length === 0) return;
+      const tName = (data as any).tool_name || '';
+
+      // If stack is empty, buffer as orphan — tool_start hasn't arrived yet (IPC race)
+      if (stack.length === 0) {
+        if (tName) {
+          let orphan = orphanOutputs.current.find((o) => o.toolName === tName);
+          if (!orphan) {
+            orphan = { toolName: tName, lines: [] };
+            orphanOutputs.current.push(orphan);
+          }
+          orphan.lines.push(data.line || '');
+          // Set a 5s timeout to flush orphans as a safety net
+          if (!orphanTimeoutRef.current) {
+            orphanTimeoutRef.current = setTimeout(() => {
+              orphanOutputs.current.length = 0;
+              orphanTimeoutRef.current = null;
+            }, 5000);
+          }
+        }
+        return;
+      }
+
       // Match by tool_name when available (parallel), fallback to LIFO
       let top;
-      const tName = (data as any).tool_name || '';
       if (tName) {
         const found = stack.find((e) => e.toolName === tName);
         if (found) top = found;
@@ -238,12 +303,17 @@ function AppShell() {
 
     unsubs.push(api.on('stream:tool_end', (data) => {
       const stack = toolOutputStack.current;
-      // Guard: if tool_end fires without a matching tool_start, don't silently drop
-      if (stack.length === 0) return;
+      const tName = (data as any).tool_name || '';
+
+      // Guard: if tool_end fires without a matching tool_start
+      if (stack.length === 0 && tName) {
+        console.warn('[App] tool_end for "%s" but no matching tool_start in stack', tName);
+        return;
+      }
+
       let cardId: number | null = null;
       let finalBuffer = '';
       // Match by tool_name when available (parallel execution), fallback to LIFO
-      const tName = (data as any).tool_name || '';
       if (tName) {
         const idx = stack.findIndex((e) => e.toolName === tName);
         if (idx !== -1) {
@@ -259,24 +329,30 @@ function AppShell() {
         finalBuffer = top.buffer;
         cardId = top.cardId;
       }
+
+      if (cardId == null) {
+        console.warn('[App] tool_end for "%s" could not be matched to any card', tName);
+        return;
+      }
+
       const now = Date.now();
       const status = data.ok ? 'ok' : 'err';
-      if (cardId != null) {
-        const code = finalBuffer || data.content || '';
-        const diffPreview = data.diff_preview || null;
-        const errorDetail = !data.ok ? (data.detail || '') : '';
-        startTransition(() => {
-          setToolCards((prev) => {
-            const idx = toolCardIndexRef.current.get(cardId);
-            if (idx == null) return prev;
-            const card = prev[idx];
-            if (!card || card.id !== cardId) return prev;
-            const updated = [...prev];
-            updated[idx] = { ...card, status, endTime: now, output: code, diffPreview, errorDetail };
-            return updated;
-          });
+      const code = finalBuffer || data.content || '';
+      const diffPreview = data.diff_preview || null;
+      const errorDetail = !data.ok ? (data.detail || '') : '';
+      startTransition(() => {
+        setToolCards((prev) => {
+          const idx = toolCardIndexRef.current.get(cardId);
+          if (idx == null) return prev;
+          const card = prev[idx];
+          if (!card || card.id !== cardId) return prev;
+          const updated = [...prev];
+          // Strip internal _enter flag before persisting
+          const { _enter, ...cleanCard } = card as any;
+          updated[idx] = { ...cleanCard, status, endTime: now, output: code, diffPreview, errorDetail };
+          return updated;
         });
-      }
+      });
     }));
 
     unsubs.push(api.on('stream:turn_complete', (data) => {

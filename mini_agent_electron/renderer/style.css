@@ -1647,6 +1647,7 @@ html, body {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  position: relative;
 }
 
 /* Spinner for running cards */
@@ -1663,8 +1664,24 @@ html, body {
   to { transform: rotate(360deg); }
 }
 
-.tool-card-check { color: var(--green); font-size: 0.9em; }
-.tool-card-x     { color: var(--red);   font-size: 0.9em; }
+/* Status icon wrappers — all three rendered, only active one visible with crossfade */
+.tool-card-icon-spinner,
+.tool-card-icon-check,
+.tool-card-icon-x {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+}
+.tool-card-icon-spinner.active,
+.tool-card-icon-check.active,
+.tool-card-icon-x.active {
+  opacity: 1;
+}
+.tool-card-icon-check { color: var(--green); font-size: 0.9em; }
+.tool-card-icon-x     { color: var(--red);   font-size: 0.9em; }
 
 .tool-card-name {
   color: var(--accent);
@@ -2216,16 +2233,10 @@ html, body {
 }
 
 /* Tool cards -- pop in smoothly */
-.tool-card {
+/* Only animate newly inserted tool cards (data-enter attr) to avoid
+   nth-child animation churn when cards are added mid-log */
+.tool-card[data-enter="true"] {
   animation: toolPopIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both;
-}
-
-/* Only animate the last few tool cards to avoid re-animating the entire log */
-.tool-card:nth-last-child(-n+6) {
-  animation: toolPopIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both;
-}
-.tool-card:nth-last-child(n+7) {
-  animation: none;
 }
 
 /* Chat entries -- each new line slides in */
@@ -2292,7 +2303,7 @@ html, body {
 
 /* @starting-style for smooth entry on first paint */
 @starting-style {
-  .tool-card {
+  .tool-card[data-enter="true"] {
     opacity: 0;
     transform: scale(0.92);
   }

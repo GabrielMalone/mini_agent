@@ -46,12 +46,18 @@ const ToolCard = memo(function ToolCard({ tool, theme }: ToolCardProps) {
     : null;
 
   return (
-    <div className={`tool-card tool-card-${tool.status}`}>
+    <div className={`tool-card tool-card-${tool.status}`} data-enter={(tool as any)._enter ? 'true' : undefined}>
       <div className="tool-card-header" onClick={toggle}>
         <span className="tool-card-status">
-          {isRunning && <span className="tool-card-spinner" />}
-          {isOk && <span className="tool-card-check">{'\u2713'}</span>}
-          {isErr && <span className="tool-card-x">{'\u2717'}</span>}
+          <span className={`tool-card-icon-spinner${isRunning ? ' active' : ''}`}>
+            <span className="tool-card-spinner" />
+          </span>
+          <span className={`tool-card-icon-check${isOk ? ' active' : ''}`}>
+            {'\u2713'}
+          </span>
+          <span className={`tool-card-icon-x${isErr ? ' active' : ''}`}>
+            {'\u2717'}
+          </span>
         </span>
         <span className="tool-card-name">{tool.toolName}</span>
         {tool.toolArgs && (
