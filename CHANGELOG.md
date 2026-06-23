@@ -11,6 +11,12 @@ Self-modification audit trail -- what the agent changed and why.
 - **Also:** Removed redundant `setInputValue('')` in interjection branch
 - **Files:** `mini_agent_electron/renderer/src/App.tsx`
 
+### Chore: Remove Discord button and bot menu from footer
+
+- Removed Discord label, dropdown menu, bot toggle handlers, and all related state from StatusBar.tsx and App.tsx
+- Cleaned up unused imports (useState, useEffect, useCallback, useDropdownPosition)
+- **Files:** `mini_agent_electron/renderer/src/components/StatusBar.tsx`, `mini_agent_electron/renderer/src/App.tsx`
+
 ### Fix: Tool card stuck-in-running — tool_call_id matching for same-name batches
 
 - **core/llm.py**: All 5 `on_tool_start()` call sites + `_append_tool_result()` (on_tool_end) now pass
