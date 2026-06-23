@@ -11,6 +11,7 @@
     "lint": "npx eslint renderer/src/ --quiet",
     "test:smoke": "electron . --smoke-test",
     "prebuild": "npm run lint",
+    "postbuild": "npm run test:smoke",
     "dev:renderer": "npx vite --config vite.config.ts",
     "dist": "npm run build && electron-builder",
     "dist:mac": "npm run build && electron-builder --mac",
