@@ -4,6 +4,16 @@ Self-modification audit trail -- what the agent changed and why.
 
 ## 2026-06-23
 
+### Fix: Single-tool timeout protection — prevents agent freeze when edit_file hangs
+
+- **core/llm.py** `_execute_groups`: The single-tool path (`len(group) == 1`) now wraps
+  `execute_tool()` in a `ThreadPoolExecutor` with `future.result(timeout=150)`, matching the
+  multi-tool (parallel) path. Previously, the single-tool path called `execute_tool()` directly
+  with NO timeout — if a tool hung (e.g., `edit_file` in batch mode with lock contention or
+  slow ruff lint), the entire agent loop froze forever. The parallel path already had 150s
+  timeout protection. Root cause: the initial timeout fix (2026-06-23) only covered concurrent
+  tool groups but overlooked the far more common single-tool code path.
+
 ### Fix: Chat window frontend audit — 4 fixes
 
 - **RoundedFrame.tsx**: `title` prop was destructured away (never appeared in function params) — all panel titles (Tools, Thinking, Chat, Sub-agents) were silently not rendering. Now renders `<div className="frame-title">`.

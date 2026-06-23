@@ -1,38 +1,29 @@
 # Session Handoff
 # Auto-generated at session end. Read at next session start for continuity.
 
-## Last Session: 2026-06-23 ~15:00 UTC
+## Last Session: 2026-06-23 ~15:30 UTC
 
 ### What I Changed
 
-**Chat window frontend audit — 4 fixes across 3 files**
+**Fix: Single-tool timeout protection — prevents agent freeze when edit_file hangs**
 
-Root cause: Audit of chat window components revealed silent prop drop, unbounded array growth, and DOM layout shifts.
+Root cause: `_execute_groups()` in `core/llm.py` had a code path asymmetry:
+- **Multi-tool (parallel) path**: `execute_tool()` ran in `ThreadPoolExecutor` with `future.result(timeout=150)` — hung tools timed out gracefully.
+- **Single-tool path** (`len(group) == 1`): `execute_tool()` was called directly with NO timeout. If a tool hung (e.g., `edit_file` in batch mode with lock contention, slow ruff lint, or infinite diff), the entire agent loop froze forever.
 
-Fixes:
+This is the far more common case — most tool calls are single-tool groups.
 
-1. **RoundedFrame title prop silently ignored (RoundedFrame.tsx)** — `title` prop defined in interface but destructured away in function params. All panel titles (Tools, Thinking, Chat, Sub-agents) were not rendering. Now renders `<div className="frame-title">`.
-
-2. **Chat blocks unbounded growth (App.tsx)** — `setBlocks` appended without limit, causing memory bloat over long sessions. Now capped at 200 via `prev.slice(-199)` on all 4 append call sites.
-
-3. **Thinking blocks unbounded growth (App.tsx)** — Same issue, capped at 100 via `prev.slice(-99)`.
-
-4. **DeferredMarkdown DOM element switch (DeferredMarkdown.tsx)** — Before markdown parse: `<pre>` wrapper. After parse: `<div>` wrapper. This caused a DOM element type switch and layout shift. Now always uses `<div>` wrapper; inner content uses `<pre>` for unparsed text, `<ReactMarkdown>` for parsed.
-
-Skipped (intentional design):
-- StreamingMessage pre↔markdown toggle: cheap `<pre>` during active stream, `<ReactMarkdown>` on settle (80ms throttle)
-- TerminalBlock elapsed clock: running-only is intentional UX indicator
-
-### Previous Changes This Session
-- **Frontend tool panel audit** — 7 fixes (tool_end warns, tool_output race buffering, card cap at 50, CSS data-enter animation, lastIndexOf args parsing, icon crossfade, TS check)
-
-### What's Pending
-- Pre-existing TS errors in AgentTree.tsx, AnsiBlock.tsx, AstResult.tsx — not addressed
-- No other pending items
+Fix applied (+36 lines): Wrapped the single-tool `execute_tool()` call in a `ThreadPoolExecutor` with the same 150s timeout, `TimeoutError` handling, and `Exception` crash handling as the multi-tool path.
 
 ### Modified Files
-- mini_agent_electron/renderer/src/components/RoundedFrame.tsx (+1 line)
-- mini_agent_electron/renderer/src/App.tsx (+12 -12 lines)
-- mini_agent_electron/renderer/src/components/DeferredMarkdown.tsx (+22 -21 lines)
-- CHANGELOG.md (entry added)
-- STATE.txt (entry added)
+- `core/llm.py` — `_execute_groups`: single-tool path now uses ThreadPoolExecutor + 150s timeout (+36 lines)
+- `CHANGELOG.md` — entry added
+- `STATE.txt` — date updated, Active Decisions entry added
+
+### Tests
+- `tests/test_llm.py`: 22/22 pass
+- `tests/test_file_ops_extended.py`: 80/80 pass
+- Total: 102/102 pass
+
+### What's Pending
+- No pending items

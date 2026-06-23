@@ -409,14 +409,50 @@ def _execute_groups(
                     lock=tool_keys_lock,
                 )
                 break
-            result = execute_tool(
-                tc,
-                write_gate,
-                read_gate,
-                on_output=on_tool_output,
-                approve_callback=approve_callback,
-                cancel_event=cancel_event,
-            )
+            # Wrap single tool in ThreadPoolExecutor for timeout protection
+            # (same 150s timeout as the parallel path below)
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(
+                    execute_tool,
+                    tc,
+                    write_gate,
+                    read_gate,
+                    on_output=on_tool_output,
+                    approve_callback=approve_callback,
+                    cancel_event=cancel_event,
+                )
+                try:
+                    result = future.result(timeout=150)
+                except TimeoutError:
+                    import sys as _sys_st
+
+                    _sys_st.stderr.write(
+                        f"[turn {group_idx}] single tool '{tool_summary(tc)}'"
+                        f" timed out after 150s (hung thread)\n"
+                    )
+                    _sys_st.stderr.flush()
+                    result = ToolResult(
+                        success=False,
+                        content=(
+                            f"Tool '{tc.get('function', {}).get('name', '?')}' "
+                            f"timed out after 150s (hung thread)."
+                        ),
+                    )
+                except Exception as e:
+                    import sys as _sys_st
+
+                    _sys_st.stderr.write(
+                        f"[turn {group_idx}] single tool '{tool_summary(tc)}'"
+                        f" crashed: {e}\n"
+                    )
+                    _sys_st.stderr.flush()
+                    result = ToolResult(
+                        success=False,
+                        content=(
+                            f"Tool '{tc.get('function', {}).get('name', '?')}' "
+                            f"crashed: {e}"
+                        ),
+                    )
             pipe_results[i] = result
             _append_tool_result(
                 messages, tc, result, on_tool_end, recent_keys=recent_tool_keys
