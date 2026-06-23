@@ -460,7 +460,43 @@ def _execute_groups(
                             lock=tool_keys_lock,
                         )
                         break
-                    i, tc, result = future.result()
+                    try:
+                        # _TOOL_TIMEOUT (120s) + 30s buffer for checkpoint/overhead
+                        i, tc, result = future.result(timeout=150)
+                    except TimeoutError:
+                        import sys as _sys_eg
+                        from tools.result import ToolResult as TR
+
+                        _sys_eg.stderr.write(
+                            f"[turn {group_idx}] tool index {futures[future]} timed out after 150s\n"
+                        )
+                        _sys_eg.stderr.flush()
+                        tc = remaining[futures[future]]
+                        result = TR(
+                            success=False,
+                            content=(
+                                f"Tool '{tc.get('function', {}).get('name', '?')}' "
+                                f"timed out after 150s (hung thread)."
+                            ),
+                        )
+                        i = futures[future]
+                    except Exception as exc:
+                        import sys as _sys_eg
+                        from tools.result import ToolResult as TR
+
+                        _sys_eg.stderr.write(
+                            f"[turn {group_idx}] tool index {futures[future]} crashed: {exc}\n"
+                        )
+                        _sys_eg.stderr.flush()
+                        tc = remaining[futures[future]]
+                        result = TR(
+                            success=False,
+                            content=(
+                                f"Tool '{tc.get('function', {}).get('name', '?')}' "
+                                f"crashed: {exc}"
+                            ),
+                        )
+                        i = futures[future]
                     completed_in_group.add(i)
                     with results_lock:
                         pipe_results[i] = result
