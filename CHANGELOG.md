@@ -4,6 +4,13 @@ Self-modification audit trail -- what the agent changed and why.
 
 ## 2026-06-23
 
+### Fix: Chat window frontend audit — 4 fixes
+
+- **RoundedFrame.tsx**: `title` prop was destructured away (never appeared in function params) — all panel titles (Tools, Thinking, Chat, Sub-agents) were silently not rendering. Now renders `<div className="frame-title">`.
+- **App.tsx**: Chat blocks array (`setBlocks`) now capped at 200 via `prev.slice(-199)` on all 4 append sites, preventing unbounded memory growth over long sessions.
+- **App.tsx**: Thinking blocks array (`setThinkingBlocks`) now capped at 100 via `prev.slice(-99)` on both append sites.
+- **DeferredMarkdown.tsx**: Wrapper element now consistently `<div>` regardless of parse state (was `<pre>` before parse, `<div>` after, causing DOM element type switch and layout shift). Inner content still uses `<pre>` for unparsed text.
+
 ### Fix: Frontend tool panel audit — 7 fixes
 
 - **mini_agent_electron/renderer/src/App.tsx**: 
