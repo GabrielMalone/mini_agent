@@ -748,6 +748,10 @@ def _edit_file_anchored(
         )
 
     # Phase 3: Apply edits (already validated, so this should succeed)
+    # Per-file timeout protection: each _finalize_edit runs in a daemon
+    # thread with a 60s deadline.  This prevents one slow file (e.g. ruff
+    # cold cache on a large module) from hanging the entire batch.
+    _PER_FILE_TIMEOUT = 60
     results: list[str] = []
     all_diffs: list[str] = []
 
@@ -762,9 +766,46 @@ def _edit_file_anchored(
         new_content = "\n".join(new_lines)
         orig_content = "\n".join(fs["lines"])
 
-        ok, err = _finalize_edit(
-            fs["resolved"], orig_content, new_content, wg.workspace_root
+        import sys as _sys_ae
+        import time as _time_ae
+        from concurrent.futures import ThreadPoolExecutor as _TPE
+
+        _fname = fs["display"].rsplit("/", 1)[-1]
+        _t0 = _time_ae.monotonic()
+        _sys_ae.stderr.write(
+            f"[edit_file] applying {len(resolved)} edit(s) to {_fname}...\n"
         )
+        _sys_ae.stderr.flush()
+
+        ok, err = False, "timed out"
+        with _TPE(max_workers=1) as _pool:
+            _future = _pool.submit(
+                _finalize_edit,
+                fs["resolved"], orig_content, new_content, wg.workspace_root,
+            )
+            try:
+                ok, err = _future.result(timeout=_PER_FILE_TIMEOUT)
+            except TimeoutError:
+                _sys_ae.stderr.write(
+                    f"[edit_file] {_fname} timed out after {_PER_FILE_TIMEOUT}s\n"
+                )
+                _sys_ae.stderr.flush()
+                ok, err = False, (
+                    f"Timed out after {_PER_FILE_TIMEOUT}s "
+                    f"(ruff lint may be slow on this file)"
+                )
+            except Exception as _exc:
+                _sys_ae.stderr.write(
+                    f"[edit_file] {_fname} crashed: {_exc}\n"
+                )
+                _sys_ae.stderr.flush()
+                ok, err = False, str(_exc)
+
+        _elapsed = _time_ae.monotonic() - _t0
+        _sys_ae.stderr.write(
+            f"[edit_file] {_fname} took {_elapsed:.1f}s {'OK' if ok else 'FAIL'}\n"
+        )
+        _sys_ae.stderr.flush()
         if not ok:
             results.append(f"[FAIL] {fs['display']}: {err}")
             all_failures.append(err or "Edit failed")

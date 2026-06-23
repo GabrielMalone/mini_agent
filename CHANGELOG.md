@@ -4,6 +4,13 @@ Self-modification audit trail -- what the agent changed and why.
 
 ## 2026-06-23
 
+### Fix: Batched edit_file per-file timeout + diagnostic logging
+
+- **tools/_edit_ops.py** `_edit_file_anchored` Phase 3: Each per-file `_finalize_edit` call
+  now runs in a `ThreadPoolExecutor` with a 60s timeout.  Prevents one slow file (e.g. ruff
+  cold cache) from hanging the entire batch.  Diagnostic stderr logging added:
+  `[edit_file] applying N edit(s) to file.py...` / `[edit_file] file.py took X.Xs OK/FAIL`.
+
 ### Fix: Tool cards stuck in "running" state when tools complete
 
 - **core/llm.py** `_on_tool_ready`: Now passes `tool_name` to `on_tool_start` callback.
