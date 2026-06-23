@@ -1,9 +1,12 @@
 import { useMemo } from 'react';
 import AnsiBlock from './AnsiBlock';
 
-// -- styles ------------------------------------------------------------------
+interface ShellResultsProps {
+  content: string;
+  ok: boolean;
+}
 
-const CONTAINER_STYLE = {
+const CONTAINER_STYLE: React.CSSProperties = {
   padding: '6px 0',
   margin: '4px 0',
   maxWidth: '100%',
@@ -12,14 +15,14 @@ const CONTAINER_STYLE = {
   lineHeight: '1.65',
 };
 
-const STATUS_ROW_STYLE = {
+const STATUS_ROW_STYLE: React.CSSProperties = {
   display: 'flex',
   gap: '0.5em',
   alignItems: 'center',
   marginBottom: '4px',
 };
 
-const STATUS_BADGE_STYLE = (ok) => ({
+const statusBadgeStyle = (ok: boolean): React.CSSProperties => ({
   display: 'inline-block',
   padding: '0px 7px',
   borderRadius: '3px',
@@ -31,21 +34,21 @@ const STATUS_BADGE_STYLE = (ok) => ({
   letterSpacing: '0.5px',
 });
 
-const OUTPUT_LINE_STYLE = {
+const OUTPUT_LINE_STYLE: React.CSSProperties = {
   color: '#d4d4d4',
   padding: '1px 0',
   whiteSpace: 'pre-wrap',
   wordBreak: 'break-word',
 };
 
-const DIM_LINE_STYLE = {
+const DIM_LINE_STYLE: React.CSSProperties = {
   color: '#888',
   padding: '1px 0',
   whiteSpace: 'pre-wrap',
   wordBreak: 'break-word',
 };
 
-const LINE_NO_SPAN = {
+const LINE_NO_SPAN: React.CSSProperties = {
   color: '#555',
   userSelect: 'none',
   display: 'inline-block',
@@ -54,11 +57,9 @@ const LINE_NO_SPAN = {
   marginRight: '0.5em',
 };
 
-// -- component ---------------------------------------------------------------
-
-export default function ShellResults({ content, ok }) {
+export default function ShellResults({ content, ok }: ShellResultsProps) {
   const lines = useMemo(() => {
-    if (!content) return [];
+    if (!content) return [] as string[];
     return content.split('\n');
   }, [content]);
 
@@ -67,13 +68,12 @@ export default function ShellResults({ content, ok }) {
   return (
     <div style={CONTAINER_STYLE}>
       <div style={STATUS_ROW_STYLE}>
-        <span style={STATUS_BADGE_STYLE(ok)}>{ok ? 'OK' : 'ERR'}</span>
+        <span style={statusBadgeStyle(ok)}>{ok ? 'OK' : 'ERR'}</span>
         <span style={{ color: '#999', fontSize: '0.78em' }}>
-          exit={ok ? '0' : '≠0'}
+          exit={ok ? '0' : '\u22600'}
         </span>
       </div>
       {lines.map((line, i) => {
-        // Dim empty lines and lines that look like separators
         const isDim = line === '' || /^-{3}$/.test(line.trim());
         const lineNum = String(i + 1).padStart(4, '\u00A0');
         return (

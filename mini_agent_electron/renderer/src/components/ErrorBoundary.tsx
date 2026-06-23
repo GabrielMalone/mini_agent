@@ -1,43 +1,51 @@
-import { Component } from 'react';
+import { Component, type ReactNode, type ErrorInfo } from 'react';
 
-/**
- * Catches render errors in the tree so the UI doesn't whitescreen.
- * Also catches unhandled window errors and promise rejections.
- *
-* @typedef {{ error: Error|null }} ErrorBoundaryState
-* @typedef {{ children: React.ReactNode }} ErrorBoundaryProps
-*/
-export default class ErrorBoundary extends Component {
-  constructor(props) {
+interface ErrorBoundaryProps {
+  children: ReactNode;
+}
+
+interface ErrorBoundaryState {
+  error: Error | null;
+}
+
+export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  private _errorHandler: ((event: ErrorEvent) => void) | null = null;
+  private _unhandledHandler: ((event: PromiseRejectionEvent) => void) | null = null;
+
+  constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = { error: null };
   }
 
-  static getDerivedStateFromError(error) {
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     return { error };
   }
 
-  componentDidCatch(error, info) {
+  componentDidCatch(error: Error, info: ErrorInfo): void {
     console.error('[ErrorBoundary]', error, info.componentStack);
   }
 
-  componentDidMount() {
-    this._errorHandler = (event) => {
+  componentDidMount(): void {
+    this._errorHandler = (event: ErrorEvent) => {
       this.setState({ error: event.error || new Error(event.message || 'Unhandled error') });
     };
     window.addEventListener('error', this._errorHandler);
-    this._unhandledHandler = (event) => {
+    this._unhandledHandler = (event: PromiseRejectionEvent) => {
       this.setState({ error: event.reason || new Error('Unhandled promise rejection') });
     };
     window.addEventListener('unhandledrejection', this._unhandledHandler);
   }
 
-  componentWillUnmount() {
-    window.removeEventListener('error', this._errorHandler);
-    window.removeEventListener('unhandledrejection', this._unhandledHandler);
+  componentWillUnmount(): void {
+    if (this._errorHandler) {
+      window.removeEventListener('error', this._errorHandler);
+    }
+    if (this._unhandledHandler) {
+      window.removeEventListener('unhandledrejection', this._unhandledHandler);
+    }
   }
 
-  render() {
+  render(): ReactNode {
     if (this.state.error) {
       return (
         <div style={{

@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import type { DropdownPosition, ThemeEntry } from '../types';
 
 const PALETTE_SVG = <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="5" cy="8" r="2.5"/><circle cx="12" cy="4" r="2"/><circle cx="12" cy="11.5" r="2"/><path d="M3 13a3 3 0 0 0 5.2-2 1.8 1.8 0 0 1 2.1-1.8A3 3 0 0 0 13 6"/></svg>;
 
-const THEME_COLORS = {
+const THEME_COLORS: Record<string, string> = {
   dark:         '#a0a8c0',
   light:        '#e8ac4a',
   dracula:      '#bd93f9',
@@ -15,7 +16,7 @@ const THEME_COLORS = {
   monokai:      '#a6e22e',
 };
 
-export const THEMES = [
+export const THEMES: ThemeEntry[] = [
   { name: 'Dark',         id: 'dark',         icon: <svg viewBox="0 0 12 12" width="10" height="10"><circle cx="6" cy="6" r="4" fill={THEME_COLORS.dark}/></svg> },
   { name: 'Light',        id: 'light',        icon: <svg viewBox="0 0 12 12" width="10" height="10"><circle cx="6" cy="6" r="4" fill={THEME_COLORS.light}/></svg> },
   { name: 'Dracula',      id: 'dracula',      icon: <svg viewBox="0 0 12 12" width="10" height="10"><circle cx="6" cy="6" r="4" fill={THEME_COLORS.dracula}/></svg> },
@@ -28,16 +29,29 @@ export const THEMES = [
   { name: 'Monokai',      id: 'monokai',      icon: <svg viewBox="0 0 12 12" width="10" height="10"><circle cx="6" cy="6" r="4" fill={THEME_COLORS.monokai}/></svg> },
 ];
 
-function setThemeDom(id) {
+function setThemeDom(id: string): void {
   document.documentElement.setAttribute('data-theme', id);
   localStorage.setItem('mini_agent_theme', id);
 }
 
-export default function useTheme() {
-  const [theme, setTheme] = useState(() => {
+export interface UseThemeReturn {
+  theme: string;
+  themeEntry: ThemeEntry;
+  themeIndex: number;
+  PALETTE_SVG: React.ReactNode;
+  THEMES: ThemeEntry[];
+  themePickerOpen: boolean;
+  setThemePickerOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  themeToggleRef: React.RefObject<HTMLElement | null>;
+  dropdownPos: DropdownPosition | null;
+  applyTheme: (id: string) => void;
+  cycleTheme: () => void;
+}
+
+export default function useTheme(): UseThemeReturn {
+  const [theme, setTheme] = useState<string>(() => {
     const stored = localStorage.getItem('mini_agent_theme');
     if (stored && THEMES.some((t) => t.id === stored)) {
-      // Set DOM attribute synchronously to prevent flash of unstyled content
       document.documentElement.setAttribute('data-theme', stored);
       return stored;
     }
@@ -45,13 +59,13 @@ export default function useTheme() {
     return 'dark';
   });
   const [themePickerOpen, setThemePickerOpen] = useState(false);
-  const themeToggleRef = useRef(null);
-  const [dropdownPos, setDropdownPos] = useState(null);
+  const themeToggleRef = useRef<HTMLElement | null>(null);
+  const [dropdownPos, setDropdownPos] = useState<DropdownPosition | null>(null);
 
   const themeIndex = THEMES.findIndex((t) => t.id === theme);
   const themeEntry = THEMES[themeIndex] || THEMES[0];
 
-  const applyTheme = useCallback((id) => {
+  const applyTheme = useCallback((id: string) => {
     setTheme(id);
     setThemeDom(id);
     setThemePickerOpen(false);
@@ -63,12 +77,10 @@ export default function useTheme() {
     applyTheme(THEMES[nextIndex].id);
   }, [themeIndex, applyTheme]);
 
-  // Keep data-theme attribute + localStorage in sync with React state
   useEffect(() => {
     setThemeDom(theme);
   }, [theme]);
 
-  // On mount, pull the file-persisted theme
   useEffect(() => {
     (async () => {
       try {
@@ -81,11 +93,10 @@ export default function useTheme() {
     })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Close theme picker on outside click
   useEffect(() => {
     if (!themePickerOpen) return;
-    const close = (e) => {
-      if (!e.target.closest('.theme-dropdown') && !e.target.closest('#theme-toggle')) {
+    const close = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest('.theme-dropdown') && !(e.target as HTMLElement).closest('#theme-toggle')) {
         setThemePickerOpen(false);
       }
     };
@@ -93,7 +104,6 @@ export default function useTheme() {
     return () => document.removeEventListener('click', close);
   }, [themePickerOpen]);
 
-  // Position the theme dropdown relative to the toggle icon
   useEffect(() => {
     if (!themePickerOpen || !themeToggleRef.current) {
       setDropdownPos(null);

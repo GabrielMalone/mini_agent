@@ -1,42 +1,37 @@
 import { useMemo } from 'react';
 
-// -- parser ------------------------------------------------------------------
+interface ParsedSearchEntry {
+  key: number;
+  raw?: string;
+  file?: string;
+  lineno?: number;
+  content?: string;
+  kind?: string;
+  symbol?: string;
+}
 
-// search_files / rg format:
-//   "E:\\path\\file.py:42:  matched content"
-//   "/unix/path/file.py:42:matched content"
-//
-// find_symbol format:
-//   "  def    some_func  ->  E:\\path\\file.py:322"
-//
-// Greedy .+ then backtrack to last :\d+: to handle Windows drive-letter colons.
 const SEARCH_LINE_RE = /^(.+):(\d+): ?(.*)$/;
-
-// find_symbol lines: optional leading whitespace, kind, name, "->", path:line
 const SYMBOL_LINE_RE = /^\s*(\S+)\s+(\S+)\s+->\s+(.+):(\d+)$/;
 
-function parseLine(line) {
-  // Try search_files format first
+function parseLine(line: string): ParsedSearchEntry {
   let m = line.match(SEARCH_LINE_RE);
   if (m) {
-    return { file: m[1], lineno: parseInt(m[2], 10), content: m[3] };
+    return { key: 0, file: m[1], lineno: parseInt(m[2], 10), content: m[3] };
   }
-  // Try find_symbol format
   m = line.match(SYMBOL_LINE_RE);
   if (m) {
     return {
+      key: 0,
       kind: m[1],
       symbol: m[2],
       file: m[3],
       lineno: parseInt(m[4], 10),
     };
   }
-  return { raw: line };
+  return { key: 0, raw: line };
 }
 
-// -- styles ------------------------------------------------------------------
-
-const CONTAINER_STYLE = {
+const CONTAINER_STYLE: React.CSSProperties = {
   padding: '6px 0',
   margin: '4px 0',
   maxWidth: '100%',
@@ -45,43 +40,26 @@ const CONTAINER_STYLE = {
   lineHeight: '1.65',
 };
 
-const ROW_STYLE = {
+const ROW_STYLE: React.CSSProperties = {
   padding: '1px 0',
   whiteSpace: 'pre-wrap',
   wordBreak: 'break-word',
-};
+} as const;
 
-const FILE_STYLE = {
-  color: '#6cc8e8',
-};
+const FILE_STYLE: React.CSSProperties = { color: '#6cc8e8' };
+const LINENO_SPAN: React.CSSProperties = { color: '#b8d975', userSelect: 'none' };
+const CONTENT_STYLE: React.CSSProperties = { color: '#e0e0e0' };
+const KIND_STYLE: React.CSSProperties = { color: '#ce9d7c' };
+const SYMBOL_STYLE: React.CSSProperties = { color: '#dcdcaa' };
+const RAW_STYLE: React.CSSProperties = { color: '#e0e0e0', padding: '1px 0' };
 
-const LINENO_SPAN = {
-  color: '#b8d975',
-  userSelect: 'none',
-};
+interface SearchResultsProps {
+  content: string;
+}
 
-const CONTENT_STYLE = {
-  color: '#e0e0e0',
-};
-
-const KIND_STYLE = {
-  color: '#ce9d7c',
-};
-
-const SYMBOL_STYLE = {
-  color: '#dcdcaa',
-};
-
-const RAW_STYLE = {
-  color: '#e0e0e0',
-  padding: '1px 0',
-};
-
-// -- component ---------------------------------------------------------------
-
-export default function SearchResults({ content }) {
+export default function SearchResults({ content }: SearchResultsProps) {
   const lines = useMemo(() => {
-    if (!content) return [];
+    if (!content) return [] as ParsedSearchEntry[];
     return content.split('\n').map((line, i) => ({
       key: i,
       ...parseLine(line),
@@ -100,7 +78,6 @@ export default function SearchResults({ content }) {
             </div>
           );
         }
-        // find_symbol format (has kind + symbol)
         if (entry.kind) {
           return (
             <div key={entry.key} style={ROW_STYLE}>
@@ -114,7 +91,6 @@ export default function SearchResults({ content }) {
             </div>
           );
         }
-        // search_files format (file + lineno + content)
         return (
           <div key={entry.key} style={ROW_STYLE}>
             <span style={FILE_STYLE}>{entry.file}</span>

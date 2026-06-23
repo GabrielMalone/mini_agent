@@ -42,7 +42,7 @@ export default function SettingsPanel({ onSaved }) {
       await Promise.race([window.miniAgent.restartBackend(), saveTimeout]);
       // The backend:status event (ready:true) will trigger onSaved
     } catch (e) {
-      setError(e.message || 'Failed to save. Try again.');
+      setError(e instanceof Error ? e.message : 'Failed to save. Try again.');
       setSaving(false);
     }
   }, [provider, apiKey, needsKey]);

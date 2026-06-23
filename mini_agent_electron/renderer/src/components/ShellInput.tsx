@@ -123,7 +123,18 @@ function shellCompletions(context) {
 //   commandHistory - array of past commands for Up/Down navigation
 //   autoFocus      - focus on mount
 // ---------------------------------------------------------------------------
-const ShellInput = forwardRef(function ShellInput({
+interface ShellInputProps {
+  value?: string;
+  onChange?: (text: string) => void;
+  onSubmit?: (text: string) => void;
+  disabled?: boolean;
+  placeholder?: string;
+  ghostText?: string;
+  commandHistory?: string[];
+  autoFocus?: boolean;
+}
+
+const ShellInput = forwardRef<{ focus: () => void; blur: () => void }, ShellInputProps>(function ShellInput({
   value = '',
   onChange,
   onSubmit,
@@ -305,7 +316,7 @@ const ShellInput = forwardRef(function ShellInput({
         autocompletion({ override: [shellCompletions] }),
         highlightSpecialChars(),
         dropCursor(),
-        drawSelection({ cursorColor: '#ffff00', cursorBlinkRate: 530 }),
+        drawSelection({ cursorColor: '#ffff00', cursorBlinkRate: 530 } as Parameters<typeof drawSelection>[0]),
         keymap.of([...defaultKeymap, ...historyKeymap]),
         themeCompartment.current.of(shellTheme()),
         EditorState.transactionFilter.of((tr) => {

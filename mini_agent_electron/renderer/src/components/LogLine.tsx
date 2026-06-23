@@ -4,7 +4,7 @@ import remarkGfm from 'remark-gfm';
 import CodeBlock from './CodeBlock';
 
 const markdownComponents = {
-  code({ className, children, inline, ...props }) {
+  code({ className, children, inline }: { className?: string; children: React.ReactNode; inline?: boolean }) {
     const match = /language-(\w+)/.exec(className || '');
     const lang = match ? match[1] : undefined;
     const code = String(children).replace(/\n$/, '');
@@ -12,15 +12,7 @@ const markdownComponents = {
   },
 };
 
-/**
- * A single log line -- supports plain text, markdown,
- * and structured tool-name rendering.
- *
- * Security: We NEVER use dangerouslySetInnerHTML for LLM-generated content.
- */
-
-// Simple HTML-escape for plain-text content
-function escapeHtml(text) {
+function escapeHtml(text: string | undefined | null): string {
   if (!text) return '';
   return String(text)
     .replace(/&/g, '&amp;')
@@ -29,13 +21,24 @@ function escapeHtml(text) {
     .replace(/"/g, '&quot;');
 }
 
-const LogLine = memo(function LogLine({ line }) {
-  // React component -- render directly
+export interface LogLineData {
+  component?: React.ReactNode;
+  cls?: string;
+  toolName?: string;
+  toolArgs?: string;
+  markdown?: boolean;
+  text?: string;
+}
+
+interface LogLineProps {
+  line: LogLineData;
+}
+
+const LogLine = memo(function LogLine({ line }: LogLineProps) {
   if (line.component) {
     return <div className={line.cls || ''}>{line.component}</div>;
   }
 
-  // Structured tool name (replaces the old dangerouslySetInnerHTML for html)
   if (line.toolName) {
     return (
       <div className={line.cls || ''}>
@@ -45,16 +48,17 @@ const LogLine = memo(function LogLine({ line }) {
     );
   }
 
-  // Markdown rendering (NO dangerouslySetInnerHTML -- LLM output is sanitised)
   if (line.markdown) {
+    // react-markdown's components type conflicts with our simplified p component
+    const components: Record<string, React.FC<{ children: React.ReactNode }>> = {
+      p: ({ children }) => <span>{children}</span>,
+      ...markdownComponents,
+    };
     return (
       <div className={`md-line ${line.cls || ''}`} style={{ whiteSpace: 'normal' }}>
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
-          components={{
-            p: ({ children }) => <span>{children}</span>,
-            ...markdownComponents,
-          }}
+          components={components}
         >
           {line.text}
         </ReactMarkdown>
@@ -62,7 +66,6 @@ const LogLine = memo(function LogLine({ line }) {
     );
   }
 
-  // Plain text -- HTML-escaped
   return <div className={line.cls || ''}>{escapeHtml(line.text)}</div>;
 });
 

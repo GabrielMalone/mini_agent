@@ -176,10 +176,25 @@ export default function CodeBlock({
   highlight = true,
   fontSize,
   toolName,
+  theme, // accepted but unused — CodeBlock uses Shiki's built-in themes
   lineNumbers = false,
   startLine = 1,
   lineHashes = [],
   wrap = false,
+}: {
+  children?: string;
+  code?: string;
+  language?: string;
+  className?: string;
+  inline?: boolean;
+  highlight?: boolean;
+  fontSize?: string;
+  toolName?: string;
+  theme?: string;
+  lineNumbers?: boolean;
+  startLine?: number;
+  lineHashes?: string[];
+  wrap?: boolean;
 }) {
   const source = code ?? children;
 

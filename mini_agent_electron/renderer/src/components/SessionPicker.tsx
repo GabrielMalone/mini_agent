@@ -1,33 +1,32 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 
-/**
- * Clickable session label in the footer. On click, shows a dropdown with
- * available sessions and a "New session..." option.
- */
-export default function SessionPicker({ sessionName, onSwitch }) {
+interface SessionPickerProps {
+  sessionName?: string;
+  onSwitch: (name: string, isNew?: boolean) => void;
+}
+
+export default function SessionPicker({ sessionName, onSwitch }: SessionPickerProps) {
   const [open, setOpen] = useState(false);
-  const [sessions, setSessions] = useState([]);
+  const [sessions, setSessions] = useState<string[]>([]);
   const [current, setCurrent] = useState(sessionName || 'default');
   const [showNewInput, setShowNewInput] = useState(false);
   const [newName, setNewName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const dropdownRef = useRef(null);
-  const inputRef = useRef(null);
+  const dropdownRef = useRef<HTMLSpanElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
   const currentRef = useRef(current);
   currentRef.current = current;
 
-  // Sync external session name
   useEffect(() => {
     if (sessionName) setCurrent(sessionName);
   }, [sessionName]);
 
-  // Close on outside click
   useEffect(() => {
     if (!open) return;
-    const handler = (e) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         setOpen(false);
         setShowNewInput(false);
         setNewName('');
@@ -37,7 +36,6 @@ export default function SessionPicker({ sessionName, onSwitch }) {
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
 
-  // Focus new-session input when shown
   useEffect(() => {
     if (showNewInput && inputRef.current) {
       inputRef.current.focus();
@@ -65,21 +63,21 @@ export default function SessionPicker({ sessionName, onSwitch }) {
           setCurrent(result.current || 'default');
         }
       }
-    } catch (e) {
+    } catch (_e) {
       setError('Failed to load sessions');
     } finally {
       setLoading(false);
     }
   }, [open]);
 
-  const handleSelect = useCallback((name) => {
+  const handleSelect = useCallback((name: string) => {
     setOpen(false);
     setShowNewInput(false);
     setNewName('');
     onSwitch(name);
   }, [onSwitch]);
 
-  const handleDelete = useCallback(async (e, name) => {
+  const handleDelete = useCallback(async (e: React.MouseEvent, name: string) => {
     e.stopPropagation();
     if (!window.confirm(`Delete session "${name}"? This cannot be undone.`)) return;
     const api = window.miniAgent;
@@ -87,28 +85,26 @@ export default function SessionPicker({ sessionName, onSwitch }) {
     try {
       const result = await api.deleteSession(name);
       if (result.ok) {
-        // Refresh the list
         setSessions((prev) => prev.filter((s) => s !== name));
-        // If we deleted current, the backend switches to default -- update current
         if (name === currentRef.current) {
           setCurrent('default');
         }
       } else {
         setError(result.message || 'Delete failed');
       }
-    } catch (e) {
+    } catch (_e) {
       setError('Delete failed');
     }
   }, [current]);
 
-  const handleNewSubmit = useCallback((e) => {
+  const handleNewSubmit = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       const name = newName.trim();
       if (!name) return;
       setOpen(false);
       setShowNewInput(false);
       setNewName('');
-      onSwitch(name, /* isNew */ true);
+      onSwitch(name, true);
     } else if (e.key === 'Escape') {
       setShowNewInput(false);
       setNewName('');

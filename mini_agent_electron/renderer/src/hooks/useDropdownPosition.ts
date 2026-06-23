@@ -1,17 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
+import type { DropdownPosition } from '../types';
 
-/**
- * useDropdownPosition — shared hook for computing dropdown menu position
- * relative to a toggle element.  Returns a position object for absolute/fixed
- * positioning and a ref to attach to the toggle element.
- *
- * Usage:
- *   const [menuPos, toggleRef] = useDropdownPosition(menuOpen, menuWidth);
- *   // menuPos is null when closed, {bottom, left} when open
- */
-export default function useDropdownPosition(isOpen, menuWidth = 200) {
-  const toggleRef = useRef(null);
-  const [pos, setPos] = useState(null);
+export default function useDropdownPosition(
+  isOpen: boolean,
+  menuWidth: number = 200
+): [DropdownPosition | null, React.RefObject<HTMLElement | null>] {
+  const toggleRef = useRef<HTMLElement | null>(null);
+  const [pos, setPos] = useState<DropdownPosition | null>(null);
 
   useEffect(() => {
     if (!isOpen || !toggleRef.current) {
