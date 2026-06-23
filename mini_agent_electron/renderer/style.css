@@ -2640,6 +2640,32 @@ html, body {
   background: transparent !important;
 }
 
+/* Thinking spinner -- shown while agent generates response */
+.terminal-block__spinner {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 0;
+}
+.terminal-block__spinner .spinner-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--pulse);
+  animation: spinner-bounce 1.2s infinite ease-in-out;
+}
+.terminal-block__spinner .spinner-dot:nth-child(1) { animation-delay: 0s; }
+.terminal-block__spinner .spinner-dot:nth-child(2) { animation-delay: 0.15s; }
+.terminal-block__spinner .spinner-dot:nth-child(3) { animation-delay: 0.3s; }
+.terminal-block__spinner .spinner-text {
+  font-size: 0.82em;
+  margin-left: 4px;
+}
+@keyframes spinner-bounce {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+  40% { transform: scale(1); opacity: 1; }
+}
+
 /* Inline tools and thinking */
 .terminal-block__tools {
   margin-top: 6px;

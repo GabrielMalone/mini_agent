@@ -1,7 +1,5 @@
 import { memo, type ReactNode } from 'react';
 import DeferredMarkdown from './DeferredMarkdown';
-import StreamingMessage from './StreamingMessage';
-
 import HighlightedTerminalOutput from './HighlightedTerminalOutput';
 import type { ChatBlock } from '../types';
 
@@ -79,8 +77,13 @@ const TerminalBlock = memo(function TerminalBlock({
 
         {(displayOutput || isRunning) && (
           <div className="terminal-block__output">
-            {isRunning && streamingOutput ? (
-              <StreamingMessage text={streamingOutput} />
+            {isRunning ? (
+              <div className="terminal-block__spinner">
+                <span className="spinner-dot" />
+                <span className="spinner-dot" />
+                <span className="spinner-dot" />
+                <span className="spinner-text dim">thinking...</span>
+              </div>
             ) : output ? (
               command.startsWith('/sh ') ? (
                 <HighlightedTerminalOutput text={output} command={command} />
