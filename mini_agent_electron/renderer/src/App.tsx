@@ -518,6 +518,11 @@ function AppShell() {
             }]);
           }
         });
+        // Re-enable input after slash commands complete
+        clearTimeout(submitTimeoutRef.current!);
+        setIsLive(false);
+        setInputDisabled(false);
+        inputRef.current?.focus();
       }
     }));
 
