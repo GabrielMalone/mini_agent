@@ -1,11 +1,12 @@
 # mini_agent Architecture Map
-# Last updated: 2026-06-23 -- Batched edit_file per-file timeout
+# Last updated: 2026-06-23 -- Tool card stuck-in-running (round 2)
 #
 # This file is the agent's map of the codebase. Update it after completed changes.
 # Behavioral rules live in AGENTS.md. Long-term facts live in core memory.
 
 ## Active Decisions
 
+- **Tool card stuck-in-running fix round 2 (2026-06-23)** — When `stream:tool_end` name-match+LIFO both fail but stack is non-empty, handler now falls back to searching all running cards by `toolName` (same strategy as empty-stack guard). Previously cardId stayed null in this gap and the function returned early, leaving cards in 'running' forever. Covers: parallel race where stack entry already popped, dropped tool_start IPC messages, tool_end-before-tool_start ordering race.
 - **Batched edit_file per-file timeout (2026-06-23)** — `_edit_file_anchored` Phase 3 now wraps each per-file `_finalize_edit` call in a `ThreadPoolExecutor` with 60s timeout. Diagnostic stderr logging shows per-file timing. Prevents one slow file from hanging the entire batch (was previously uncovered by the `_execute_groups` 150s wrapper and `execute_tool`'s 120s timeout).
 - **Tool card stuck-in-running fix (2026-06-23)** — `_on_tool_ready` now passes `tool_name` to `on_tool_start` (was missing). Frontend `stream:tool_end` handler has card-search fallback when `toolOutputStack` is empty — searches running cards by `toolName` instead of giving up.
 - **Single-tool timeout protection (2026-06-23)** — `_execute_groups` single-tool path now wraps `execute_tool()` in `ThreadPoolExecutor` with `future.result(timeout=150)`. Previously only the multi-tool (parallel) path had timeout protection — a hung single tool (e.g., edit_file batch) would freeze the entire agent loop forever.
