@@ -87,7 +87,7 @@ function AppShell() {
   const submitTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const turnStartRef = useRef<number | null>(null);
-  const toolOutputStack = useRef<Array<{ cardId: number; buffer: string; toolName: string }>>([]); // stack of buffers for parallel tool calls
+  const toolOutputStack = useRef<Array<{ cardId: number; buffer: string; toolName: string; toolCallId?: string }>>([]); // stack of buffers for parallel tool calls
   const orphanOutputs = useRef<Array<{ toolName: string; lines: string[] }>>([]); // buffered output lines before tool_start arrives
   const orphanTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null); // timeout to flush orphans
   const lineIdRef = useRef(0); // monotonically increasing ID for stable React keys
@@ -686,7 +686,7 @@ function AppShell() {
         }]);
       });
       activeBlockIdRef.current = cmdId;
-      window.miniAgent.command(trimmed);
+      window.miniAgent?.command(trimmed);
       submitTimeoutRef.current = setTimeout(() => {
         setInputDisabled(false);
         inputRef.current?.focus();
@@ -708,7 +708,7 @@ function AppShell() {
 
     if (isLive) {
       // Agent is running -- queue as interjection, don't set activeBlockId
-      window.miniAgent.interject(trimmed);
+      window.miniAgent?.interject(trimmed);
       inputRef.current?.focus();
     } else {
       // Agent is idle -- start a new turn
@@ -716,7 +716,7 @@ function AppShell() {
       chatStream.reset();
       setIsLive(true);
       // Don't disable input — user can type interjections while agent is running
-      window.miniAgent.submit(trimmed);
+      window.miniAgent?.submit(trimmed);
 
       submitTimeoutRef.current = setTimeout(() => {
         setInputDisabled(false);
@@ -764,7 +764,7 @@ function AppShell() {
   // Cancel handler
   const handleCancel = useCallback(() => {
     window.miniAgent?.cancel();
-    clearTimeout(submitTimeoutRef.current);
+    clearTimeout(submitTimeoutRef.current ?? undefined);
     stopTimer();
     inThinkingRef.current = false;
     const agentText = chatStream.flush();

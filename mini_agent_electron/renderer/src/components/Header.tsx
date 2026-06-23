@@ -45,10 +45,17 @@ export const OPENROUTER_MODEL_GROUPS = [
   ]},
 ];
 
-export default function Header({ modelName, cacheHitRate, subagentRunning, loading }) {
+interface HeaderProps {
+  modelName: string | null;
+  cacheHitRate: number | null;
+  subagentRunning: number;
+  loading: boolean;
+}
+
+export default function Header({ modelName, cacheHitRate, subagentRunning, loading }: HeaderProps) {
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
-  const modelRef = useRef(null);
-  const [modelDropdownPos, setModelDropdownPos] = useState(null);
+  const modelRef = useRef<HTMLSpanElement | null>(null);
+  const [modelDropdownPos, setModelDropdownPos] = useState<{ top: number; left: number } | null>(null);
 
   // Position the model dropdown relative to the header model span
   const recalcPosition = useCallback(() => {
@@ -78,7 +85,7 @@ export default function Header({ modelName, cacheHitRate, subagentRunning, loadi
   // Close model picker on outside click
   useEffect(() => {
     if (!modelPickerOpen) return;
-    const close = (e) => {
+    const close = (e: MouseEvent) => {
       if (!e.target.closest('.model-dropdown') && !e.target.closest('#header-model')) {
         setModelPickerOpen(false);
       }

@@ -12,7 +12,7 @@ interface StatusBarProps {
   THEMES: ThemeEntry[];
   theme: string;
   themePickerOpen: boolean;
-  setThemePickerOpen: (v: boolean) => void;
+  setThemePickerOpen: React.Dispatch<React.SetStateAction<boolean>>;
   themeToggleRef: React.RefObject<HTMLElement | null>;
   dropdownPos: DropdownPosition | null;
   applyTheme: (id: string) => void;

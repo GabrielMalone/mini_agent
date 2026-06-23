@@ -12,7 +12,7 @@ import { useRef, useEffect } from 'react';
  *   agents: object { [task_id]: { name, desc, toolCalls, thoughts, output, ok } }
  */
 
-function escapeHtml(text) {
+function escapeHtml(text: string): string {
   if (!text) return '';
   return String(text)
     .replace(/&/g, '&amp;')
@@ -20,9 +20,19 @@ function escapeHtml(text) {
     .replace(/>/g, '&gt;');
 }
 
-function SubAgentSection({ agent }) {
-  const thoughtRef = useRef(null);
-  const toolRef = useRef(null);
+interface SubAgentData {
+  task_id: string;
+  name?: string;
+  desc?: string;
+  toolCalls: Array<{ toolName?: string; toolArgs?: string; summary?: string; result?: boolean; ok?: boolean }>;
+  thoughts: string[];
+  output?: string;
+  ok?: boolean | null;
+}
+
+function SubAgentSection({ agent }: { agent: SubAgentData }) {
+  const thoughtRef = useRef<HTMLDivElement | null>(null);
+  const toolRef = useRef<HTMLDivElement | null>(null);
 
   // Auto-scroll after DOM paints (requestAnimationFrame avoids race with render)
   useEffect(() => {
@@ -53,7 +63,7 @@ function SubAgentSection({ agent }) {
           {agent.toolCalls.length === 0 && !agent.ok && (
             <div className="dim" style={{ padding: '2px 0' }}>Waiting...</div>
           )}
-          {agent.toolCalls.map((tc, i) => (
+          {agent.toolCalls.map((tc: SubAgentData['toolCalls'][number], i: number) => (
             <div key={i} className="subagent-tool-line">
               {tc.toolName ? (
                 <>

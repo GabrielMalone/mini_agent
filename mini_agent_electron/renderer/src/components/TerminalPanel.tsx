@@ -11,7 +11,7 @@ interface TerminalPanelProps {
   disabled?: boolean;
   commandHistory?: string[];
   isLive?: boolean;
-  inputRef: React.RefObject<{ focus: () => void } | null>;
+  inputRef: React.RefObject<{ focus: () => void; blur: () => void } | null>;
 }
 
 // ---------------------------------------------------------------------------
@@ -41,14 +41,14 @@ export default function TerminalPanel({
   isLive = false,
   inputRef,
 }: TerminalPanelProps) {
-  const containerRef = useRef(null);
-  const historyRef = useRef(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const historyRef = useRef<HTMLDivElement | null>(null);
   const [height, setHeight] = useState<number | null>(null); // null = auto (collapsed)
   const draggingRef = useRef(false);
   const dragStartYRef = useRef(0);
   const dragStartHRef = useRef(0);
-  const moveHandlerRef = useRef(null);
-  const upHandlerRef = useRef(null);
+  const moveHandlerRef = useRef<((ev: MouseEvent) => void) | null>(null);
+  const upHandlerRef = useRef<(() => void) | null>(null);
 
   // Cleanup drag listeners on unmount (prevents leak if unmount during drag)
   useEffect(() => {
@@ -97,7 +97,7 @@ export default function TerminalPanel({
   }, [getExpandedHeight]);
 
   // Drag handlers
-  const handleMouseDown = useCallback((e) => {
+  const handleMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     e.preventDefault();
     draggingRef.current = true;
     dragStartYRef.current = e.clientY;

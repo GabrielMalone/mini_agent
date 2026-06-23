@@ -60,10 +60,10 @@ interface SearchResultsProps {
 export default function SearchResults({ content }: SearchResultsProps) {
   const lines = useMemo(() => {
     if (!content) return [] as ParsedSearchEntry[];
-    return content.split('\n').map((line, i) => ({
-      key: i,
-      ...parseLine(line),
-    }));
+    return content.split('\n').map((line, i) => {
+      const { key: _key, ...rest } = parseLine(line);
+      return { key: i, ...rest };
+    });
   }, [content]);
 
   if (lines.length === 0) return null;

@@ -15,7 +15,7 @@ const PROVIDERS = [
   { value: 'openrouter', label: 'OpenRouter',            keyEnv: 'OPENROUTER_API_KEY' },
 ];
 
-export default function SettingsPanel({ onSaved }) {
+export default function SettingsPanel({ onSaved }: { onSaved: () => void }) {
   const [provider, setProvider] = useState('deepseek');
   const [apiKey, setApiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
@@ -38,8 +38,8 @@ export default function SettingsPanel({ onSaved }) {
       const saveTimeout = new Promise((_, reject) =>
         setTimeout(() => reject(new Error('Save timed out after 30s. Check backend.')), 30000)
       );
-      await Promise.race([window.miniAgent.saveApiKey(provider, apiKey.trim()), saveTimeout]);
-      await Promise.race([window.miniAgent.restartBackend(), saveTimeout]);
+      await Promise.race([window.miniAgent?.saveApiKey(provider, apiKey.trim()), saveTimeout]);
+      await Promise.race([window.miniAgent?.restartBackend(), saveTimeout]);
       // The backend:status event (ready:true) will trigger onSaved
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to save. Try again.');
@@ -48,7 +48,7 @@ export default function SettingsPanel({ onSaved }) {
   }, [provider, apiKey, needsKey]);
 
   const handleKeyDown = useCallback(
-    (e) => {
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (e.key === 'Enter') handleSave();
     },
     [handleSave],

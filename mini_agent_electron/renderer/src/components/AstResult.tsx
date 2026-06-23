@@ -149,11 +149,11 @@ export default function AstResult({ content, toolName }: AstResultProps) {
       <CodeBlock
         code={source}
         fontSize="0.78em"
-        language={lang}
+        language={lang ?? undefined}
         highlight={true}
         lineNumbers={true}
         startLine={startLine}
-        lineHashes={lineHashes}
+        lineHashes={lineHashes.map(h => h ?? '')}
         wrap={true}
       />
     </div>

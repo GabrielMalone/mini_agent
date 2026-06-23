@@ -182,7 +182,7 @@ export interface ThinkingBlock {
 // ---- User commands / shell output ------------------------------------------
 
 export interface UserCommand {
-  id: number;
+  id: string;
   text: string;
   timestamp: number;
 }

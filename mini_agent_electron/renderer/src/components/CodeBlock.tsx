@@ -201,7 +201,7 @@ export default function CodeBlock({
   const langFromClass = className?.startsWith('language-')
     ? className.slice('language-'.length)
     : null;
-  const lang = language || langFromClass || guessLanguage(toolName, source);
+  const lang = language || langFromClass || guessLanguage(toolName, source ?? '');
 
   // inline code -- keep simple, no Shiki overhead
   if (inline) {
@@ -268,7 +268,10 @@ function stripBg(html: string): string {
 // -- ShikiBlock (handles the async highlighter lifecycle) --------------------
 
 // Plain-text fallback when Shiki doesn't know a language
-function PlainBlock({ source, fontSize, lineNumbers, startLine = 1, lineHashes = [], wrap }) {
+function PlainBlock({ source, fontSize, lineNumbers, startLine = 1, lineHashes, wrap }: {
+  source: string; fontSize?: string; lineNumbers?: boolean;
+  startLine?: number; lineHashes?: string[]; wrap?: boolean;
+}) {
   // If content contains ANSI escape codes, render with color
   if (source.indexOf('\x1b') !== -1) {
     const lines = source.split('\n');
@@ -321,9 +324,9 @@ function PlainBlock({ source, fontSize, lineNumbers, startLine = 1, lineHashes =
         display: 'block',
       }}>
         {lineNumbers
-          ? lines.map((l, i) => {
+          ? lines.map((l: string, i: number) => {
               const num = String(i + startLine).padStart(4, '\u00A0');
-              const hashStr = lineHashes[i] ? `:${lineHashes[i]}` : '';
+              const hashStr = lineHashes?.[i] ? `:${lineHashes[i]}` : '';
               return (
                 <div key={i}>
                   <span className="shiki-ln" style={{ color:'#555', userSelect:'none', display:'inline-block', minWidth:'3em', textAlign:'right', marginRight:'0.5em' }}>
