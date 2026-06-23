@@ -4,6 +4,13 @@ Self-modification audit trail -- what the agent changed and why.
 
 ## 2026-06-23
 
+### Fix: Input disabled after slash commands — backend:response now re-enables
+
+- **Root cause:** Slash commands set `setInputDisabled(true)` and relied on a 120s timeout to re-enable. The backend processes quickly and sends `backend:response`, but that handler only updated the output block — it never called `setInputDisabled(false)`. Input stayed frozen until the timeout expired.
+- **Fix:** `backend:response` handler now calls `clearTimeout(submitTimeoutRef)`, `setIsLive(false)`, `setInputDisabled(false)`, and `inputRef.current?.focus()` after updating the block output. Input re-enables instantly when any slash command completes.
+- **Files:** `mini_agent_electron/renderer/src/App.tsx` (+5 lines)
+- **Tests:** Build + smoke test PASS. TypeScript compiles clean (0 new errors).
+
 ### Fix: Streaming text wrapping — eliminate "one long unbroken line" during token streaming
 
 - **Root cause 1:** `StreamingMessage` and `DeferredMarkdown` used `<pre>` with only `white-space: pre-wrap` which doesn't break long unbroken tokens (code, paths, URLs). Changed to `<div>` with `word-break: break-word; overflow-wrap: break-word`.
