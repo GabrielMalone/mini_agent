@@ -197,5 +197,3 @@ export default function TerminalPanel({
     </div>
   );
 }
- );
-}
