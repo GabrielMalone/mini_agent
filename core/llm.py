@@ -246,11 +246,13 @@ def _execute_single_no_pipe(
         return []
     if on_tool_start is not None:
         on_tool_start(tool_summary(tc))
+    tool_name = tc["function"]["name"]
+    on_output_wrapped = (lambda line, tn=tool_name: on_tool_output(line, tn)) if on_tool_output else None
     result = execute_tool(
         tc,
         write_gate,
         read_gate,
-        on_output=on_tool_output,
+        on_output=on_output_wrapped,
         approve_callback=approve_callback,
         cancel_event=cancel_event,
     )

@@ -213,7 +213,14 @@ function AppShell() {
     unsubs.push(api.on('stream:tool_output', (data) => {
       const stack = toolOutputStack.current;
       if (stack.length === 0) return;
-      const top = stack[stack.length - 1];
+      // Match by tool_name when available (parallel), fallback to LIFO
+      let top;
+      const tName = (data as any).tool_name || '';
+      if (tName) {
+        const found = stack.find((e) => e.toolName === tName);
+        if (found) top = found;
+      }
+      if (!top) top = stack[stack.length - 1];
       top.buffer += data.line || '';
       startTransition(() => {
         setToolCards((prev) => {

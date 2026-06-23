@@ -332,8 +332,8 @@ class StreamCallbacks:
             msg["diff_preview"] = diff_preview
         send_msg(msg)
 
-    def on_tool_output(self, line: str, turn_id: int = 0) -> None:
-        send_msg({"type": "tool_output", "line": line})
+    def on_tool_output(self, line: str, tool_name: str = "", turn_id: int = 0) -> None:
+        send_msg({"type": "tool_output", "line": line, "tool_name": tool_name})
 
     # -- sub-agent events (wired to _TOOL_CONTEXT._subagent_callback) --
 
