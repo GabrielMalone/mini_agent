@@ -539,7 +539,13 @@ function AppShell() {
           return b;
         }));
       });
-      // /sh output goes to chat area only; no terminal-panel duplication
+      // Re-enable input when /sh command completes (exit_code signals final message)
+      if (data.exit_code !== undefined) {
+        clearTimeout(submitTimeoutRef.current!);
+        setIsLive(false);
+        setInputDisabled(false);
+        inputRef.current?.focus();
+      }
     }));
 
     unsubs.push(api.on('backend:turn_start', () => {
