@@ -287,11 +287,13 @@ def _execute_parallel_no_pipes(
             on_tool_start(tool_summary(tc), True)
 
     def _run_tool(tc: dict) -> tuple[dict, "ToolResult"]:
+        tool_name = tc["function"]["name"]
+        on_output_wrapped = (lambda line, tn=tool_name: on_tool_output(line, tn)) if on_tool_output else None
         return tc, execute_tool(
             tc,
             write_gate,
             read_gate,
-            on_output=on_tool_output,
+            on_output=on_output_wrapped,
             approve_callback=approve_callback,
             cancel_event=cancel_event,
         )
