@@ -46,10 +46,34 @@ contextBridge.exposeInMainWorld('miniAgent', {
   },
 
   // Switch to an existing session
-  switchSession: (name) => ipcRenderer.invoke('session:switch', name),
+  switchSession: (name) => {
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('session:switch timed out'));
+      }, 10000);
+      const handler = (_event, data) => {
+        clearTimeout(timeout);
+        resolve(data);
+      };
+      ipcRenderer.once('session:switch_result', handler);
+      ipcRenderer.send('session:switch', name);
+    });
+  },
 
   // Create a new session
-  newSession: (name) => ipcRenderer.invoke('session:new', name),
+  newSession: (name) => {
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('session:new timed out'));
+      }, 10000);
+      const handler = (_event, data) => {
+        clearTimeout(timeout);
+        resolve(data);
+      };
+      ipcRenderer.once('session:new_result', handler);
+      ipcRenderer.send('session:new', name);
+    });
+  },
 
   // Delete a session. Returns promise resolving to {ok, message?}.
   deleteSession: (name) => {

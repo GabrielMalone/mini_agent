@@ -1634,19 +1634,23 @@ def main() -> None:
             name = msg.get("name", "")
             if not name:
                 send_msg(
-                    {"type": "session_list_result", "error": "Session name required."}
+                    {"type": "session_switch_result", "error": "Session name required."}
                 )
             else:
-                runner.messages = runner.memory.save(runner.messages)
-                runner.memory.close()
-                sd = switch_session(
-                    runner.workspace, name, runner.memory, runner.config
-                )
-                runner.memory = sd["memory"]
-                runner.messages = sd["messages"]
-                runner._total_turns = 0
-                runner._total_tokens = 0
-                runner.send_status()
+                try:
+                    runner.messages = runner.memory.save(runner.messages)
+                    runner.memory.close()
+                    sd = switch_session(
+                        runner.workspace, name, runner.memory, runner.config
+                    )
+                    runner.memory = sd["memory"]
+                    runner.messages = sd["messages"]
+                    runner._total_turns = 0
+                    runner._total_tokens = 0
+                    runner.send_status()
+                    send_msg({"type": "session_switch_result", "ok": True, "name": name})
+                except Exception as e:
+                    send_msg({"type": "session_switch_result", "error": str(e)})
 
         elif msg_type == "session_new":
             from core.config import switch_session
@@ -1654,20 +1658,24 @@ def main() -> None:
             name = msg.get("name", "")
             if not name:
                 send_msg(
-                    {"type": "session_list_result", "error": "Session name required."}
+                    {"type": "session_new_result", "error": "Session name required."}
                 )
             else:
-                # switch_session creates a new session if it doesn't exist
-                sd = switch_session(
-                    runner.workspace, name, runner.memory, runner.config
-                )
-                runner.messages = runner.memory.save(runner.messages)
-                runner.memory.close()
-                runner.memory = sd["memory"]
-                runner.messages = sd["messages"]
-                runner._total_turns = 0
-                runner._total_tokens = 0
-                runner.send_status()
+                try:
+                    # switch_session creates a new session if it doesn't exist
+                    sd = switch_session(
+                        runner.workspace, name, runner.memory, runner.config
+                    )
+                    runner.messages = runner.memory.save(runner.messages)
+                    runner.memory.close()
+                    runner.memory = sd["memory"]
+                    runner.messages = sd["messages"]
+                    runner._total_turns = 0
+                    runner._total_tokens = 0
+                    runner.send_status()
+                    send_msg({"type": "session_new_result", "ok": True, "name": name})
+                except Exception as e:
+                    send_msg({"type": "session_new_result", "error": str(e)})
 
         elif msg_type == "session_delete":
             from core.config import delete_session

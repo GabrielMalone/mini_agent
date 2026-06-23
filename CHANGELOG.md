@@ -4,6 +4,15 @@ Self-modification audit trail -- what the agent changed and why.
 
 ## 2026-06-23
 
+### Fix: New session creation via UI always fails
+
+- **Root cause:** `session:new` and `session:switch` IPC handlers used `ipcMain.handle()` but never returned a value; the Python backend processed the session but never sent a response message. The renderer's `ipcRenderer.invoke()` promise resolved with undefined, but the session list never updated.
+- **Fix:** Three-layer alignment:
+  1. **preload.js:** Changed `newSession`/`switchSession` from `ipcRenderer.invoke` to `send`+`once` pattern (matching `listSessions`/`deleteSession`).
+  2. **main.js:** Changed session IPC handlers from `ipcMain.handle` to `ipcMain.on`; added `session_switch_result` and `session_new_result` forwarding in `handlePythonMessage`.
+  3. **server.py:** Added `send_msg` for `session_switch_result`/`session_new_result` after successful processing; added try/except error handling; fixed error response types.
+- **Files:** `mini_agent_electron/preload.js`, `mini_agent_electron/main.js`, `mini_agent_electron/backend/server.py`
+
 ### Fix: Input area re-enabled after turn complete + interjection typing
 
 - **Root cause 1:** `stream:turn_complete` handler never called `setIsLive(false)` or `setInputDisabled(false)`, so after slash commands (or any turn) completed, the input stayed locked until the 120s timeout fired.

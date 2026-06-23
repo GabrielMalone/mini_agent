@@ -1,11 +1,12 @@
 # mini_agent Architecture Map
-# Last updated: 2026-06-23 -- Input area fix: re-enable after turn complete + allow interjection typing
+# Last updated: 2026-06-23 -- Session creation fix: IPC handler alignment for session_new/session_switch
 #
 # This file is the agent's map of the codebase. Update it after completed changes.
 # Behavioral rules live in AGENTS.md. Long-term facts live in core memory.
 
 ## Active Decisions
 
+- **Session creation fix: IPC handler alignment (2026-06-23)** — `session:new` and `session:switch` IPC handlers were `ipcMain.handle()` but never returned; Python backend never sent response messages. Fixed by aligning with the `send`+`once` pattern used by `listSessions`/`deleteSession`: preload.js uses `ipcRenderer.send`+`once`, main.js uses `ipcMain.on`+`win.webContents.send`, server.py sends `session_new_result`/`session_switch_result` responses with try/except error handling.
 - **Input area fix: re-enable after turn complete + interjection typing (2026-06-23)** — `stream:turn_complete` handler now calls `setIsLive(false)`, `setInputDisabled(false)`, and refocuses the input, so the input re-enables immediately when any turn finishes (not just on error/cancel). Regular message submit no longer calls `setInputDisabled(true)`, so users can type interjections while the agent is running — the CodeMirror editor stays editable, and hitting Enter while `isLive=true` routes to `window.miniAgent.interject()`.
 - **Tool card stuck-in-running fix round 2 (2026-06-23)** — When `stream:tool_end` name-match+LIFO both fail but stack is non-empty, handler now falls back to searching all running cards by `toolName` (same strategy as empty-stack guard). Previously cardId stayed null in this gap and the function returned early, leaving cards in 'running' forever. Covers: parallel race where stack entry already popped, dropped tool_start IPC messages, tool_end-before-tool_start ordering race.
 - **Batched edit_file per-file timeout (2026-06-23)** — `_edit_file_anchored` Phase 3 now wraps each per-file `_finalize_edit` call in a `ThreadPoolExecutor` with 60s timeout. Diagnostic stderr logging shows per-file timing. Prevents one slow file from hanging the entire batch (was previously uncovered by the `_execute_groups` 150s wrapper and `execute_tool`'s 120s timeout).

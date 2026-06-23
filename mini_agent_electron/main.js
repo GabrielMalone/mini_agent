@@ -686,6 +686,14 @@ function handlePythonMessage(msg) {
       win.webContents.send('session:list_result', data);
       break;
 
+    case 'session_switch_result':
+      win.webContents.send('session:switch_result', data);
+      break;
+
+    case 'session_new_result':
+      win.webContents.send('session:new_result', data);
+      break;
+
     case 'session_delete_result':
       win.webContents.send('session:delete_result', data);
       break;
@@ -735,19 +743,19 @@ function setupIPC() {
     return lastStatus || { ready: false };
   });
 
-  ipcMain.handle('session:list', async () => {
+  ipcMain.on('session:list', () => {
     sendToPython({ type: 'session_list' });
   });
 
-  ipcMain.handle('session:switch', async (event, name) => {
+  ipcMain.on('session:switch', (_event, name) => {
     sendToPython({ type: 'session_switch', name });
   });
 
-  ipcMain.handle('session:new', async (event, name) => {
+  ipcMain.on('session:new', (_event, name) => {
     sendToPython({ type: 'session_new', name });
   });
 
-  ipcMain.handle('session:delete', async (event, name) => {
+  ipcMain.on('session:delete', (_event, name) => {
     sendToPython({ type: 'session_delete', name });
   });
 
