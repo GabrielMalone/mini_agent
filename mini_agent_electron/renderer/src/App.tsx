@@ -535,7 +535,6 @@ function AppShell() {
 
     unsubs.push(api.on('backend:turn_start', () => {
       setIsLive(true);
-      setInputDisabled(true);
       startTimer();
     }));
 
@@ -689,6 +688,8 @@ function AppShell() {
     if (isLive) {
       // Agent is running -- queue as interjection, don't set activeBlockId
       window.miniAgent.interject(trimmed);
+      setInputValue('');
+      inputRef.current?.focus();
     } else {
       // Agent is idle -- start a new turn
       activeBlockIdRef.current = blockId;
