@@ -62,7 +62,6 @@ function AppShell() {
   const [thinkingBlocks, setThinkingBlocks] = useState<ThinkingBlock[]>([]);
   const thinkingIdCounterRef = useRef(0);
   const deferredThinkingBlocks = useDeferredValue(thinkingBlocks);
-  const [botStatus, setBotStatus] = useState<Record<string, boolean>>({});
   const [provider, setProvider] = useState('deepseek');
 
   // Reasonix-style status bar state
@@ -150,16 +149,6 @@ function AppShell() {
     return () => unsub();
   // Dependencies intentionally left minimal — this effect subscribes once on mount.
   // React guarantees state setters are stable; api is a global reference.
-  }, []);
-
-  // Discord bot status listener
-  useEffect(() => {
-    const api = window.miniAgent;
-    if (!api) return;
-    const unsub = api.on('backend:bot_status', (data) => {
-      setBotStatus((prev) => ({ ...prev, [data.name]: data.alive }));
-    });
-    return () => unsub();
   }, []);
 
   // Stream listeners
@@ -918,8 +907,6 @@ function AppShell() {
         balanceDisplay={balanceDisplay}
         gitBranch={gitBranch}
         gitDirty={gitDirty}
-        botStatus={botStatus}
-        setBotStatus={setBotStatus}
         workspace={workspace}
         sessionName={sessionName}
         themeEntry={themeEntry}
