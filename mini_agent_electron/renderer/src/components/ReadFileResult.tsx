@@ -13,19 +13,19 @@ const READFILE_HASHLINE_RE = /^\s*(\d+)(?:\s+(\w+)│)?\s?/;
 //   read_file(E:\path\to\file.py)  — no quotes, just parens
 const TOOL_PATH_RE = /read_file\((.+?)\)\s*$/;
 
-function extractPath(toolName) {
+function extractPath(toolName: string): string | null {
   if (!toolName) return null;
   const m = toolName.match(TOOL_PATH_RE);
   return m ? m[1] : null;
 }
 
-function extToLang(filePath) {
+function extToLang(filePath: string | null): string | null {
   if (!filePath) return null;
   const name = filePath.replace(/\\/g, '/').split('/').pop() || '';
   const lower = name.toLowerCase();
 
   // Exact filename match (e.g. "Dockerfile", "Makefile")
-  if (EXT_TO_LANG[lower]) return EXT_TO_LANG[lower];
+  if ((EXT_TO_LANG as Record<string, string>)[lower]) return (EXT_TO_LANG as Record<string, string>)[lower];
 
   // Extension match (e.g. ".py" → "py")
   const dotIdx = name.lastIndexOf('.');
@@ -33,10 +33,11 @@ function extToLang(filePath) {
 
   // Special: .env files
   if (!ext && name.startsWith('.')) {
-    if (EXT_TO_LANG[name]) return EXT_TO_LANG[name];
+    const exact = (EXT_TO_LANG as Record<string, string>)[name];
+    if (exact) return exact;
   }
 
-  return EXT_TO_LANG[ext] || null;
+  return (EXT_TO_LANG as Record<string, string>)[ext] || null;
 }
 
 // -- styles ------------------------------------------------------------------
@@ -58,14 +59,19 @@ const FILENAME_STYLE = {
 
 // -- component ---------------------------------------------------------------
 
-export default function ReadFileResult({ content, toolName }) {
+interface ReadFileResultProps {
+  content: string;
+  toolName: string;
+}
+
+export default function ReadFileResult({ content, toolName }: ReadFileResultProps) {
   const { source, filePath, lang, startLine, lineHashes } = useMemo(() => {
-    if (!content) return { source: '', filePath: null, lang: null, startLine: 1, lineHashes: [] };
+    if (!content) return { source: '', filePath: null, lang: null, startLine: 1, lineHashes: [] as (string | null)[] };
     const path = extractPath(toolName);
     // Parse line numbers and optional hash anchors before stripping prefixes
     let startLine = 1;
     const lines = content.split('\n');
-    const hashes = [];
+    const hashes: (string | null)[] = [];
     const firstMatch = lines[0]?.match(READFILE_HASHLINE_RE);
     if (firstMatch) {
       startLine = parseInt(firstMatch[1], 10);
@@ -73,7 +79,7 @@ export default function ReadFileResult({ content, toolName }) {
     // Strip the full line-number (and hash) prefix from each line,
     // collecting hashes for the gutter display.
     const stripped = lines
-      .map((line) => {
+      .map((line: string) => {
         const m = line.match(READFILE_HASHLINE_RE);
         hashes.push(m ? m[2] || null : null);
         return line.replace(READFILE_HASHLINE_RE, '');

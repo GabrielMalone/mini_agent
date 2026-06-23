@@ -101,7 +101,7 @@ const commands = [
   { label: '/init',      detail: 'Initialize project rules' },
 ];
 
-function shellCompletions(context) {
+function shellCompletions(context: { matchBefore: (re: RegExp) => { from: number; to: number; text: string } | null; explicit: boolean }) {
   const word = context.matchBefore(/\/\w*/);
   if (!word || (word.from === word.to && !context.explicit)) return null;
   return {
@@ -144,8 +144,8 @@ const ShellInput = forwardRef<{ focus: () => void; blur: () => void }, ShellInpu
   commandHistory = [],
   autoFocus = true,
 }, ref) {
-  const containerRef = useRef(null);
-  const viewRef = useRef(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const viewRef = useRef<EditorView | null>(null);
   const editableCompartment = useRef(new Compartment());
   const placeholderCompartment = useRef(new Compartment());
   const themeCompartment = useRef(new Compartment());
@@ -166,8 +166,8 @@ const ShellInput = forwardRef<{ focus: () => void; blur: () => void }, ShellInpu
 
   // Expose focus/blur to parent via ref
   useImperativeHandle(ref, () => ({
-    focus: () => viewRef.current?.focus(),
-    blur: () => viewRef.current?.contentDOM.blur(),
+    focus: () => { viewRef.current?.focus(); },
+    blur: () => { viewRef.current?.contentDOM.blur(); },
   }), []);
 
   const shellKeymap = useMemo(() => keymap.of([
@@ -260,7 +260,7 @@ const ShellInput = forwardRef<{ focus: () => void; blur: () => void }, ShellInpu
             selection: { anchor: restored.length },
           });
         } else {
-          const entry = history[historyIdxRef.current] || '';
+          const entry = historyRef.current[historyIdxRef.current] || '';
           view.dispatch({
             changes: { from: 0, to: doc.length, insert: entry },
             selection: { anchor: entry.length },
@@ -390,7 +390,7 @@ const ShellInput = forwardRef<{ focus: () => void; blur: () => void }, ShellInpu
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
-    let raf = null;
+    let raf: number | null = null;
     const reconfigure = () => {
       if (raf != null) return;
       raf = requestAnimationFrame(() => {

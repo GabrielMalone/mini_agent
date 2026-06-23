@@ -71,7 +71,7 @@ function SubAgentSection({ agent }: { agent: SubAgentData }) {
                   {tc.toolArgs && <span className="dim">{tc.toolArgs}</span>}
                 </>
               ) : (
-                <span className="dim">{escapeHtml(tc.summary)}</span>
+                <span className="dim">{escapeHtml(tc.summary ?? '')}</span>
               )}
               {tc.result && (
                 <span className={tc.ok ? 'dim' : 'msg-tool-err'} style={{ marginLeft: '4px' }}>

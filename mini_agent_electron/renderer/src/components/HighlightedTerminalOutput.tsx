@@ -164,7 +164,7 @@ function isLsCommand(command) {
 
 // -- language detection from /sh command ------------------------------------
 
-const EXT_TO_LANG = {
+const EXT_TO_LANG: Record<string, string> = {
   py: 'python', js: 'javascript', ts: 'typescript', jsx: 'javascript', tsx: 'typescript',
   rs: 'rust', go: 'go', java: 'java', rb: 'ruby', php: 'php', swift: 'swift',
   kt: 'kotlin', scala: 'scala', hs: 'haskell', ml: 'ocaml', nim: 'nim', zig: 'zig',
@@ -219,13 +219,13 @@ function guessLangFromCommand(command) {
 
 // -- Shiki wrapper -----------------------------------------------------------
 
-function stripBg(html) {
+function stripBg(html: string): string {
   return html.replace(/(<pre[^>]*style=")background-color:#[0-9a-fA-F]+;?/g, '$1');
 }
 
 // -- component ---------------------------------------------------------------
 
-function LsHighlightedOutput({ text }) {
+function LsHighlightedOutput({ text }: { text: string }) {
   const clean = stripAnsi(text);
   const html = highlightLsOutput(clean);
 
@@ -249,8 +249,8 @@ function LsHighlightedOutput({ text }) {
   );
 }
 
-function ShikiHighlightedOutput({ text, command }) {
-  const [html, setHtml] = useState(null);
+function ShikiHighlightedOutput({ text, command }: { text: string; command: string }) {
+  const [html, setHtml] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const mountedRef = useRef(true);
 
