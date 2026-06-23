@@ -416,6 +416,70 @@ class FailurePatternStore:
             except sqlite3.Error:
                 return []
 
+
+    def get_relevant_for_context(
+        self,
+        context_text: str,
+        *,
+        limit: int = _MAX_INJECTED_PATTERNS,
+    ) -> list[dict]:
+        """Return high-confidence patterns relevant to a conversation context.
+
+        Unlike get_relevant_patterns (which requires a specific tool_name),
+        this scans ALL tools and matches based on keyword overlap with
+        the context text.  Used during context injection to surface
+        cross-session failure warnings before the agent acts.
+        """
+        if not context_text:
+            return []
+
+        # Extract tool-relevant keywords from context
+        context_lower = context_text.lower()
+        from tools.schema import get_active_tool_names as _gatn
+        active_tools = _gatn()
+        relevant_tools = []
+        for tool_name in active_tools:
+            if tool_name in context_text or tool_name.replace("_", " ") in context_lower:
+                relevant_tools.append(tool_name)
+
+        if not relevant_tools:
+            return []
+
+        with self._lock:
+            try:
+                conn = self._get_conn()
+                placeholders = ",".join(["?"] * len(relevant_tools))
+                rows = conn.execute(
+                    f"SELECT id, tool_name, error_fingerprint, args_signature,"
+                    f"       fix_strategy, failure_count, success_count, confidence"
+                    f" FROM failure_patterns"
+                    f" WHERE tool_name IN ({placeholders})"
+                    f"   AND confidence >= ?"
+                    f"   AND failure_count >= ?"
+                    f" ORDER BY confidence DESC LIMIT ?",
+                    (*relevant_tools, _PATTERN_CONFIDENCE_THRESHOLD,
+                     _PATTERN_MIN_OCCURRENCES, limit * 2),
+                ).fetchall()
+
+                scored = []
+                for row in rows:
+                    pid, tn, fp, stored_sig, fix, fc, sc, conf = row
+                    scored.append({
+                        "id": pid,
+                        "tool_name": tn,
+                        "error_fingerprint": fp,
+                        "args_signature": stored_sig,
+                        "fix_strategy": fix,
+                        "failure_count": fc,
+                        "success_count": sc,
+                        "confidence": conf,
+                    })
+
+                scored.sort(key=lambda x: x["confidence"], reverse=True)
+                return scored[:limit]
+            except sqlite3.Error:
+                return []
+
     def get_fix_strategy(self, tool_name: str, error_content: str) -> str | None:
         """Look up the best-known fix strategy for a specific error."""
         fingerprint = _fingerprint_error(tool_name, error_content)

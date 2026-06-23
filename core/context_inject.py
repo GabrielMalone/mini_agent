@@ -1750,6 +1750,71 @@ def _inject_experience_context(
         pass
 
 
+def _inject_failure_pattern_context(
+    messages: list[dict],
+) -> None:
+    """Inject cross-session failure pattern warnings.
+
+    Queries the FailurePatternStore for high-confidence patterns
+    relevant to the current conversation context and injects
+    prevention guidance so the agent avoids repeating mistakes
+    learned from past sessions.
+    """
+    from tools.context import _TOOL_CONTEXT
+
+    pattern_store = getattr(_TOOL_CONTEXT, "_failure_pattern_store", None)
+    if pattern_store is None:
+        return
+
+    try:
+        from tools.failure_learning import _PATTERN_CONFIDENCE_THRESHOLD
+
+        # Extract recent context from user messages
+        context_text = ""
+        for msg in reversed(messages):
+            if msg.get("role") == "user" and not msg.get("_transient"):
+                context_text = msg.get("content", "")[:500]
+                break
+
+        if not context_text:
+            return
+
+        all_patterns = pattern_store.get_relevant_for_context(context_text)
+        if not all_patterns:
+            return
+
+        # Filter to high-confidence patterns with fix strategies
+        warnings = []
+        for p in all_patterns:
+            if p["confidence"] < _PATTERN_CONFIDENCE_THRESHOLD:
+                continue
+            if not p.get("fix_strategy"):
+                continue
+            confidence_pct = int(p["confidence"] * 100)
+            fp = p["error_fingerprint"]
+            tool = p["tool_name"]
+            fix = p["fix_strategy"]
+            warnings.append(
+                "  WARNING: " + tool + ": pattern '" + fp + "' has failed "
+                + str(p["failure_count"]) + "x (confidence: " +
+                str(confidence_pct) + "%). Fix: " + fix
+            )
+
+        if warnings:
+            msg_text = (
+                "? FAILURE PATTERN WARNINGS (learned from past sessions):\n"
+                + "\n".join(warnings)
+                + "\n\nConsider these before making similar tool calls. "
+                + "Verify your approach."
+            )
+            messages.append({
+                "role": "user",
+                "content": msg_text,
+                "_transient": True,
+            })
+    except Exception:
+        pass  # Best-effort; non-critical
+
 def _inject_semantic_memory_context(
     messages: list[dict],
     memory_store=None,
@@ -2021,6 +2086,7 @@ def _inject_context(
     _inject_self_critique(messages, turn_count=turn_count)
     _inject_confidence_web_search_nudge(messages, turn_count=turn_count)
     _inject_tool_graph_context(messages)
+    _inject_failure_pattern_context(messages)
     _inject_experience_context(messages, memory_store=memory_store)
     _inject_semantic_memory_context(messages, memory_store=memory_store)
     _inject_dead_tool_pruning(messages, turn_count=turn_count)
