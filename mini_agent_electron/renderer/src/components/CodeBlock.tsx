@@ -71,7 +71,7 @@ export const EXT_TO_LANG = {
   'git-commit': 'git-commit', 'git-rebase': 'git-rebase',
 };
 
-export function guessLanguage(toolName, code) {
+export function guessLanguage(toolName: string, code: string): string {
   // Fast path: no code to inspect
   if (!code) return 'text';
 
@@ -128,7 +128,7 @@ export function guessLanguage(toolName, code) {
 
 // -- singleton highlighter --------------------------------------------------
 
-let highlighterPromise = null;
+let highlighterPromise: ReturnType<typeof createHighlighter> | null = null;
 let highlighterAttempts = 0;
 const MAX_ATTEMPTS = 3;
 
@@ -339,8 +339,11 @@ function PlainBlock({ source, fontSize, lineNumbers, startLine = 1, lineHashes =
   );
 }
 
-function ShikiBlock({ source, lang, fontSize, lineNumbers, startLine = 1, lineHashes = [], wrap }) {
-  const [html, setHtml] = useState(null);
+function ShikiBlock({ source, lang, fontSize, lineNumbers, startLine = 1, lineHashes = [], wrap }: {
+  source: string; lang: string; fontSize?: string; lineNumbers?: boolean;
+  startLine?: number; lineHashes?: string[]; wrap?: boolean;
+}) {
+  const [html, setHtml] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const mountedRef = useRef(true);
 
