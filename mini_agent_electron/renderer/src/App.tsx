@@ -661,6 +661,8 @@ function AppShell() {
     // Slash commands always go through the command handler
     if (trimmed.startsWith('/')) {
       setInputValue('');
+      setIsLive(true);
+      setInputDisabled(true);
       // All slash commands create a block in the chat area (including /sh)
       const cmdId = nextLineId();
       startTransition(() => {
@@ -670,6 +672,10 @@ function AppShell() {
       });
       activeBlockIdRef.current = cmdId;
       window.miniAgent.command(trimmed);
+      submitTimeoutRef.current = setTimeout(() => {
+        setInputDisabled(false);
+        inputRef.current?.focus();
+      }, 120_000);
       return;
     }
 
@@ -688,7 +694,6 @@ function AppShell() {
     if (isLive) {
       // Agent is running -- queue as interjection, don't set activeBlockId
       window.miniAgent.interject(trimmed);
-      setInputValue('');
       inputRef.current?.focus();
     } else {
       // Agent is idle -- start a new turn
