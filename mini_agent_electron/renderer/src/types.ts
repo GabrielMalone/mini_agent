@@ -13,6 +13,7 @@ export interface StreamTokenData {
 export interface StreamToolStartData {
   summary?: string;
   tool_name?: string;
+  tool_call_id?: string;
   parallel?: boolean;
 }
 
@@ -27,6 +28,7 @@ export interface StreamToolEndData {
   diff_preview?: string | null;
   detail?: string;
   tool_name?: string;
+  tool_call_id?: string;
 }
 
 export interface StreamTurnCompleteData {
@@ -151,6 +153,7 @@ export interface ModelGroup {
 export interface ToolCardData {
   id: number;
   toolName: string;
+  toolCallId?: string;
   toolArgs: string;
   status: 'running' | 'ok' | 'err';
   output: string;

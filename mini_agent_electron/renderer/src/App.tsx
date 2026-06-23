@@ -207,7 +207,7 @@ function AppShell() {
       // Set a data-enter attribute for CSS animation targeting
       // (avoids nth-child animation churn on new card insertion)
       const cardWithEnter: any = {
-        id: cardId, toolName, toolArgs, status: 'running', output: '',
+        id: cardId, toolName, toolCallId: data.tool_call_id || '', toolArgs, status: 'running', output: '',
         startTime: Date.now(), endTime: null, diffPreview: null, errorDetail: null,
         _enter: true,
       };
@@ -227,7 +227,7 @@ function AppShell() {
           return [...capped, cardWithEnter];
         });
       });
-      toolOutputStack.current.push({ cardId, buffer: '', toolName });
+      toolOutputStack.current.push({ cardId, buffer: '', toolName, toolCallId: data.tool_call_id || '' });
 
       // Drain any orphan output lines buffered before tool_start arrived
       const orphans = orphanOutputs.current;
@@ -284,9 +284,14 @@ function AppShell() {
         return;
       }
 
-      // Match by tool_name when available (parallel), fallback to LIFO
+      // Match by tool_call_id first (unique, handles same-toolName batches), then tool_name, then LIFO
+      const tCallId = (data as any).tool_call_id || '';
       let top;
-      if (tName) {
+      if (tCallId) {
+        const found = stack.find((e) => (e as any).toolCallId === tCallId);
+        if (found) top = found;
+      }
+      if (!top && tName) {
         const found = stack.find((e) => e.toolName === tName);
         if (found) top = found;
       }
@@ -310,17 +315,17 @@ function AppShell() {
       const tName = (data as any).tool_name || '';
 
       // Guard: if tool_end fires without a matching tool_start
-      if (stack.length === 0 && tName) {
-        // Fallback: search cards directly for a running card with this tool_name.
-        // Can happen when the tool_start was pushed then popped by another
-        // tool_end (LIFO mismatch in parallel), or when the stack was already
-        // drained but cards remain in 'running' state.
+      const tCallId = (data as any).tool_call_id || '';
+      if (stack.length === 0 && (tCallId || tName)) {
+        // Fallback: search cards directly for a running card with this tool_call_id or tool_name.
         startTransition(() => {
           setToolCards((prev) => {
-            // findLastIndex polyfill for ES2022 target
             let matchIdx = -1;
             for (let i = prev.length - 1; i >= 0; i--) {
-              if (prev[i].status === 'running' && prev[i].toolName === tName) {
+              if (prev[i].status === 'running' && (
+                (tCallId && (prev[i] as any).toolCallId === tCallId) ||
+                (!tCallId && prev[i].toolName === tName)
+              )) {
                 matchIdx = i;
                 break;
               }
@@ -342,8 +347,17 @@ function AppShell() {
 
       let cardId: number | null = null;
       let finalBuffer = '';
-      // Match by tool_name when available (parallel execution), fallback to LIFO
-      if (tName) {
+      // Match by tool_call_id first (unique, handles same-toolName batches), then tool_name, then LIFO
+      if (tCallId) {
+        const idx = stack.findIndex((e) => (e as any).toolCallId === tCallId);
+        if (idx !== -1) {
+          const entry = stack[idx];
+          finalBuffer = entry.buffer;
+          cardId = entry.cardId;
+          stack.splice(idx, 1);
+        }
+      }
+      if (cardId == null && tName) {
         const idx = stack.findIndex((e) => e.toolName === tName);
         if (idx !== -1) {
           const entry = stack[idx];
@@ -361,22 +375,22 @@ function AppShell() {
 
       if (cardId == null) {
         // Stack is out of sync with running cards — fall back to searching
-        // all running cards by tool_name. This handles edge cases like:
-        // - tool_end arriving before tool_start (stack empty, but card exists)
-        // - stack entry already popped by another tool_end (parallel race)
-        // - dropped tool_start IPC messages
-        if (tName) {
+        // all running cards by tool_call_id first, then tool_name.
+        if (tCallId || tName) {
           startTransition(() => {
             setToolCards((prev) => {
               let matchIdx = -1;
               for (let i = prev.length - 1; i >= 0; i--) {
-                if (prev[i].status === 'running' && prev[i].toolName === tName) {
+                if (prev[i].status === 'running' && (
+                  (tCallId && (prev[i] as any).toolCallId === tCallId) ||
+                  (!tCallId && prev[i].toolName === tName)
+                )) {
                   matchIdx = i;
                   break;
                 }
               }
               if (matchIdx === -1) {
-                console.warn('[App] tool_end for "%s" could not be matched to any running card', tName);
+                console.warn('[App] tool_end for "%s" (call_id: %s) could not be matched to any running card', tName, tCallId);
                 return prev;
               }
               const matched = prev[matchIdx];

@@ -4,6 +4,22 @@ Self-modification audit trail -- what the agent changed and why.
 
 ## 2026-06-23
 
+### Fix: Tool card stuck-in-running — tool_call_id matching for same-name batches
+
+- **core/llm.py**: All 5 `on_tool_start()` call sites + `_append_tool_result()` (on_tool_end) now pass
+  `tool_call_id=tc.get("id", "")` — the unique LLM-generated call ID.
+- **mini_agent_electron/backend/server.py**: `StreamCallbacks.on_tool_start` and `on_tool_end` accept
+  and forward `tool_call_id` in IPC messages.
+- **renderer/src/types.ts**: `StreamToolStartData`, `StreamToolEndData`, and `ToolCardData` now include
+  `tool_call_id?` / `toolCallId?`.
+- **renderer/src/App.tsx**: Stack entries store `toolCallId`. All 3 matching sites (tool_output,
+  tool_end stack match, tool_end fallback) prefer `tool_call_id` over `tool_name`. Card fallback
+  searches check `toolCallId` first.
+
+Root cause: When multiple tool calls share the same `toolName` (e.g., batch `edit_file`), the
+frontend matched by `toolName` which is ambiguous — `findIndex` always returned the first match,
+not necessarily the matching call. Only the last-completing tool got marked "done".
+
 ### Fix: Batched edit_file per-file timeout + diagnostic logging
 
 - **tools/_edit_ops.py** `_edit_file_anchored` Phase 3: Each per-file `_finalize_edit` call

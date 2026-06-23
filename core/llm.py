@@ -245,7 +245,7 @@ def _execute_single_no_pipe(
         )
         return []
     if on_tool_start is not None:
-        on_tool_start(tool_summary(tc))
+        on_tool_start(tool_summary(tc), tool_call_id=tc.get("id", ""))
     tool_name = tc["function"]["name"]
     on_output_wrapped = (lambda line, tn=tool_name: on_tool_output(line, tn)) if on_tool_output else None
     result = execute_tool(
@@ -284,7 +284,7 @@ def _execute_parallel_no_pipes(
     """Execute multiple independent tool calls in parallel."""
     if on_tool_start is not None:
         for tc in remaining:
-            on_tool_start(tool_summary(tc), True)
+            on_tool_start(tool_summary(tc), True, tool_call_id=tc.get("id", ""))
 
     def _run_tool(tc: dict) -> tuple[dict, "ToolResult"]:
         tool_name = tc["function"]["name"]
@@ -390,6 +390,7 @@ def _execute_groups(
                     tool_summary(tc),
                     parallel=len(group) > 1,
                     tool_name=tc.get("function", {}).get("name", ""),
+                    tool_call_id=tc.get("id", ""),
                 )
 
         if len(group) == 1:
@@ -610,6 +611,7 @@ def _execute_tools(
                 on_tool_start(
                     tool_summary(tc),
                     tool_name=tc.get("function", {}).get("name", ""),
+                    tool_call_id=tc.get("id", ""),
                 )
         results: list[tuple[dict, "ToolResult"]] = []
         for i, tc in enumerate(remaining):
@@ -736,6 +738,7 @@ def _api_call_phase(
             on_tool_start(
                 tool_summary(tc),
                 tool_name=tc.get("function", {}).get("name", ""),
+                tool_call_id=tc.get("id", ""),
             )
         import sys as _sys_otr
 
@@ -1151,6 +1154,7 @@ def _append_tool_result(
             diff_preview=result.diff_preview,
             content=result.content,
             tool_name=tool_name,
+            tool_call_id=tc.get("id", ""),
         )
     # --- Truncate oversized tool results before appending to messages ---
     # Large tool results (e.g. run_shell returning 244K chars of log output)
