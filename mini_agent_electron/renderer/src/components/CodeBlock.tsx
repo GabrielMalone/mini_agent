@@ -261,7 +261,7 @@ export default function CodeBlock({
 
 // Strip the background color that shiki injects on the <pre>
 // so the tool pane's own dark background shows through seamlessly.
-function stripBg(html) {
+function stripBg(html: string): string {
   return html.replace(/(<pre[^>]*style=")background-color:#[0-9a-fA-F]+;?/g, '$1');
 }
 
@@ -287,7 +287,7 @@ function PlainBlock({ source, fontSize, lineNumbers, startLine = 1, lineHashes =
           display: 'block',
         }}>
           {lineNumbers
-            ? lines.map((l, i) => {
+            ? lines.map((l: string, i: number) => {
                 const num = String(i + startLine).padStart(4, '\u00A0');
                 const hashStr = lineHashes[i] ? `:${lineHashes[i]}` : '';
                 return (
