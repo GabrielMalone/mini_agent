@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback, startTransition, useDeferredValue } from 'react';
+import type { ChatBlock, UserCommand, ShellOutputEntry, ToolCardData, BackendStatusData, BalanceData } from './types';
 import useSmoothStream from './hooks/useSmoothStream';
 import useTheme from './hooks/useTheme';
 import TerminalBlock from './components/TerminalBlock';
@@ -20,27 +21,27 @@ function AppShell() {
   // Terminal blocks -- Warp-style command+output blocks
   // Each block: { id, command, output, status, timestamp }
   // status: 'running' | 'ok' | 'err'
-  const [blocks, setBlocks] = useState([]);
+  const [blocks, setBlocks] = useState<ChatBlock[]>([]);
 
   // Command history for Up/Down navigation in ShellInput
-  const [commandHistory, setCommandHistory] = useState([]);
+  const [commandHistory, setCommandHistory] = useState<string[]>([]);
   // User commands shown in the terminal panel history (scrollable)
-  const [userCommands, setUserCommands] = useState([]);
+  const [userCommands, setUserCommands] = useState<UserCommand[]>([]);
   // Shell command output (from /sh) displayed in the terminal panel
-  const [shellOutput, setShellOutput] = useState([]);
-  const activeBlockIdRef = useRef(null);  // ID of the currently streaming block
+  const [shellOutput, setShellOutput] = useState<ShellOutputEntry[]>([]);
+  const activeBlockIdRef = useRef<number | null>(null);  // ID of the currently streaming block
 
   // Tool Cards state -- Dirac-inspired card-based display
   // Each card: { id, toolName, toolArgs, status, output, startTime, endTime, diffPreview, errorDetail }
-  const [toolCards, setToolCards] = useState([]);
-  const toolCardIdRef = useRef(0);
-  const toolCardIndexRef = useRef(new Map()); // cardId -> array index for O(1) lookup
+  const [toolCards, setToolCards] = useState<ToolCardData[]>([]);
+  const toolCardIdRef = useRef<number>(0);
+  const toolCardIndexRef = useRef<Map<number, number>>(new Map()); // cardId -> array index for O(1) lookup
 
   // Deferred values keep the UI responsive during heavy streaming
   const deferredBlocks = useDeferredValue(blocks);
 
   // Sub-agent data -- { [task_id]: { name, desc, toolCalls: [], thoughts: [], output: "", ok: null } }
-  const [subagentData, setSubagentData] = useState({});
+  const [subagentData, setSubagentData] = useState<Record<string, any>>({});
   const deferredSubagentData = useDeferredValue(subagentData);
 
   // Smooth streaming for thinking & chat
@@ -53,21 +54,21 @@ function AppShell() {
   const [gitBranch, setGitBranch] = useState('');
   const [gitDirty, setGitDirty] = useState(false);
   const [workspace, setWorkspace] = useState('');
-  const [restoredCount, setRestoredCount] = useState(null);
+  const [restoredCount, setRestoredCount] = useState<number | null>(null);
   const [isLive, setIsLive] = useState(false);
-  const [turnCountVal, setTurnCountVal] = useState(null);
-  const [elapsedSec, setElapsedSec] = useState(null);
+  const [turnCountVal, setTurnCountVal] = useState<number | null>(null);
+  const [elapsedSec, setElapsedSec] = useState<number | null>(null);
   const [inputDisabled, setInputDisabled] = useState(false);
-  const [thinkingBlocks, setThinkingBlocks] = useState([]);
+  const [thinkingBlocks, setThinkingBlocks] = useState<string[]>([]);
   const deferredThinkingBlocks = useDeferredValue(thinkingBlocks);
-  const [botStatus, setBotStatus] = useState({});
+  const [botStatus, setBotStatus] = useState<Record<string, boolean>>({});
   const [provider, setProvider] = useState('deepseek');
 
   // Reasonix-style status bar state
-  const [balanceDisplay, setBalanceDisplay] = useState(null);
+  const [balanceDisplay, setBalanceDisplay] = useState<BalanceData | null>(null);
   const [sessionCost, setSessionCost] = useState('-');
   const [turnCost, setTurnCost] = useState('-');
-  const [cacheHitRate, setCacheHitRate] = useState(null);
+  const [cacheHitRate, setCacheHitRate] = useState<number | null>(null);
   const [subagentRunning, setSubagentRunning] = useState(0);
   // plan UI removed — plan feature doesn't work
 
@@ -78,15 +79,15 @@ function AppShell() {
     applyTheme, cycleTheme,
   } = useTheme();
 
-  const inputRef = useRef(null);
-  const thinkingLogRef = useRef(null);
-  const chatLogRef = useRef(null);
-  const toolsLogRef = useRef(null);
+  const inputRef = useRef<{ focus: () => void } | null>(null);
+  const thinkingLogRef = useRef<HTMLDivElement | null>(null);
+  const chatLogRef = useRef<HTMLDivElement | null>(null);
+  const toolsLogRef = useRef<HTMLDivElement | null>(null);
   const inThinkingRef = useRef(false);
-  const submitTimeoutRef = useRef(null);
-  const timerRef = useRef(null);
-  const turnStartRef = useRef(null);
-  const toolOutputStack = useRef([]); // stack of buffers for parallel tool calls
+  const submitTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const turnStartRef = useRef<number | null>(null);
+  const toolOutputStack = useRef<Array<{ cardId: number; buffer: string }>>([]); // stack of buffers for parallel tool calls
   const lineIdRef = useRef(0); // monotonically increasing ID for stable React keys
   const nextLineId = useCallback(() => ++lineIdRef.current, []);
 
@@ -95,7 +96,7 @@ function AppShell() {
     turnStartRef.current = Date.now();
     setElapsedSec(0);
     timerRef.current = setInterval(() => {
-      setElapsedSec(Math.floor((Date.now() - turnStartRef.current) / 1000));
+      setElapsedSec(Math.floor((Date.now() - turnStartRef.current!) / 1000));
     }, 1000);
   }, []);
 
@@ -119,7 +120,7 @@ function AppShell() {
     const api = window.miniAgent;
     if (!api) return;
 
-    const onStatus = (data) => {
+    const onStatus = (data: BackendStatusData) => {
       if (data.reason === 'no_api_key') {
         setShowSettings(true);
         return;
@@ -163,7 +164,7 @@ function AppShell() {
     const api = window.miniAgent;
     if (!api) return;
 
-    const unsubs = [];
+    const unsubs: Array<() => void> = [];
 
     unsubs.push(api.on('stream:token', (data) => {
       if (inThinkingRef.current) {
@@ -234,7 +235,7 @@ function AppShell() {
       let cardId = null;
       let finalBuffer = '';
       while (stack.length > 0) {
-        const top = stack.pop();
+        const top = stack.pop()!;
         finalBuffer = top.buffer;
         cardId = top.cardId;
         break;
@@ -260,7 +261,7 @@ function AppShell() {
     }));
 
     unsubs.push(api.on('stream:turn_complete', (data) => {
-      clearTimeout(submitTimeoutRef.current);
+      clearTimeout(submitTimeoutRef.current!);
       const agentText = chatStream.flush();
       const activeId = activeBlockIdRef.current;
       startTransition(() => {
@@ -284,7 +285,7 @@ function AppShell() {
     }));
 
     unsubs.push(api.on('stream:error', (data) => {
-      clearTimeout(submitTimeoutRef.current);
+      clearTimeout(submitTimeoutRef.current!);
       stopTimer();
       const agentText = chatStream.flush();
       const activeId = activeBlockIdRef.current;
@@ -368,7 +369,7 @@ function AppShell() {
     }));
 
     unsubs.push(api.on('backend:idle', () => {
-      clearTimeout(submitTimeoutRef.current);
+      clearTimeout(submitTimeoutRef.current!);
       stopTimer();
       const leftover = chatStream.flush();
       const activeId = activeBlockIdRef.current;
@@ -624,7 +625,7 @@ function AppShell() {
   // Cleanup timers on unmount
   useEffect(() => {
     return () => {
-      clearTimeout(submitTimeoutRef.current);
+      clearTimeout(submitTimeoutRef.current!);
       if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     };
   }, []);
