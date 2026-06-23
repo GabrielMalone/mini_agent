@@ -184,7 +184,7 @@ function AppShell() {
     unsubs.push(api.on('stream:thinking_end', () => {
       inThinkingRef.current = false;
       const flushed = thinking.flush();
-      if (flushed) startTransition(() => setThinkingBlocks((prev) => [...prev, flushed]));
+      if (flushed) startTransition(() => setThinkingBlocks((prev) => [...prev.slice(-99), flushed]));
     }));
 
     unsubs.push(api.on('stream:tool_start', (data) => {
@@ -409,7 +409,7 @@ function AppShell() {
 
     unsubs.push(api.on('stream:status', (data) => {
       startTransition(() => {
-        setBlocks((prev) => [...prev, {
+        setBlocks((prev) => [...prev.slice(-199), {
           id: nextLineId(), command: '', output: data.message, status: 'ok', timestamp: Date.now(),
         }]);
       });
@@ -433,7 +433,7 @@ function AppShell() {
             activeBlockIdRef.current = null;
           } else {
             // Fallback: create a new block (shouldn't normally happen)
-            setBlocks((prev) => [...prev, {
+            setBlocks((prev) => [...prev.slice(-199), {
               id: nextLineId(), command: data.command || '', output, status: blockStatus, timestamp: Date.now(),
             }]);
           }
@@ -589,7 +589,7 @@ function AppShell() {
       // All slash commands create a block in the chat area (including /sh)
       const cmdId = nextLineId();
       startTransition(() => {
-        setBlocks((prev) => [...prev, {
+        setBlocks((prev) => [...prev.slice(-199), {
           id: cmdId, command: trimmed, output: '', status: 'running', timestamp: Date.now(),
         }]);
       });
@@ -602,7 +602,7 @@ function AppShell() {
     const blockId = nextLineId();
     const blockStatus = isLive ? 'ok' : 'running';  // interjections are info blocks
     startTransition(() => {
-      setBlocks((prev) => [...prev, {
+      setBlocks((prev) => [...prev.slice(-199), {
         id: blockId, command: trimmed,
         output: isLive ? '(queued)' : '',
         status: blockStatus, timestamp: Date.now(),
@@ -672,7 +672,7 @@ function AppShell() {
     inThinkingRef.current = false;
     const agentText = chatStream.flush();
     const thinkText = thinking.flush();
-    if (thinkText) startTransition(() => setThinkingBlocks((prev) => [...prev, thinkText]));
+    if (thinkText) startTransition(() => setThinkingBlocks((prev) => [...prev.slice(-99), thinkText]));
     thinking.reset();
     const activeId = activeBlockIdRef.current;
     if (agentText) {

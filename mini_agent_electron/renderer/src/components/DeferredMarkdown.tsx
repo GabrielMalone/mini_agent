@@ -21,25 +21,25 @@ const DeferredMarkdown = memo(function DeferredMarkdown({ text, markdown = true,
 
   if (!markdown) {
     return (
-      <pre className={cls} style={{ whiteSpace: 'pre-wrap', margin: 0, fontFamily: 'inherit', fontSize: 'inherit' }}>
-        {text}
-      </pre>
-    );
-  }
-
-  if (!parsed) {
-    return (
-      <pre className={cls} style={{ whiteSpace: 'pre-wrap', margin: 0, fontFamily: 'inherit', fontSize: 'inherit' }}>
-        {text}
-      </pre>
+      <div className={cls}>
+        <pre style={{ whiteSpace: 'pre-wrap', margin: 0, fontFamily: 'inherit', fontSize: 'inherit' }}>
+          {text}
+        </pre>
+      </div>
     );
   }
 
   return (
     <div className={cls}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>
-        {parsed}
-      </ReactMarkdown>
+      {parsed ? (
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+          {parsed}
+        </ReactMarkdown>
+      ) : (
+        <pre style={{ whiteSpace: 'pre-wrap', margin: 0, fontFamily: 'inherit', fontSize: 'inherit' }}>
+          {text}
+        </pre>
+      )}
     </div>
   );
 });

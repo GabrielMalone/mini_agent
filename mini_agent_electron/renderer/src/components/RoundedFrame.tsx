@@ -7,9 +7,10 @@ interface RoundedFrameProps {
   className?: string;
 }
 
-export default function RoundedFrame({ id, children, className }: RoundedFrameProps) {
+export default function RoundedFrame({ id, title, children, className }: RoundedFrameProps) {
   return (
     <div id={id} className={`panel rounded-frame${className ? ` ${className}` : ''}`}>
+      {title && <div className="frame-title">{title}</div>}
       <div className="frame-body">
         <div className="frame-content">{children}</div>
       </div>
