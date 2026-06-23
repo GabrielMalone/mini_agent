@@ -1,8 +1,30 @@
 import { useState, useEffect, useCallback } from 'react';
 import SessionPicker from './SessionPicker';
 import useDropdownPosition from '../hooks/useDropdownPosition';
+import type { BalanceData } from '../types';
 
 const BOT_SCRIPTS = { 'mini-agent': 'workspace_bot.py', 'emotion-game': 'discord_bot.py' };
+
+interface StatusBarProps {
+  balanceDisplay: BalanceData | null;
+  gitBranch: string;
+  gitDirty: boolean;
+  botStatus: Record<string, boolean>;
+  setBotStatus: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+  workspace: string;
+  sessionName: string;
+  themeEntry: { name: string; id: string; icon: string };
+  PALETTE_SVG: string;
+  THEMES: Array<{ id: string; name: string; icon: string }>;
+  theme: string;
+  themePickerOpen: boolean;
+  setThemePickerOpen: (v: boolean) => void;
+  themeToggleRef: React.RefObject<HTMLElement | null>;
+  dropdownPos: { top: number; left: number } | null;
+  applyTheme: (id: string) => void;
+  handleWorkspaceClick: () => void;
+  handleSessionSwitch: (name: string, isNew?: boolean) => void;
+}
 
 export default function StatusBar({
   balanceDisplay, gitBranch, gitDirty, botStatus, setBotStatus,
@@ -10,7 +32,7 @@ export default function StatusBar({
   themeEntry, PALETTE_SVG, THEMES, theme, themePickerOpen, setThemePickerOpen,
   themeToggleRef, dropdownPos, applyTheme,
   handleWorkspaceClick, handleSessionSwitch,
-}) {
+}: StatusBarProps) {
   const [botMenuOpen, setBotMenuOpen] = useState(false);
   const [botMenuPos, botMenuToggleRef] = useDropdownPosition(botMenuOpen);
   // plan UI removed — plan feature doesn't work

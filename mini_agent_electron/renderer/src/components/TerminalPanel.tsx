@@ -1,5 +1,18 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import ShellInput from './ShellInput';
+import type { UserCommand, ShellOutputEntry } from '../types';
+
+interface TerminalPanelProps {
+  userCommands?: UserCommand[];
+  shellOutput?: ShellOutputEntry[];
+  inputValue: string;
+  onInputChange: (value: string) => void;
+  onSubmit: (text: string) => void;
+  disabled?: boolean;
+  commandHistory?: string[];
+  isLive?: boolean;
+  inputRef: React.RefObject<{ focus: () => void } | null>;
+}
 
 // ---------------------------------------------------------------------------
 /**
@@ -8,17 +21,6 @@ import ShellInput from './ShellInput';
  * Shows recently typed commands above the ShellInput, with a drag handle at
  * the top edge that lets the user expand the panel up to ~25% of the viewport.
  * /sh command output is rendered in the chat area (TerminalBlock), not here.
- *
- * @param {Object} props
- * @param {Array<{id: number, text: string, timestamp: number}>} [props.userCommands=[]]
- * @param {Array<{id: number, command: string, lines: string[], exitCode: number, timestamp: number}>} [props.shellOutput=[]]
- * @param {string} props.inputValue
- * @param {(value: string) => void} props.onInputChange
- * @param {(text: string) => void} props.onSubmit
- * @param {boolean} [props.disabled]
- * @param {string[]} [props.commandHistory=[]]
- * @param {boolean} [props.isLive=false]
- * @param {React.RefObject} props.inputRef
  */
 // ---------------------------------------------------------------------------
 
@@ -38,10 +40,10 @@ export default function TerminalPanel({
   commandHistory = [],
   isLive = false,
   inputRef,
-}) {
+}: TerminalPanelProps) {
   const containerRef = useRef(null);
   const historyRef = useRef(null);
-  const [height, setHeight] = useState(null); // null = auto (collapsed)
+  const [height, setHeight] = useState<number | null>(null); // null = auto (collapsed)
   const draggingRef = useRef(false);
   const dragStartYRef = useRef(0);
   const dragStartHRef = useRef(0);

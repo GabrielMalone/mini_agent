@@ -42,7 +42,7 @@ function ansiToElements(text: string): React.ReactNode {
     const json = anser.ansiToJson(text, { use_classes: false });
     if (!json || json.length === 0) return text;
 
-    return json.map((seg: { fg?: string; bg?: string; decoration?: string; content: string }, i: number) => {
+    return json.map((seg: { fg?: string; bg?: string; decoration?: string | null; content: string }, i: number) => {
       const style: React.CSSProperties = {};
       if (seg.fg && ANSI_COLORS[seg.fg]) {
         const c = ANSI_COLORS[seg.fg];

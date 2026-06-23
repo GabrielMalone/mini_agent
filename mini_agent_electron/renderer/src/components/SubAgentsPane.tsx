@@ -102,7 +102,7 @@ function SubAgentSection({ agent }) {
   );
 }
 
-export default function SubAgentsPane({ agents }) {
+export default function SubAgentsPane({ agents }: { agents: Record<string, any> }) {
   const ids = Object.keys(agents);
 
   if (ids.length === 0) {
