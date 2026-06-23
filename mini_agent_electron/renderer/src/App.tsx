@@ -734,7 +734,7 @@ function AppShell() {
       <div id="main-row">
         {/* Left column: Tools (top) + Thinking (bottom) */}
         <div id="left-column">
-          <RoundedFrame id="tools-frame" title="Tools">
+          <RoundedFrame id="tools-frame">
             <div ref={toolsLogRef} className="tools-log">
               <div className="frame-content">
                 {toolCards.map((card) => (
@@ -744,7 +744,7 @@ function AppShell() {
             </div>
           </RoundedFrame>
 
-          <RoundedFrame id="thinking-frame" title="Thinking">
+          <RoundedFrame id="thinking-frame">
             <div ref={thinkingLogRef} className="thinking-log">
               <div className="frame-content">
                 {deferredThinkingBlocks.map((block, i) => (
@@ -756,7 +756,7 @@ function AppShell() {
           </RoundedFrame>
         </div>
 
-        <RoundedFrame id="chat-frame" title="Chat">
+        <RoundedFrame id="chat-frame">
           <div ref={chatLogRef} className="chat-log">
             <div className="frame-content">
               {deferredBlocks.map((block) => {
