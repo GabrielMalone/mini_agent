@@ -1,20 +1,45 @@
+import tseslint from 'typescript-eslint';
 import reactPlugin from 'eslint-plugin-react';
 import reactHooksPlugin from 'eslint-plugin-react-hooks';
 
-export default [
+export default tseslint.config(
+  // Base TS config for all TS/TSX files
   {
-    files: ['renderer/src/**/*.tsx', 'renderer/src/**/*.ts', 'renderer/src/**/*.jsx', 'renderer/src/**/*.js'],
-    plugins: {
-      react: reactPlugin,
-      'react-hooks': reactHooksPlugin,
+    files: ['renderer/src/**/*.ts', 'renderer/src/**/*.tsx'],
+    extends: [tseslint.configs.recommended],
+    languageOptions: {
+      parserOptions: {
+        project: './tsconfig.json',
+        tsconfigRootDir: import.meta.dirname,
+      },
     },
+  },
+  // JS files (preload, vite config, eslint config itself)
+  {
+    files: ['renderer/src/**/*.jsx', 'renderer/src/**/*.js'],
     languageOptions: {
       ecmaVersion: 'latest',
       sourceType: 'module',
       parserOptions: {
         ecmaFeatures: { jsx: true },
       },
+    },
+  },
+  // Shared config for ALL source files
+  {
+    files: [
+      'renderer/src/**/*.tsx',
+      'renderer/src/**/*.ts',
+      'renderer/src/**/*.jsx',
+      'renderer/src/**/*.js',
+    ],
+    plugins: {
+      react: reactPlugin,
+      'react-hooks': reactHooksPlugin,
+    },
+    languageOptions: {
       globals: {
+        React: 'readonly',
         window: 'readonly',
         document: 'readonly',
         console: 'readonly',
@@ -55,18 +80,20 @@ export default [
       },
     },
     rules: {
-      // ── THE CRITICAL ONES ──────────────────────────────────
+      // ── THE CRITICAL ONES ────────────────────
       // These catch "RoundedFrame is not defined" and similar
       'no-undef': 'error',
       'react/jsx-no-undef': 'error',
 
-      // ── Catch likely bugs ──────────────────────────────────
+      // ── Catch likely bugs ────────────────────
       'react/jsx-no-duplicate-props': 'error',
       'react/no-unknown-property': 'error',
       'react-hooks/rules-of-hooks': 'error',
 
-      // ── Relaxed ────────────────────────────────────────────
+      // ── Relaxed ──────────────────────────────
       'no-unused-vars': 'off',
+      '@typescript-eslint/no-unused-vars': 'off',
+      '@typescript-eslint/no-explicit-any': 'off',
       'react/jsx-key': 'off',
       'react/prop-types': 'off',
       'react/react-in-jsx-scope': 'off',
@@ -76,4 +103,4 @@ export default [
       react: { version: 'detect' },
     },
   },
-];
+);

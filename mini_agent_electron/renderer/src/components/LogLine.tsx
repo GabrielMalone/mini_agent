@@ -50,9 +50,8 @@ const LogLine = memo(function LogLine({ line }: LogLineProps) {
 
   if (line.markdown) {
     // react-markdown's components type conflicts with our simplified p component
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const components: any = {
-      p: ({ children }: any) => <span>{children}</span>,
+    const components: Record<string, React.FC<{ children: React.ReactNode }>> = {
+      p: ({ children }) => <span>{children}</span>,
       ...markdownComponents,
     };
     return (
