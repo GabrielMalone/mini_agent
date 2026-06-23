@@ -755,8 +755,45 @@ def _strip_orphaned_tool_messages(
                     orphan_indices.add(i)
 
     if orphan_indices:
-        return [m for i, m in enumerate(pass1) if i not in orphan_indices]
-    return pass1
+        pass2 = [m for i, m in enumerate(pass1) if i not in orphan_indices]
+    else:
+        pass2 = pass1
+
+    # Pass 3: strip interleaved non-tool messages (user/system) between an
+    #         assistant(tool_calls) and its tool results.  These cause 400
+    #         errors from APIs (DeepSeek, OpenAI) that require strict
+    #         assistant(tool_calls) → tool_result contiguity.
+    #
+    #         Only applies when truncate=False (API call path).  When
+    #         truncate=True (persistence path), _transient messages have
+    #         already been stripped so interleaved messages shouldn't exist;
+    #         keeping this path unchanged preserves backward compatibility
+    #         with persistence cleanup expectations.
+    if not truncate:
+        result: list[dict] = []
+        pending_ids: set[str] = set()
+        for m in pass2:
+            role = m.get("role", "")
+            if role == "assistant" and m.get("tool_calls"):
+                pending_ids = set()
+                for tc in m["tool_calls"]:
+                    tcid = tc.get("id")
+                    if tcid:
+                        pending_ids.add(tcid)
+                result.append(m)
+            elif role == "tool" and pending_ids:
+                tcid = m.get("tool_call_id", "")
+                if tcid in pending_ids:
+                    pending_ids.discard(tcid)
+                result.append(m)
+            elif pending_ids:
+                # Non-tool message inside a tool-call block — strip it
+                continue
+            else:
+                result.append(m)
+        return result
+
+    return pass2
 
 
 # Backward-compatible aliases (used by tests).

@@ -4,6 +4,13 @@ Self-modification audit trail -- what the agent changed and why.
 
 ## 2026-06-23
 
+### Fix: API 400 error defense-in-depth — Pass 3 in _strip_orphaned_tool_messages
+
+- **memory/memory_prune.py** `_strip_orphaned_tool_messages`: Added Pass 3 that strips interleaved non-tool messages (user/system) between `assistant(tool_calls)` and `tool` results when `truncate=False` (API call path). This prevents the 400 error: "Messages with role 'tool' must be a response to a preceding message with 'tool_calls'" even when the primary fix in `llm.py` misses an injection path. `truncate=True` (persistence path) is unchanged.
+- **tests/test_transient_orphan_bug.py**: Updated `test_user_messages_between_assistant_and_tool_results_no_truncate` to expect 3 messages (interleaved user message now stripped) instead of 4.
+- **Root cause**: 8 API 400 errors in `api_error.log` (7 orphan tool messages, 1 insufficient tool messages). The `_strip_orphaned_tool_messages` safety net had a known blind spot: user messages injected between assistant(tool_calls) and tool results were not stripped. The primary fix (`_inject_pre_execution_context` before `messages.append(msg)` in `llm.py:771`) was in place but 400 errors still occurred — indicating another injection path.
+- **Tests**: 223 tests pass (50 api, 8 transient_orphan, 80 file_ops_extended, 93 memory, 22 llm — all green).
+
 ### Fix: Batch edit_file parallel tool card matching
 
 - **core/llm.py** `_append_tool_result`: Extract `tool_name` from `tc["function"]["name"]` and pass to `on_tool_end` callback (+2 lines)

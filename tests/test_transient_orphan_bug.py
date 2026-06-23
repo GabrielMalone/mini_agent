@@ -211,11 +211,10 @@ class TestTransientOrphanBug(unittest.TestCase):
         self.assertEqual(roles, ["user", "assistant", "user", "user", "tool"])
 
     def test_user_messages_between_assistant_and_tool_results_no_truncate(self):
-        """With truncate=False, _strip_orphaned_tool_messages does NOT catch
-        user messages between assistant(tool_calls) and tool results.
-        This is acceptable because the PRIMARY fix is in llm.py where
-        _inject_pre_execution_context now runs before messages.append(msg),
-        preventing this scenario at the source."""
+        """With truncate=False, _strip_orphaned_tool_messages NOW catches
+        user messages between assistant(tool_calls) and tool results (Pass 3).
+        This defense-in-depth prevents API 400 errors even when the primary
+        fix in llm.py misses an injection path."""
         messages = [
             {"role": "user", "content": "do thing"},
             {
@@ -234,13 +233,11 @@ class TestTransientOrphanBug(unittest.TestCase):
 
         result = _strip_orphaned_tool_messages(messages, truncate=False)
 
-        # truncate=False keeps the messages as-is — the safety net only
-        # removes truly orphaned tool messages and assistant(tool_calls),
-        # not interleaved user messages. The primary fix in llm.py prevents
-        # this scenario from occurring.
-        self.assertEqual(len(result), 4)
+        # Pass 3 strips the interleaved user message, leaving only
+        # user → assistant(tool_calls) → tool
+        self.assertEqual(len(result), 3)
         roles = [m["role"] for m in result]
-        self.assertEqual(roles, ["user", "assistant", "user", "tool"])
+        self.assertEqual(roles, ["user", "assistant", "tool"])
 
     def test_contiguous_assistant_tool_sequence(self):
         """Normal case: assistant(tool_calls) immediately followed by tool results."""
