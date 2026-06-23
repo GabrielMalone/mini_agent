@@ -8,6 +8,8 @@
     "start": "electron .",
     "dev": "electron . --dev",
     "build": "npx vite build",
+    "lint": "npx eslint renderer/src/ --quiet",
+    "prebuild": "npm run lint",
     "dev:renderer": "npx vite --config vite.config.js",
     "dist": "npm run build && electron-builder",
     "dist:mac": "npm run build && electron-builder --mac",
@@ -107,6 +109,9 @@
   "devDependencies": {
     "@vitejs/plugin-react": "^6.0.2",
     "electron-builder": "^26.0.12",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "jsdom": "^29.1.1",
     "vite": "^8.0.14"
   }
 }

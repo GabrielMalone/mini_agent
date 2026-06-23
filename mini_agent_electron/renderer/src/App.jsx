@@ -277,8 +277,7 @@ function AppShell() {
       if (data.usage?.cache_hit_rate != null) setCacheHitRate(data.usage.cache_hit_rate);
       if (data.usage?.subagent_running != null) setSubagentRunning(data.usage.subagent_running);
       if (data.usage?.balance != null) setBalanceDisplay(data.usage.balance);
-      if (data.plan_steps != null) setPlanSteps(data.plan_steps);
-      if (data.plan_done != null) setPlanDone(data.plan_done);
+      // plan_steps/plan_done ignored — plan UI removed
     }));
 
     unsubs.push(api.on('stream:error', (data) => {

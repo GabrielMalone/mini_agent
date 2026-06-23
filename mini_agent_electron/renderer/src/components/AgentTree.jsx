@@ -341,17 +341,7 @@ function AgentTreeInner({ agents }) {
         position={tooltipPos}
       />
 
-      {/* Debug overlay in dev */}
-      {process.env.NODE_ENV !== 'production' && (
-        <div style={{
-          position: 'absolute', top: 4, right: 4, zIndex: 100,
-          background: 'rgba(20,20,20,0.85)', color: '#aaa', fontSize: 9,
-          fontFamily: 'monospace', padding: '2px 6px', borderRadius: 4,
-        }}>
-          agents:{debugInfo.agentCount} nodes:{debugInfo.nodeCount} edges:{debugInfo.edgeCount}
-          {debugInfo.error ? ` WARNING:${debugInfo.error}` : ''}
-        </div>
-      )}
+      {/* Debug overlay removed -- debugInfo was never defined */}
     </>
   );
 }
