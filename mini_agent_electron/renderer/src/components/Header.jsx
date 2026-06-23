@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useCallback } from 'react';
 
 // Model catalog for the clickable model picker dropdown
 export const DIRECT_MODEL_GROUPS = [

@@ -8,6 +8,9 @@ import ToolCard from './components/ToolCard';
 import Header from './components/Header';
 import StatusBar from './components/StatusBar';
 import TerminalPanel from './components/TerminalPanel';
+import RoundedFrame from './components/RoundedFrame';
+import AgentTree from './components/AgentTree';
+import CharStream from './components/CharStream';
 
 
 // ---------------------------------------------------------------------------
