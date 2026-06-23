@@ -1,11 +1,12 @@
 # mini_agent Architecture Map
-# Last updated: 2026-06-22 -- self-learning fix_strategy auto-population
+# Last updated: 2026-06-23 -- TypeScript strict mode + automated UI smoke test
 #
 # This file is the agent's map of the codebase. Update it after completed changes.
 # Behavioral rules live in AGENTS.md. Long-term facts live in core memory.
 
 ## Active Decisions
 
+- **TypeScript strict mode + UI smoke test (2026-06-23)** — Frontend migrated to TypeScript with `strict: true`. All components have explicit `interface Props`. Shared types in `renderer/src/types.ts`. ESLint uses `typescript-eslint` parser. UI smoke test (`electron . --smoke-test`) renders the full React tree and exits 1 if any console.error fires. Smoke test runs automatically via `postbuild` hook — `npm run build` fails if the UI can't render.
 - **Self-learning fix_strategy (2026-06-22)** — record_success auto-populates fix_strategy from successful args. Args now passed to record_failure. Success recorded on every call, not just in-memory patterns.
 - **Plan auto-repair (2026-06-22)** — _plan() in agent_todos.py auto-splits string steps into arrays (numbered list or newline-separated). Single-line strings still rejected.
 - **Hash-anchored editing (2026-06-16)** — edit_lines with 3-char SHA-256 validation per Akay/Howard Chen pattern
