@@ -26,13 +26,13 @@ function extToLang(filePath: string | null): string | null {
   if (!filePath) return null;
   const name = filePath.replace(/\\/g, '/').split('/').pop() || '';
   const lower = name.toLowerCase();
-  if (EXT_TO_LANG[lower]) return EXT_TO_LANG[lower];
+  if (EXT_TO_LANG[lower as keyof typeof EXT_TO_LANG]) return EXT_TO_LANG[lower as keyof typeof EXT_TO_LANG];
   const dotIdx = name.lastIndexOf('.');
   const ext = dotIdx >= 0 ? name.slice(dotIdx + 1).toLowerCase() : '';
   if (!ext && name.startsWith('.')) {
-    if (EXT_TO_LANG[name]) return EXT_TO_LANG[name];
+    if (EXT_TO_LANG[name as keyof typeof EXT_TO_LANG]) return EXT_TO_LANG[name as keyof typeof EXT_TO_LANG];
   }
-  return EXT_TO_LANG[ext] || null;
+  return EXT_TO_LANG[ext as keyof typeof EXT_TO_LANG] || null;
 }
 
 export default function AstResult({ content, toolName }: AstResultProps) {

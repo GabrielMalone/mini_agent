@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import SessionPicker from './SessionPicker';
 import useDropdownPosition from '../hooks/useDropdownPosition';
-import type { BalanceData } from '../types';
+import type { BalanceData, ThemeEntry, DropdownPosition } from '../types';
 
-const BOT_SCRIPTS = { 'mini-agent': 'workspace_bot.py', 'emotion-game': 'discord_bot.py' };
+const BOT_SCRIPTS: Record<string, string> = { 'mini-agent': 'workspace_bot.py', 'emotion-game': 'discord_bot.py' };
 
 interface StatusBarProps {
   balanceDisplay: BalanceData | null;
@@ -13,14 +13,14 @@ interface StatusBarProps {
   setBotStatus: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
   workspace: string;
   sessionName: string;
-  themeEntry: { name: string; id: string; icon: string };
-  PALETTE_SVG: string;
-  THEMES: Array<{ id: string; name: string; icon: string }>;
+  themeEntry: ThemeEntry;
+  PALETTE_SVG: React.ReactNode;
+  THEMES: ThemeEntry[];
   theme: string;
   themePickerOpen: boolean;
   setThemePickerOpen: (v: boolean) => void;
   themeToggleRef: React.RefObject<HTMLElement | null>;
-  dropdownPos: { top: number; left: number } | null;
+  dropdownPos: DropdownPosition | null;
   applyTheme: (id: string) => void;
   handleWorkspaceClick: () => void;
   handleSessionSwitch: (name: string, isNew?: boolean) => void;
@@ -37,7 +37,7 @@ export default function StatusBar({
   const [botMenuPos, botMenuToggleRef] = useDropdownPosition(botMenuOpen);
   // plan UI removed — plan feature doesn't work
 
-  const handleBotToggle = useCallback(async (botName) => {
+  const handleBotToggle = useCallback(async (botName: string) => {
     const api = window.miniAgent;
     if (!api) return;
     const script = BOT_SCRIPTS[botName];
@@ -61,7 +61,7 @@ export default function StatusBar({
   // Close bot menu on outside click
   useEffect(() => {
     if (!botMenuOpen) return;
-    const close = (e) => {
+    const close = (e: MouseEvent) => {
       if (!e.target.closest('.bot-menu') && !e.target.closest('.discord-label')) {
         setBotMenuOpen(false);
       }

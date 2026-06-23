@@ -8,6 +8,8 @@ import {
   useReactFlow,
   Handle,
   Position,
+  type Node,
+  type Edge,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import ELK from 'elkjs/lib/elk.bundled.js';
@@ -40,7 +42,7 @@ const ELK_OPTIONS = {
 
 // -------------------------------- Agent node card --------------------------------
 
-function AgentNode({ data }) {
+function AgentNode({ data }: { data: any }) {
   const { agent, isOrchestrator } = data;
 
   if (isOrchestrator) {
@@ -82,7 +84,7 @@ const nodeTypes = { agentNode: AgentNode };
 
 // -------------------------------- Tooltip --------------------------------
 
-function Tooltip({ agent, position }) {
+function Tooltip({ agent, position }: { agent: any; position: { x: number; y: number } | null }) {
   if (!agent || !position) return null;
 
   const { taskId, desc, toolCalls, thoughts, output, ok, name } = agent.attributes || agent;
@@ -116,7 +118,7 @@ function Tooltip({ agent, position }) {
         <div className="agent-tree-tooltip-section">
           <div className="agent-tree-tooltip-label">Tool Calls ({toolCalls.length})</div>
           <div className="agent-tree-tooltip-text">
-            {toolCalls.map((tc, i) => (
+            {toolCalls.map((tc: any, i: number) => (
               <div key={i} className="agent-tree-tooltip-tool-line">
                 <span className="accent">{tc.toolName}</span>
                 {tc.toolArgs && <span className="dim"> {tc.toolArgs}</span>}
@@ -135,7 +137,7 @@ function Tooltip({ agent, position }) {
         <div className="agent-tree-tooltip-section">
           <div className="agent-tree-tooltip-label">Thoughts</div>
           <div className="agent-tree-tooltip-text agent-tree-tooltip-thoughts">
-            {thoughts.slice(-10).map((t, i) => (
+            {thoughts.slice(-10).map((t: any, i: number) => (
               <span key={i} className="thinking" style={{ display: 'block', fontSize: 10, lineHeight: 1.3 }}>
                 {t}
               </span>
@@ -158,7 +160,7 @@ function Tooltip({ agent, position }) {
 
 // -------------------------------- Wrapper with provider --------------------------------
 
-export default function AgentTree({ agents }) {
+export default function AgentTree({ agents }: { agents: Record<string, any> }) {
   return (
     <ReactFlowProvider>
       <AgentTreeInner agents={agents} />
@@ -168,11 +170,11 @@ export default function AgentTree({ agents }) {
 
 // -------------------------------- Inner component --------------------------------
 
-function AgentTreeInner({ agents }) {
-  const [nodes, setNodes, onNodesChange] = useNodesState([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
-  const [hoveredAgent, setHoveredAgent] = useState(null);
-  const [tooltipPos, setTooltipPos] = useState(null);
+function AgentTreeInner({ agents }: { agents: Record<string, any> }) {
+  const [nodes, setNodes, onNodesChange] = useNodesState<any>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<any>([]);
+  const [hoveredAgent, setHoveredAgent] = useState<{ agent: any; taskId: string } | null>(null);
+  const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
 
   const { fitView } = useReactFlow();
   const prevCountRef = useRef(0);
@@ -282,7 +284,7 @@ function AgentTreeInner({ agents }) {
 
   // -- Tooltip handlers --------------------------------------------
   const handleNodeMouseEnter = useCallback(
-    (event, node) => {
+    (event: React.MouseEvent, node: Node) => {
       if (node.data?.isOrchestrator) return;
       setHoveredAgent({ agent: node.data.agent, taskId: node.id });
       // Use viewport-relative mouse coordinates so the tooltip follows the cursor,
@@ -293,7 +295,7 @@ function AgentTreeInner({ agents }) {
   );
 
   const handleNodeMouseMove = useCallback(
-    (event, node) => {
+    (event: React.MouseEvent, node: Node) => {
       if (node.data?.isOrchestrator) return;
       setTooltipPos({ x: event.clientX, y: event.clientY });
     },

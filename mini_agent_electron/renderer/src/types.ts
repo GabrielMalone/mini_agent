@@ -158,6 +158,7 @@ export interface ToolCardData {
   endTime: number | null;
   diffPreview: string | null;
   errorDetail: string | null;
+  _enter?: boolean;
 }
 
 export interface ChatBlock {

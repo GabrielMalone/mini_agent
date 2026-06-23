@@ -103,7 +103,7 @@ export default function TerminalPanel({
     dragStartYRef.current = e.clientY;
     dragStartHRef.current = height ?? MIN_HEIGHT;
 
-    const onMouseMove = (ev) => {
+    const onMouseMove = (ev: MouseEvent) => {
       if (!draggingRef.current) return;
       const delta = dragStartYRef.current - ev.clientY; // drag up = expand
       const newH = Math.max(
@@ -184,7 +184,7 @@ export default function TerminalPanel({
                 value={inputValue}
                 onChange={onInputChange}
                 onSubmit={onSubmit}
-                disabled={false}
+                disabled={disabled}
                 placeholder="Type a message, /command, or drop files here..."
 
                 commandHistory={commandHistory}
@@ -196,4 +196,6 @@ export default function TerminalPanel({
       </div>
     </div>
   );
+}
+ );
 }

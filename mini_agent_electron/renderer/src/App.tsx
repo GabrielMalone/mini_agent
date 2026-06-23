@@ -591,7 +591,7 @@ function AppShell() {
   // Submit handler -- creates terminal blocks, supports slash commands.
   // Regular text: if a turn is running, queue as an interjection;
   // otherwise start a new turn with a 'running' block.
-  const handleSubmit = useCallback((text) => {
+  const handleSubmit = useCallback((text: string) => {
     if (!text?.trim()) return;
 
     const trimmed = text.trim();
@@ -679,7 +679,7 @@ function AppShell() {
   }, [handleSubmit]);
 
   // Session picker handler
-  const handleSessionSwitch = useCallback((name, isNew) => {
+  const handleSessionSwitch = useCallback((name: string, isNew?: boolean) => {
     const api = window.miniAgent;
     if (!api) return;
     if (isNew) api.newSession(name);
