@@ -4,6 +4,14 @@ Self-modification audit trail -- what the agent changed and why.
 
 ## 2026-06-23
 
+### Fix: Input area re-enabled after turn complete + interjection typing
+
+- **Root cause 1:** `stream:turn_complete` handler never called `setIsLive(false)` or `setInputDisabled(false)`, so after slash commands (or any turn) completed, the input stayed locked until the 120s timeout fired.
+- **Root cause 2:** Regular message submit called `setInputDisabled(true)`, which set the CodeMirror editor to read-only, preventing users from typing interjections while the agent was running.
+- **Fix 1:** Added `setIsLive(false)`, `setInputDisabled(false)`, and `inputRef.current?.focus()` to the `stream:turn_complete` handler.
+- **Fix 2:** Removed `setInputDisabled(true)` from the regular message submit path — input stays enabled so users can type interjections anytime.
+- **Files:** `mini_agent_electron/renderer/src/App.tsx`
+
 ### Fix: Input window audit — slash command disabled state + timeout
 
 - **Root cause:** `handleSubmit` in App.tsx didn't set `isLive` or `inputDisabled` for slash commands, allowing concurrent turns

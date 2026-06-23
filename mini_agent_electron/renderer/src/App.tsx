@@ -442,6 +442,9 @@ function AppShell() {
       if (data.usage?.subagent_running != null) setSubagentRunning(data.usage.subagent_running);
       if (data.usage?.balance != null) setBalanceDisplay(data.usage.balance);
       // plan_steps/plan_done ignored — plan UI removed
+      setIsLive(false);
+      setInputDisabled(false);
+      inputRef.current?.focus();
     }));
 
     unsubs.push(api.on('stream:error', (data) => {
@@ -689,7 +692,7 @@ function AppShell() {
       activeBlockIdRef.current = blockId;
       chatStream.reset();
       setIsLive(true);
-      setInputDisabled(true);
+      // Don't disable input — user can type interjections while agent is running
       window.miniAgent.submit(trimmed);
 
       submitTimeoutRef.current = setTimeout(() => {
