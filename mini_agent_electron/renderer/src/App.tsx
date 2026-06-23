@@ -307,7 +307,32 @@ function AppShell() {
 
       // Guard: if tool_end fires without a matching tool_start
       if (stack.length === 0 && tName) {
-        console.warn('[App] tool_end for "%s" but no matching tool_start in stack', tName);
+        // Fallback: search cards directly for a running card with this tool_name.
+        // Can happen when the tool_start was pushed then popped by another
+        // tool_end (LIFO mismatch in parallel), or when the stack was already
+        // drained but cards remain in 'running' state.
+        startTransition(() => {
+          setToolCards((prev) => {
+            // findLastIndex polyfill for ES2022 target
+            let matchIdx = -1;
+            for (let i = prev.length - 1; i >= 0; i--) {
+              if (prev[i].status === 'running' && prev[i].toolName === tName) {
+                matchIdx = i;
+                break;
+              }
+            }
+            if (matchIdx === -1) return prev;
+            const matched = prev[matchIdx];
+            const code = data.content || '';
+            const diffPreview = data.diff_preview || null;
+            const errorDetail = !data.ok ? (data.detail || '') : '';
+            const status = data.ok ? 'ok' : 'err';
+            const updated = [...prev];
+            const { _enter, ...clean } = matched as any;
+            updated[matchIdx] = { ...clean, status, endTime: Date.now(), output: code, diffPreview, errorDetail };
+            return updated;
+          });
+        });
         return;
       }
 

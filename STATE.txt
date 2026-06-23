@@ -1,11 +1,12 @@
 # mini_agent Architecture Map
-# Last updated: 2026-06-23 -- Single-tool timeout protection fix
+# Last updated: 2026-06-23 -- Tool card stuck-in-running fix
 #
 # This file is the agent's map of the codebase. Update it after completed changes.
 # Behavioral rules live in AGENTS.md. Long-term facts live in core memory.
 
 ## Active Decisions
 
+- **Tool card stuck-in-running fix (2026-06-23)** — `_on_tool_ready` now passes `tool_name` to `on_tool_start` (was missing). Frontend `stream:tool_end` handler has card-search fallback when `toolOutputStack` is empty — searches running cards by `toolName` instead of giving up.
 - **Single-tool timeout protection (2026-06-23)** — `_execute_groups` single-tool path now wraps `execute_tool()` in `ThreadPoolExecutor` with `future.result(timeout=150)`. Previously only the multi-tool (parallel) path had timeout protection — a hung single tool (e.g., edit_file batch) would freeze the entire agent loop forever.
 - **Chat window frontend audit (2026-06-23)** — 4 fixes: RoundedFrame title prop now renders (was destructured away), chat blocks capped at 200, thinking blocks capped at 100, DeferredMarkdown consistent div wrapper (no pre→div element switch).
 - **Frontend tool panel audit (2026-06-23)** — 7 fixes to App.tsx, ToolCard.tsx, style.css: silent tool_end drops now console.warn, tool_output before tool_start race buffered as orphans, card array capped at 50 with stale index cleanup, CSS animation moved from nth-child to data-enter attribute, args parsing uses lastIndexOf for parens in paths, status icons crossfade via opacity transition.

@@ -4,6 +4,17 @@ Self-modification audit trail -- what the agent changed and why.
 
 ## 2026-06-23
 
+### Fix: Tool cards stuck in "running" state when tools complete
+
+- **core/llm.py** `_on_tool_ready`: Now passes `tool_name` to `on_tool_start` callback.
+  Previously only `tool_summary(tc)` was passed — all other `on_tool_start` call sites
+  already passed `tool_name`, but this streaming-execution path was missed. Without
+  `tool_name` the frontend had to parse it from the summary string (brittle).
+- **renderer/src/App.tsx** `stream:tool_end` handler: Added card-search fallback when
+  `toolOutputStack` is empty. Previously the handler gave up with just a `console.warn`,
+  leaving the card stuck in "running" state forever. Now searches the cards array directly
+  for a running card with matching `toolName` and updates its status.
+
 ### Fix: Single-tool timeout protection — prevents agent freeze when edit_file hangs
 
 - **core/llm.py** `_execute_groups`: The single-tool path (`len(group) == 1`) now wraps

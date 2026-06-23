@@ -733,7 +733,10 @@ def _api_call_phase(
             return
 
         if on_tool_start is not None:
-            on_tool_start(tool_summary(tc))
+            on_tool_start(
+                tool_summary(tc),
+                tool_name=tc.get("function", {}).get("name", ""),
+            )
         import sys as _sys_otr
 
         _sys_otr.stderr.write(
