@@ -294,7 +294,10 @@ def _run_ruff_check(content: str, filepath: str) -> str | None:
 
     Selects E (pycodestyle errors) + F (pyflakes) — high-signal, near-zero
     false-positive rules. Skips silently if ruff is not installed or times out.
+    Also skips non-Python files.
     """
+    if not filepath.endswith(".py"):
+        return None
     try:
         proc = _ruff_subprocess.run(
             ["ruff", "check", "--select=E,F", "--stdin-filename", filepath, "-"],
