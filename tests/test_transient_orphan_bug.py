@@ -267,6 +267,51 @@ class TestTransientOrphanBug(unittest.TestCase):
         roles = [m["role"] for m in result]
         self.assertEqual(roles, ["user", "assistant", "tool", "tool", "user"])
 
+    def test_interleaved_assistant_with_orphaned_tool_results(self):
+        """Pass 3: interleaved user message between two assistant(tool_calls)
+        blocks must not clobber pending_ids — tool results from the first block
+        must still be matched to their owner, not orphaned after the second
+        assistant(tool_calls)."""
+        messages = [
+            {"role": "user", "content": "do thing"},
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {"id": "call_a", "function": {"name": "read", "arguments": "{}"}},
+                ],
+            },
+            # Interleaved message — Pass 3 should strip this
+            {"role": "user", "content": "FAILURE PATTERN WARNING: ..."},
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {"id": "call_b", "function": {"name": "edit", "arguments": "{}"}},
+                ],
+            },
+            {"role": "tool", "tool_call_id": "call_a", "content": "result a"},
+            {"role": "tool", "tool_call_id": "call_b", "content": "result b"},
+        ]
+
+        result = _strip_orphaned_tool_messages(messages, truncate=False)
+
+        # Expected: user → assistant(call_a) → assistant(call_b) → tool(a) → tool(b)
+        # The interleaved user message is stripped.  Both tool results must
+        # appear after assistant(call_a) (the first block that owns call_a).
+        self.assertEqual(len(result), 5)
+        roles = [m["role"] for m in result]
+        self.assertEqual(roles, ["user", "assistant", "assistant", "tool", "tool"])
+
+        # Verify call_a's tool result has a preceding assistant(tool_calls) that owns it
+        seen_ids: set = set()
+        for m in result:
+            if m.get("role") == "assistant" and m.get("tool_calls"):
+                for tc in m["tool_calls"]:
+                    seen_ids.add(tc["id"])
+            elif m.get("role") == "tool":
+                tcid = m.get("tool_call_id", "")
+                self.assertIn(tcid, seen_ids,
+                    f"Orphan tool result {tcid}: no preceding assistant(tool_calls) owns it")
+
 
 if __name__ == "__main__":
     unittest.main()

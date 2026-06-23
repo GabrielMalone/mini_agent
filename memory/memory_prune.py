@@ -775,7 +775,12 @@ def _strip_orphaned_tool_messages(
         for m in pass2:
             role = m.get("role", "")
             if role == "assistant" and m.get("tool_calls"):
-                pending_ids = set()
+                # Merge new tool-call IDs into the pending set instead of
+                # clobbering it.  Clobbering causes orphaned tool messages
+                # from a previous block to appear after the wrong
+                # assistant(tool_calls), triggering 400 errors:
+                # "role 'tool' must be a response to a preceding message
+                # with 'tool_calls'".
                 for tc in m["tool_calls"]:
                     tcid = tc.get("id")
                     if tcid:
@@ -785,7 +790,8 @@ def _strip_orphaned_tool_messages(
                 tcid = m.get("tool_call_id", "")
                 if tcid in pending_ids:
                     pending_ids.discard(tcid)
-                result.append(m)
+                    result.append(m)
+                # else: tool message whose owner was stripped or never seen — drop it
             elif pending_ids:
                 # Non-tool message inside a tool-call block — strip it
                 continue

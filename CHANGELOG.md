@@ -4,6 +4,18 @@ Self-modification audit trail -- what the agent changed and why.
 
 ## 2026-06-23
 
+### Fix: Pass 3 pending_ids clobber causing API 400 errors
+
+- **memory/memory_prune.py** `_strip_orphaned_tool_messages` Pass 3: Fixed a bug where `pending_ids` was overwritten (`pending_ids = set()`) when a new `assistant(tool_calls)` arrived while the previous block still had uncollected tool results. This caused tool messages from the first block to appear after the second `assistant(tool_calls)` without a matching `tool_call_id`, triggering 400 errors: "Messages with role 'tool' must be a response to a preceding message with 'tool_calls'". Fixed by merging (`pending_ids.add(tcid)`) instead of clobbering. Also tightened the tool-message guard: tool results whose `tool_call_id` is not in `pending_ids` are now dropped (previously appended unconditionally).
+- **tests/test_transient_orphan_bug.py**: Added `test_interleaved_assistant_with_orphaned_tool_results` — two `assistant(tool_calls)` with an interleaved user message between them, tool results from the first block arriving after the second assistant. Verifies Pass 3 merges pending_ids correctly.
+
+### Frontend batched tool_call audit
+
+- **mini_agent_electron/renderer/src/types.ts**: Added `parallel?: boolean` to `StreamToolStartData`, `tool_name?: string` to `StreamToolOutputData` and `StreamToolEndData`.
+- **mini_agent_electron/backend/server.py** `StreamCallbacks.on_tool_start`: Now accepts and forwards `tool_name` in the IPC message for consistent tool identity matching.
+- **core/llm.py** `_execute_groups` and `_execute_tools` (cycle-detected fallback): Pass `tool_name` from `tc["function"]["name"]` to `on_tool_start` so the frontend doesn't need to parse the summary string.
+- **mini_agent_electron/renderer/src/App.tsx** `stream:tool_start` handler: Prefers explicit `data.tool_name` over parsing the summary string for tool card identity.
+
 ### Fix: API 400 error defense-in-depth — Pass 3 in _strip_orphaned_tool_messages
 
 - **memory/memory_prune.py** `_strip_orphaned_tool_messages`: Added Pass 3 that strips interleaved non-tool messages (user/system) between `assistant(tool_calls)` and `tool` results when `truncate=False` (API call path). This prevents the 400 error: "Messages with role 'tool' must be a response to a preceding message with 'tool_calls'" even when the primary fix in `llm.py` misses an injection path. `truncate=True` (persistence path) is unchanged.
