@@ -192,7 +192,7 @@ class TestSearchFiles(unittest.TestCase):
         tc = _make_tool_call("search_files", pattern="match_", path=self.workspace)
         result = execute_tool(tc, self.write_gate, self.read_gate)
         self.assertTrue(result.success)
-        match_lines = [l for l in result.content.split("\n") if "big.txt:" in l]
+        match_lines = [line for line in result.content.split("\n") if "big.txt:" in line]
         self.assertEqual(len(match_lines), 60)
         # 60 is below 200 cap -- no truncation message
         self.assertNotIn("capped at", result.content)
@@ -1112,7 +1112,7 @@ class TestErrorHints(unittest.TestCase):
         )
         self.assertTrue(result.success)
         self.assertTrue(
-            any("to_stderr" in l and "stderr" in l for l in lines),
+            any("to_stderr" in line and "stderr" in line for line in lines),
             f"Expected [stderr] prefix in output lines: {lines}",
         )
 
@@ -1181,7 +1181,7 @@ class TestErrorHints(unittest.TestCase):
         )
         self.assertTrue(result.success)
         # Windows echo may include trailing spaces -- strip for comparison
-        stripped = [l.strip() for l in lines]
+        stripped = [line.strip() for line in lines]
         self.assertIn("line1", stripped)
         self.assertIn("line2", stripped)
         self.assertIn("line3", stripped)

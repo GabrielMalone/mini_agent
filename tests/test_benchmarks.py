@@ -517,9 +517,9 @@ class TestBenchmarkCircuitBreaker:
         lst = list(range(10000))
 
         def _list_pop():
-            l = lst[:]
+            items = lst[:]
             for _ in range(1000):
-                l.pop(0)
+                items.pop(0)
 
         # deque.popleft() -- O(1)
         dq = deque(range(10000))

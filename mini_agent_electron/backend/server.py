@@ -1012,7 +1012,7 @@ class AgentRunner:
             send_msg(
                 {
                     "type": "response",
-                    "lines": [l for l in lines],
+                    "lines": [line for line in lines],
                 }
             )
             return
@@ -1330,7 +1330,7 @@ class AgentRunner:
 
                 lines = clean_text.split("\n") if clean_text else []
                 if exit_code != 0 and not any(
-                    l.strip().startswith("(exit ") for l in lines
+                    line.strip().startswith("(exit ") for line in lines
                 ):
                     lines.append(f"(exit {exit_code})")
                 send_msg(
@@ -1457,7 +1457,7 @@ class AgentRunner:
             if r.status_code != 200:
                 return []
             text = r.json()["choices"][0]["message"]["content"].strip()
-            lines = [l.strip() for l in text.split("\n") if l.strip()]
+            lines = [line.strip() for line in text.split("\n") if line.strip()]
             # Limit to 5 and remove numbering/bullets if present
             completions = []
             for line in lines[:5]:

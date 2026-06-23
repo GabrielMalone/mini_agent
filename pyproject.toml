@@ -1,6 +1,23 @@
 [tool.ruff]
 line-length = 120
 
+[tool.ruff.lint.per-file-ignores]
+# E402: Intentional sys.path manipulation before local imports
+"core/config.py" = ["E402"]
+"core/context_inject.py" = ["E402"]
+"core/cost_control.py" = ["E402"]
+"core/llm.py" = ["E402"]
+"core/bootstrap.py" = ["E402"]
+"discord_bot.py" = ["E402"]
+"memory/memory.py" = ["E402"]
+"mini_agent_electron/backend/server.py" = ["E402"]
+"tools/__init__.py" = ["E402"]
+"tools/_file_utils.py" = ["E402"]
+"tools/search_ops.py" = ["E402"]
+"workspace_bot.py" = ["E402"]
+# E402: pytest.mark.slow before imports is standard pytest convention
+"tests/*.py" = ["E402"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--strict-markers -p no:cacheprovider"

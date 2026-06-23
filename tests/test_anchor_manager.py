@@ -279,8 +279,8 @@ class TestResolveAnchoredEdits:
     def _split(lines):
         plain = []
         anchors = []
-        for l in lines:
-            w, c = split_anchor(l)
+        for line in lines:
+            w, c = split_anchor(line)
             plain.append(c)
             anchors.append(w)
         return plain, anchors
@@ -539,8 +539,8 @@ class TestApplyResolvedEdits:
             "Cherry§x = 1",
         ]
         plain, anchors = (
-            [strip_anchors(l) for l in anchored],
-            [split_anchor(l)[0] for l in anchored],
+            [strip_anchors(line) for line in anchored],
+            [split_anchor(line)[0] for line in anchored],
         )
         edits = [
             {"anchor": "Banana§", "text": "import sys"},

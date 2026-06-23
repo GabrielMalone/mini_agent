@@ -87,8 +87,8 @@ class TestListDirectory(unittest.TestCase):
         result = execute_tool(tc, self.write_gate, self.read_gate)
         self.assertTrue(result.success)
         # Extract the file entries in order
-        lines = [l.strip() for l in result.content.split("\n") if "[f]" in l]
-        names = [l.split("] ")[1] for l in lines]
+        lines = [line.strip() for line in result.content.split("\n") if "[f]" in line]
+        names = [line.split("] ")[1] for line in lines]
         self.assertEqual(names, sorted(names))
 
     def test_hidden_files_listed(self):

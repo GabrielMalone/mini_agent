@@ -21,7 +21,7 @@ import json
 import sys
 import time
 import urllib.request
-from datetime import datetime, timezone, UTC
+from datetime import datetime, UTC
 
 FUNNEL_INGEST = "https://gabriels-macbook-air.tailaf9f7c.ts.net/ingest"
 

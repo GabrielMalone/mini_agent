@@ -234,5 +234,5 @@ class TestExperienceContext:
         if ctx:
             # The whitespace entry should appear only once
             lines = ctx.split("\n")
-            whitespace_count = sum(1 for l in lines if "whitespace" in l.lower())
+            whitespace_count = sum(1 for line in lines if "whitespace" in line.lower())
             assert whitespace_count <= 1
