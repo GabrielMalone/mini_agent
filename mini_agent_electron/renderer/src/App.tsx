@@ -778,7 +778,7 @@ function AppShell() {
 
         {/* Sub-agents pane */}
         {Object.keys(deferredSubagentData).length > 0 && (
-          <RoundedFrame id="subagents-frame" title="Sub-agents">
+          <RoundedFrame id="subagents-frame">
             <AgentTree agents={deferredSubagentData} />
           </RoundedFrame>
         )}
