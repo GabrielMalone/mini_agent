@@ -130,16 +130,21 @@ export function guessLanguage(toolName: string, code: string): string {
 
 let highlighterPromise: ReturnType<typeof createHighlighter> | null = null;
 let highlighterAttempts = 0;
+let _version = 0; // HMR-safe guard: stale promises can't corrupt current state
 const MAX_ATTEMPTS = 3;
 
 export function getHighlighter() {
   if (!highlighterPromise) {
+    const ver = ++_version;
     highlighterPromise = createHighlighter({
       langs: LANGS,
       themes: ['dark-plus'],
       engine: createJavaScriptRegexEngine(),
     }).catch((err) => {
-      highlighterPromise = null;
+      // Only reset if this promise is still the current one (HMR-safety)
+      if (ver === _version) {
+        highlighterPromise = null;
+      }
       highlighterAttempts++;
       if (highlighterAttempts < MAX_ATTEMPTS) {
         console.warn(`[CodeBlock] Shiki init failed (attempt ${highlighterAttempts}/${MAX_ATTEMPTS}):`, err);

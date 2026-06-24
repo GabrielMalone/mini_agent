@@ -2,6 +2,25 @@
 
 Self-modification audit trail -- what the agent changed and why.
 
+## 2026-06-24
+
+### HMR hang fix — useSmoothStream + Shiki singleton safety
+When editing TSX files during Vite dev, the app would hang. Root cause: stale
+`requestAnimationFrame` callbacks from `useSmoothStream` firing after HMR
+component teardown caused re-render loops. Secondary: Shiki `highlighterPromise`
+module-level singleton could be corrupted by HMR module replacement.
+
+**Fixes:**
+- `useSmoothStream.ts`: Added `mountedRef` guard — always rebuilds tick closure,
+  checks `mountedRef.current` in callback body, sets false on cleanup. Removed
+  conditional `if (!tickRef.current)` that prevented closure rebuild.
+- `CodeBlock.tsx`: Added `_version` counter to prevent stale promise `.catch()`
+  from resetting a newer `highlighterPromise` after HMR replacement.
+- `StreamingMessage.tsx`: Removed redundant cleanup `useEffect` (empty deps)
+  that was already handled by the throttling effect's cleanup.
+- `App.tsx`: Removed 15 unnecessary `as any` casts on `toolOutputStack` entries
+  (`toolCallId` is already typed in the ref's generic parameter).
+
 ## 2026-06-23
 
 ### Feat: Smooth tool card transitions — animated collapse, completion pulse, icon crossfade

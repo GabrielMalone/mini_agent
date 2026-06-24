@@ -1,35 +1,52 @@
 # Session Handoff
 # Auto-generated at session end. Read at next session start for continuity.
 
-## Last Session: 2026-06-23 ~16:30 UTC
+## Last Session: 2026-06-24 ~12:30 UTC
 
 ### What I Changed
 
-**Smooth tool card transitions — animated collapse, completion pulse, icon crossfade**
+**HMR hang fix — TSX editing causes app freeze**
 
-The tools panel had abrupt visual transitions: when a tool finished, the card body would instantly vanish (conditional rendering removed it from DOM). Status icons crossfaded too quickly (0.2s). No completion feedback.
+Root cause analysis and fixes for the issue where editing TSX files would hang the
+Electron app during Vite HMR development.
 
-1. **ToolCard.tsx** — Keep body/diff/error in DOM, use CSS `.collapsed` class:
-   - Changed from `{!collapsed && <div>...</div>}` to `<div className={collapsed ? 'collapsed' : ''}>...</div>`
-   - Content still conditionally rendered inside, but the container stays for transitions
-   - `diffPreview ?? ''` to fix TS narrowing on null
+#### Primary fix: `useSmoothStream.ts` — mountedRef guard (+5 lines)
+The `tickRef` closure was built conditionally (`if (!tickRef.current)`) and never
+rebuilt, meaning stale `requestAnimationFrame` callbacks from a previous HMR
+component lifecycle could fire `setDisplayedText` on a remounted instance,
+triggering re-render loops.
 
-2. **style.css** — Smooth collapse + completion animations:
-   - `.tool-card-body`, `.tool-card-diff`: `transition: max-height 0.35s ease, opacity 0.25s ease, border-top-width 0.25s ease`
-   - `.tool-card-error`: same + padding transition
-   - `.collapsed` state: `max-height: 0; opacity: 0; overflow: hidden; border-top-width: 0`
-   - Status icon crossfade: `0.2s` → `0.3s ease`
-   - `@keyframes toolCompletePulse`: check icon scales 1→1.4→1 on completion
-   - Chevron: `0.2s` → `0.25s ease`
+Changes:
+- Removed `if (!tickRef.current)` guard — always rebuilds tick closure
+- Added `mountedRef` that's set `false` on cleanup, checked at 3 points in tick body
+- Removed `tickRef.current = null` from `reset()` (no longer needed)
+- useEffect cleanup now also sets `mountedRef.current = false`
+
+#### Secondary fix: `CodeBlock.tsx` — Shiki singleton HMR safety (+5 lines)
+Module-level `highlighterPromise` could be corrupted by HMR module replacement:
+a stale promise's `.catch()` could reset a newer promise. Added `_version` counter
+so only the current promise can clear itself.
+
+#### Cleanup fixes:
+- `StreamingMessage.tsx`: Removed redundant cleanup `useEffect` (empty deps) (-6 lines)
+- `App.tsx`: Removed 15 unnecessary `as any` casts on typed `toolOutputStack` entries
 
 ### Modified Files
-- `mini_agent_electron/renderer/src/components/ToolCard.tsx` — body/diff/error always in DOM (+2/-4 lines)
-- `mini_agent_electron/renderer/style.css` — transitions, collapse, pulse keyframe (+38 lines)
+- `mini_agent_electron/renderer/src/hooks/useSmoothStream.ts` — HMR safety (+5/-4)
+- `mini_agent_electron/renderer/src/components/CodeBlock.tsx` — Shiki version guard (+5/-0)
+- `mini_agent_electron/renderer/src/components/StreamingMessage.tsx` — redundant useEffect (-6)
+- `mini_agent_electron/renderer/src/App.tsx` — remove `as any` casts (-15 `as any`)
 - `CHANGELOG.md` — entry added
+- `STATE.txt` — architecture decision added
 
 ### Tests
-- tsc: ToolCard.tsx clean (0 errors)
-- Vite build: passes
+- tsc --noEmit: clean (0 errors)
+- Vite build: passes (chunk size warning only)
+- Electron smoke test: PASS (App renders with zero errors)
 
 ### What's Pending
-- None
+- Need to test HMR in actual dev workflow (edit a TSX file while `npm run dev` is running)
+  to confirm the hang is fully resolved. The fixes address the two identified root causes
+  but there may be additional edge cases.
+- Chunk size warning (500KB+) is still present — code-splitting could improve dev startup
+  time but isn't critical for functionality.

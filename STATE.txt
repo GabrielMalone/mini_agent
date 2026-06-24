@@ -1,8 +1,13 @@
 # mini_agent Architecture Map
-# Last updated: 2026-06-24 -- TSX grammar regression tests + STATE.txt refresh (stale module map, missing modules)
+# Last updated: 2026-06-24 -- HMR hang fix (useSmoothStream + Shiki singleton safety)
 
 ## Active Decisions (most recent first)
 
+- **HMR hang fix (2026-06-24)** — `useSmoothStream` had stale RAF callbacks after HMR teardown
+  causing re-render loops. Fixed with `mountedRef` guard pattern. `CodeBlock.tsx` Shiki
+  singleton made HMR-safe with `_version` counter to prevent stale promise corruption.
+  Removed redundant cleanup `useEffect` in `StreamingMessage.tsx` and unnecessary `as any`
+  casts on typed `toolOutputStack` entries in `App.tsx`.
 - **TSX grammar regression tests (2026-06-24)** — 3 test classes (10 tests) in test_tree_sitter_path.py lock in:
   correct parser language per extension (.ts→typescript, .tsx→tsx, .js/.jsx→javascript),
   variable_declarator pattern for arrow functions in TSX, and e2e get_file_skeleton on .tsx.

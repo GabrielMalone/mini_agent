@@ -18,33 +18,36 @@ export default function useSmoothStream(opts?: SmoothStreamOpts): SmoothStreamRe
   const indexRef = useRef(0);
   const rafRef = useRef<number | null>(null);
   const tickRef = useRef<(() => void) | null>(null);
+  const mountedRef = useRef(true);
 
-  if (!tickRef.current) {
-    tickRef.current = () => {
-      const full = fullRef.current;
-      const behind = full.length - indexRef.current;
-      if (behind <= 0) {
-        rafRef.current = null;
-        return;
-      }
-      const step = Math.max(1, Math.ceil(behind / factor));
-      // Seek forward to the next word boundary so text never splits mid-word
-      const target = Math.min(indexRef.current + step, full.length);
-      const wordBreakRx = /[\s\n.,;:!?)\]}>]/;
-      let boundary = target;
-      for (let i = target; i < full.length && i < target + 12; i++) {
-        if (wordBreakRx.test(full[i])) { boundary = i + 1; break; }
-      }
-      indexRef.current = boundary;
-      setDisplayedText(full.slice(0, indexRef.current));
+  // Build the tick closure each render cycle. Guarded by mountedRef to
+  // prevent HMR-stale callbacks from running after component teardown.
+  tickRef.current = () => {
+    if (!mountedRef.current) return;
+    const full = fullRef.current;
+    const behind = full.length - indexRef.current;
+    if (behind <= 0) {
+      rafRef.current = null;
+      return;
+    }
+    const step = Math.max(1, Math.ceil(behind / factor));
+    // Seek forward to the next word boundary so text never splits mid-word
+    const target = Math.min(indexRef.current + step, full.length);
+    const wordBreakRx = /[\s\n.,;:!?)\]}>]/;
+    let boundary = target;
+    for (let i = target; i < full.length && i < target + 12; i++) {
+      if (wordBreakRx.test(full[i])) { boundary = i + 1; break; }
+    }
+    indexRef.current = boundary;
+    if (!mountedRef.current) return;
+    setDisplayedText(full.slice(0, indexRef.current));
 
-      if (indexRef.current < full.length) {
-        rafRef.current = requestAnimationFrame(tickRef.current!);
-      } else {
-        rafRef.current = null;
-      }
-    };
-  }
+    if (indexRef.current < full.length && mountedRef.current) {
+      rafRef.current = requestAnimationFrame(tickRef.current!);
+    } else {
+      rafRef.current = null;
+    }
+  };
 
   const addChunk = useCallback((text: string) => {
     if (!text) return;
@@ -62,11 +65,13 @@ export default function useSmoothStream(opts?: SmoothStreamOpts): SmoothStreamRe
     fullRef.current = '';
     indexRef.current = 0;
     setDisplayedText('');
-    tickRef.current = null;
   }, []);
 
+  // Tear down RAF on unmount + mark unmounted so in-flight callbacks bail
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
       if (rafRef.current) {
         cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
