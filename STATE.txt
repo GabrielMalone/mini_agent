@@ -1,7 +1,12 @@
 # mini_agent Architecture Map
-# Last updated: 2026-06-24 -- HMR hang fix (useSmoothStream + Shiki singleton safety)
+# Last updated: 2026-06-24 -- Testing suite audit complete (1,662 Python + 2 vitest, 0 failures)
 
 ## Active Decisions (most recent first)
+
+- **Testing suite audit (2026-06-24)** — 8 new/expanded test files (1,070 lines), covering ast_utils,
+  file_context_tracker, agent_ops, agent_todos, semantic_memory, symbol_context_resolver, lint, and
+  replace_symbol_e2e. Frontend vitest + jsdom smoke tests added. Disabled tests removed (APIs changed).
+  Full suite: 1,662 passed, 38 skipped, 0 failures. Frontend: 2 vitest tests pass.
 
 - **Backend audit & thread safety (2026-06-24)** — Audited `mini_agent_electron/backend/server.py` for thread safety,
   resource leaks, and robustness. Fixed 4 bugs: (1) `_run_shell_pty` master_fd double-close and proc.wait() hang,

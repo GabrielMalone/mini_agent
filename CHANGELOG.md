@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-06-24 — Testing suite audit: 8 new/expanded test files, frontend vitest
+
+### New test files (6)
+- `tests/test_ast_utils.py` — 16 tests for `resolve_call_name`, `get_name` across all AST node types
+- `tests/test_file_context_tracker.py` — 15 tests for mtime tracking, staleness detection, persist/clear
+- `tests/test_agent_ops.py` — 11 tests for MIME guessing, recall_turn, remember guards
+- `tests/test_agent_todos.py` — 14 tests for plan/plan_status lifecycle, string repair, idempotency
+- `tests/test_semantic_memory.py` — 10 tests for embed, store, query, similarity filtering
+- `tests/test_symbol_context_resolver.py` — 12 tests for 7-language query configs, identifier extraction
+
+### Expanded test files (2)
+- `tests/test_lint.py` — 1→5 tests (extended compile checks, circular import detection, TOOLS dispatch)
+- `tests/test_replace_symbol_e2e.py` — 3→10 tests (error handling, class replacement, anchor support)
+
+### Frontend testing infrastructure
+- `mini_agent_electron/vitest.config.ts` — jsdom environment, globals enabled
+- `mini_agent_electron/renderer/src/App.test.tsx` — 2 smoke tests (renders without crash)
+- `mini_agent_electron/package.json` — added `test:unit` and `test` scripts
+
+### Removed
+- `tests/.disabled/test_edit_safety_fixes.py.disabled` — APIs changed, fresh tests written for current codebase
+- `tests/.disabled/test_learning_infra.py.disabled` — APIs changed, fresh tests written for current codebase
+
 ## 2026-06-24 — Backend audit: thread safety & resource leak fixes (server.py)
 - **_run_shell_pty**: Fixed double-close of `master_fd` (was closed in try body then again in finally — second close always OSError). Replaced `try/finally` with `try/except Exception` that closes both `slave_fd` and `master_fd` on error.
 - **_run_shell_pty**: Added `proc.wait(timeout=5)` after `proc.kill()` at two sites (timeout path and normal exit path) — prevents infinite hang if process is in D-state.
