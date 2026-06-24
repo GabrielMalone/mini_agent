@@ -182,15 +182,24 @@ function AppShell() {
 
     unsubs.push(api.on('stream:tool_start', (data) => {
       // Prefer explicit tool_name from backend; fall back to parsing summary
+      // Parse toolName and toolArgs from summary, handling nested parentheses
       const toolName = data.tool_name || (() => {
         const s = data.summary || '?';
-        const parenIdx = s.lastIndexOf('(');
+        const parenIdx = s.indexOf('(');
         return parenIdx > 0 ? s.slice(0, parenIdx) : s;
       })();
       const toolArgs = (() => {
         const s = data.summary || '';
-        const parenIdx = s.lastIndexOf('(');
-        return parenIdx > 0 ? s.slice(parenIdx) : '';
+        const parenIdx = s.indexOf('(');
+        if (parenIdx <= 0) return '';
+        // Walk to find matching closing paren, handling nested parens
+        let depth = 0;
+        let closeIdx = -1;
+        for (let i = parenIdx; i < s.length; i++) {
+          if (s[i] === '(') depth++;
+          else if (s[i] === ')') { depth--; if (depth === 0) { closeIdx = i; break; } }
+        }
+        return closeIdx > 0 ? s.slice(parenIdx, closeIdx + 1) : s.slice(parenIdx);
       })();
       const cardId = ++toolCardIdRef.current;
       // Set a data-enter attribute for CSS animation targeting
@@ -220,7 +229,10 @@ function AppShell() {
 
       // Drain any orphan output lines buffered before tool_start arrived
       const orphans = orphanOutputs.current;
-      const matchedOrphans = orphans.filter((o) => o.toolName === toolName);
+      const matchedOrphans = orphans.filter((o) => {
+        if (data.tool_call_id && o.toolCallId) return o.toolCallId === data.tool_call_id;
+        return o.toolName === toolName;
+      });
       if (matchedOrphans.length > 0) {
         const entry = toolOutputStack.current.find((e) => e.cardId === cardId);
         if (entry) {
@@ -239,7 +251,10 @@ function AppShell() {
           });
         }
         // Remove consumed orphans
-        orphanOutputs.current = orphans.filter((o) => o.toolName !== toolName);
+        orphanOutputs.current = orphans.filter((o) => {
+          if (data.tool_call_id && o.toolCallId) return o.toolCallId !== data.tool_call_id;
+          return o.toolName !== toolName;
+        });
       }
 
       // Clear orphan flush timeout if no orphans remain
@@ -274,7 +289,6 @@ function AppShell() {
       }
 
       // Match by tool_call_id first (unique, handles same-toolName batches), then tool_name, then LIFO
-      const tCallId = (data as any).tool_call_id || '';
       let top;
       if (tCallId) {
         const found = stack.find((e) => e.toolCallId === tCallId);
