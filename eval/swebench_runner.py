@@ -620,8 +620,8 @@ def save_predictions(
     Format (one JSON object per line):
         {"instance_id": "...", "model_patch": "...", "model_name_or_path": "mini_agent"}
     """
-    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-    with open(output_path, "w") as f:
+    os.makedirs(os.path.dirname(os.path.abspath(output_path)) or ".", exist_ok=True)
+    with open(os.path.abspath(output_path), "w") as f:
         for r in results:
             prediction = {
                 "instance_id": r.instance_id,

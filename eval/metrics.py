@@ -82,7 +82,7 @@ class MetricsCollector:
 
     # ---- tool callbacks ----
 
-    def on_tool_start(self, summary: str, parallel: bool = False) -> None:
+    def on_tool_start(self, summary: str, parallel: bool = False, **kwargs: object) -> None:
         """Called before each tool executes.
 
         Extract tool name from the summary string and increment count.

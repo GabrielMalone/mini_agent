@@ -98,12 +98,14 @@ def _extract_definitions(
         ) @function.def
         """
 
+    import tree_sitter as _ts
+
     try:
-        query = lang.query(query_str)
+        query = _ts.Query(lang, query_str)
     except Exception:
         return _extract_with_regex(source, ext)
 
-    captures = query.captures(tree.root_node)
+    captures = _ts.QueryCursor(query).captures(tree.root_node)
 
     definitions: list[dict] = []
     seen: set[str] = set()
@@ -176,7 +178,6 @@ def _extract_with_regex(source: str, ext: str) -> list[dict]:
     import re
 
     definitions: list[dict] = []
-    source.split("\n")
 
     if ext == ".py":
         pattern = re.compile(

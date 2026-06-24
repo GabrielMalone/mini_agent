@@ -182,11 +182,11 @@ def _extract_with_tree_sitter(
 
     lang = parser.language
     try:
-        query = lang.query(query_str)
+        query = tree_sitter.Query(lang, query_str)
     except Exception:
         return _extract_with_fallback(source, "", ext)
 
-    captures_raw = query.captures(tree.root_node)
+    captures_raw = tree_sitter.QueryCursor(query).captures(tree.root_node)
 
     definitions: list[dict] = []
     calls: list[dict] = []
