@@ -79,10 +79,8 @@ const TerminalBlock = memo(function TerminalBlock({
           <div className="terminal-block__output">
             {isRunning ? (
               <div className="terminal-block__spinner">
-                <span className="spinner-dot" />
-                <span className="spinner-dot" />
-                <span className="spinner-dot" />
-                <span className="spinner-text dim">thinking...</span>
+                <span className="think-pulse" />
+                <span className="think-label">thinking</span>
               </div>
             ) : output ? (
               command.startsWith('/sh ') ? (

@@ -160,7 +160,8 @@ class TestEditFileAnchored(unittest.TestCase):
         self.assertFalse(result.success)
         self.assertIn("valid JSON array", result.content)
 
-    def test_file_not_read_yet(self):
+    def test_auto_read_guard_adds_unread_py_file(self):
+        """_edit_file_anchored auto-reads .py files instead of rejecting them."""
         f = os.path.join(self.tmp, "mod.py")
         Path(f).write_text("x = 1\n")
         _READ_FILES.discard(_resolve(f))
@@ -168,8 +169,11 @@ class TestEditFileAnchored(unittest.TestCase):
             [{"path": f, "edits": [{"anchor": "x", "text": "y = 2"}]}],
             self.wg, self.rg,
         )
+        # Auto-read guard: file is silently added to _READ_FILES
+        self.assertIn(_resolve(f), _READ_FILES)
+        # Edit still fails because anchor "x" is not in word§content format
         self.assertFalse(result.success)
-        self.assertIn("not read yet", result.content)
+        self.assertIn("Missing or empty", result.content)
 
     def test_all_files_fail_validation(self):
         result = _edit_file_anchored(
