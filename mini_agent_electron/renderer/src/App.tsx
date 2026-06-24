@@ -277,7 +277,7 @@ function AppShell() {
       const tCallId = (data as any).tool_call_id || '';
       let top;
       if (tCallId) {
-        const found = stack.find((e) => (e as any).toolCallId === tCallId);
+        const found = stack.find((e) => e.toolCallId === tCallId);
         if (found) top = found;
       }
       if (!top && tName) {
@@ -312,7 +312,7 @@ function AppShell() {
             let matchIdx = -1;
             for (let i = prev.length - 1; i >= 0; i--) {
               if (prev[i].status === 'running' && (
-                (tCallId && (prev[i] as any).toolCallId === tCallId) ||
+                (tCallId && prev[i].toolCallId === tCallId) ||
                 (!tCallId && prev[i].toolName === tName)
               )) {
                 matchIdx = i;
@@ -326,7 +326,7 @@ function AppShell() {
             const errorDetail = !data.ok ? (data.detail || '') : '';
             const status = data.ok ? 'ok' : 'err';
             const updated = [...prev];
-            const { _enter, ...clean } = matched as any;
+            const { _enter, ...clean } = matched;
             updated[matchIdx] = { ...clean, status, endTime: Date.now(), output: code, diffPreview, errorDetail };
             return updated;
           });
@@ -338,7 +338,7 @@ function AppShell() {
       let finalBuffer = '';
       // Match by tool_call_id first (unique, handles same-toolName batches), then tool_name, then LIFO
       if (tCallId) {
-        const idx = stack.findIndex((e) => (e as any).toolCallId === tCallId);
+        const idx = stack.findIndex((e) => e.toolCallId === tCallId);
         if (idx !== -1) {
           const entry = stack[idx];
           finalBuffer = entry.buffer;
@@ -354,7 +354,7 @@ function AppShell() {
         let idx = -1;
         if (tCallId) {
           // Prefer empty toolCallId entries (ID arrived late), then any match
-          idx = stack.findIndex((e) => e.toolName === tName && !(e as any).toolCallId);
+          idx = stack.findIndex((e) => e.toolName === tName && !e.toolCallId);
           if (idx === -1) {
             idx = stack.findIndex((e) => e.toolName === tName);
           }
@@ -365,8 +365,8 @@ function AppShell() {
           const entry = stack[idx];
           // Heal: if tool_end has a tool_call_id but the stack entry doesn't,
           // update the card so future lookups (e.g. card fallback) can match.
-          if (tCallId && !(entry as any).toolCallId) {
-            (entry as any).toolCallId = tCallId;
+          if (tCallId && !entry.toolCallId) {
+            entry.toolCallId = tCallId;
             startTransition(() => {
               setToolCards((prev) => {
                 const ci = toolCardIndexRef.current.get(entry.cardId);
@@ -441,7 +441,7 @@ function AppShell() {
               const code = data.content || matched.output || '';
               const diffPreview = data.diff_preview || null;
               const errorDetail = !data.ok ? (data.detail || '') : '';
-              const { _enter, ...clean } = matched as any;
+              const { _enter, ...clean } = matched;
               const updated = [...prev];
               updated[matchIdx] = { ...clean, status, endTime: now, output: code, diffPreview, errorDetail };
               return updated;

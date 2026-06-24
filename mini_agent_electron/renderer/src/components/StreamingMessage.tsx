@@ -42,12 +42,6 @@ const StreamingMessage = memo(function StreamingMessage({ text }: StreamingMessa
     };
   }, [text]);
 
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, []);
-
   if (!text || !text.trim()) return null;
 
   const isStreaming = text !== throttled;
