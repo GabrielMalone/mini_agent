@@ -2,6 +2,20 @@
 
 ## 2026-06-24 — Benchmark harness: Exercism Polyglot exercises
 
+### Fix: API key & test path bugs in benchmark runner
+Two bugs discovered during smoke test (proverb exercise):
+1. **AgentConfig() did not load API key** — used `AgentConfig(workspace=...)` which only sets
+   defaults (empty api_key). Changed to `AgentConfig.load(workspace=...)` which reads env vars.
+2. **Test command path mismatch** — `_find_test_command` returned workspace-relative path but
+   `subprocess.run(cwd=exercise_dir)` couldn't find it. Now uses `test_files[0].name` (relative).
+
+**First results** (5 Python exercises, 1 attempt each): 4/5 passed (80%)
+- ✅ proverb (8/8), phone-number (21/21), pig-latin (22/22), beer-song (8/8)
+- ❌ two-bucket (0/9) — BFS algorithm, needs more attempts
+
+Workspace isolation confirmed: each exercise gets isolated workspace via AgentConfig +
+safety gates scoped to exercise directory.
+
 ### New: `benchmark/benchmark.py`
 Plugs mini_agent into the Aider Polyglot benchmark. Uses Exercism coding exercises
 across Python, Go, Rust, JS, Java, and C++ (225 exercises total, 34 Python).
@@ -995,14 +1009,9 @@ Agent was repeating the same mistakes across sessions. Implemented MPR/VIGIL-ins
 ### Reason
 `edit_file` was the #1 source of tool failures. Each improvement addresses a specific failure pattern observed in production use.
 
-## 2026-05-20 -- SWE-bench Evaluation
-### Added
-- `eval/swebench_runner.py` -- SWE-bench Lite prediction pipeline
-- `eval/agent.py` -- SWE-bench agent wrapper
-- `test_benchmarks.py` -- local eval + SWE-bench tests
-### Reason
-Industry-standard benchmarking for coding agents. Validates tool-use and code-fix capabilities.
-
+## 2026-05-20 -- SWE-bench Evaluation (REMOVED)
+The SWE-bench harness never worked and has been removed. Replaced by `benchmark/benchmark.py`
+(Exercism Polyglot harness) which is simpler, offline, and actually works.
 ## 2026-05-18 -- Context Injection Refactor
 ### Changed
 - `context_inject.py` -- extracted from `llm.py` (per-turn injection logic)

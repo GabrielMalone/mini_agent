@@ -6,6 +6,8 @@
 - **Benchmark harness (2026-06-24)** — `benchmark/benchmark.py` plugs mini_agent into the Aider
   Polyglot benchmark (Exercism exercises). 34 Python exercises, 2-attempt protocol with test feedback
   loop. Python API integration (run_agent_turn, AgentConfig, safety gates). 9 unit tests pass.
+  First results: 4/5 Python exercises passed (80%). Two bugs fixed: AgentConfig.load for API key
+  and test file path resolution. Workspace isolation confirmed per exercise.
 
 - **Testing suite audit (2026-06-24)** — 8 new/expanded test files (1,070 lines), covering ast_utils,
   file_context_tracker, agent_ops, agent_todos, semantic_memory, symbol_context_resolver, lint, and

@@ -62,10 +62,7 @@ pytest-timeout>=2.0         # prevents hanging tests (all platforms; especially 
 # discord.py>=2.3
 # elevenlabs>=1.0            # TTS voice synthesis (needs ELEVENLABS_API_KEY)
 
-# --- SWE-bench evaluation ---
-# datasets>=2.14
-# swebench
-# PyYAML>=6.0                # eval runner config parsing
+
 
 # ================================================
 # System dependencies (NOT pip-installable):

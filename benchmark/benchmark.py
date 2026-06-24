@@ -101,8 +101,9 @@ def _find_test_command(exercise_dir: Path) -> Optional[list[str]]:
     if lang == "python":
         test_files = list(exercise_dir.glob("*_test.py"))
         if test_files:
-            return [sys.executable, "-m", "pytest", "-q", str(test_files[0])]
-        return [sys.executable, "-m", "pytest", "-q", str(exercise_dir)]
+            # Use just the filename — subprocess cwd is exercise_dir
+            return [sys.executable, "-m", "pytest", "-q", test_files[0].name]
+        return [sys.executable, "-m", "pytest", "-q", "."]
     elif lang == "rust":
         return ["cargo", "test"]
     elif lang == "go":
@@ -205,8 +206,8 @@ Important:
 - If tests fail, read the errors and fix the code.
 - Your workspace is {exercise_dir}"""
 
-    # Set up AgentConfig
-    config = AgentConfig(workspace=str(exercise_dir))
+    # Set up AgentConfig — use .load() to pick up env vars and .env
+    config = AgentConfig.load(workspace=str(exercise_dir))
 
     # Safety gates — allow all reads/writes within the exercise dir
     write_gate = WriteSafetyGate(workspace_root=str(exercise_dir))

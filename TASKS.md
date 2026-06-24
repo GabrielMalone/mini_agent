@@ -61,5 +61,5 @@ Changes to test infrastructure or new test additions:
 
 - `tests/` — all test files (unittest.TestCase style, pytest runner)
 - `conftest.py` — shared fixtures, mocks, test helpers
-- `eval/` — evaluation harness (YAML tasks + SWE-bench runner)
+- `eval/` — YAML task eval harness (runner, scorer, tasks)
 - `Makefile` — test targets (test, test-slow, test-all, coverage)

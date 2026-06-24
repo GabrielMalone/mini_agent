@@ -120,7 +120,8 @@ mini_agent/
 │   ├── browser_ops.py      # Playwright headless browser
 │   └── ...
 ├── tests/                  # Test suite (~1100 tests)
-├── eval/                   # Evaluation harness (YAML tasks + SWE-bench)
+├── eval/                   # YAML task eval harness (runner, scorer, tasks)
+├── benchmark/              # Exercism Polyglot coding benchmark
 ├── mini_agent_electron/    # Electron desktop app (React + Node.js)
 │   ├── main.js             # Electron main process
 │   ├── preload.js          # IPC bridge

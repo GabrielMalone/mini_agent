@@ -47,19 +47,6 @@ def pytest_addoption(parser):
         default=False,
         help="Include slow tests (excluded by default: git, desktop ops)",
     )
-    parser.addoption(
-        "--swebench",
-        action="store_true",
-        default=False,
-        help="Include SWE-bench benchmarks (requires network + datasets library)",
-    )
-    parser.addoption(
-        "--swebench-max-tasks",
-        type=int,
-        default=5,
-        help="Maximum number of SWE-bench tasks to run (default: 5)",
-    )
-
 
 def pytest_ignore_collect(collection_path, config):
     """Skip benchmarks by default, and ignore venv site-packages tests.
