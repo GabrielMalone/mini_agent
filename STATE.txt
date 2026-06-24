@@ -3,6 +3,12 @@
 
 ## Active Decisions (most recent first)
 
+- **Backend audit & thread safety (2026-06-24)** — Audited `mini_agent_electron/backend/server.py` for thread safety,
+  resource leaks, and robustness. Fixed 4 bugs: (1) `_run_shell_pty` master_fd double-close and proc.wait() hang,
+  (2) StreamCallbacks._in_thinking thread safety via threading.Lock, (3) AgentRunner _pending_subagents/_auto_report_flag
+  thread safety via _subagent_lock, (4) _turn_thread join before spawning new turn thread. All syntax-validated
+  (python compile + tsc --noEmit clean).
+
 - **HMR hang fix (2026-06-24)** — `useSmoothStream` had stale RAF callbacks after HMR teardown
   causing re-render loops. Fixed with `mountedRef` guard pattern. `CodeBlock.tsx` Shiki
   singleton made HMR-safe with `_version` counter to prevent stale promise corruption.

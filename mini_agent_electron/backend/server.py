@@ -251,7 +251,11 @@ def _run_shell_pty(cmd: str, cwd: str, timeout: float = 30.0) -> tuple[str, int]
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 proc.kill()
-                proc.wait()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait(timeout=5)
                 raise subprocess.TimeoutExpired(cmd, timeout)
 
             r, _, _ = select.select([master_fd], [], [], min(remaining, 1.0))
@@ -269,7 +273,10 @@ def _run_shell_pty(cmd: str, cwd: str, timeout: float = 30.0) -> tuple[str, int]
                 break
 
         # Non-blocking drain of any remaining output
-        os.set_blocking(master_fd, False)
+        try:
+            os.set_blocking(master_fd, False)
+        except OSError:
+            pass  # best-effort; not all platforms support set_blocking on PTYs
         try:
             while True:
                 data = os.read(master_fd, 4096)
@@ -280,15 +287,22 @@ def _run_shell_pty(cmd: str, cwd: str, timeout: float = 30.0) -> tuple[str, int]
             pass
 
         os.close(master_fd)
-        proc.wait()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=5)
 
         text = b"".join(output_chunks).decode("utf-8", errors="replace")
         return text, proc.returncode
-    finally:
-        try:
-            os.close(master_fd)
-        except OSError:
-            pass
+    except Exception:
+        # Ensure both fds are closed on any error path
+        for fd in (slave_fd, master_fd):
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+        raise
 
 
 # ---------------------------------------------------------------------------
@@ -301,14 +315,17 @@ class StreamCallbacks:
 
     def __init__(self):
         self._in_thinking = False
+        self._thinking_lock = threading.Lock()
 
     def on_token(self, text: str) -> None:
         if text == THINKING_START:
-            self._in_thinking = True
+            with self._thinking_lock:
+                self._in_thinking = True
             send_msg({"type": "thinking_start"})
             return
         if text == THINKING_END:
-            self._in_thinking = False
+            with self._thinking_lock:
+                self._in_thinking = False
             send_msg({"type": "thinking_end"})
             return
         send_msg({"type": "token", "text": text})
@@ -450,6 +467,7 @@ class AgentRunner:
         # Reset at the start of each turn in _run_turn.
         self._pending_subagents: set[str] = set()
         self._auto_report_flag: bool = False
+        self._subagent_lock = threading.Lock()
 
         # Running sub-agent count for status bar display.
         self._running_subagent_count: int = 0
@@ -596,6 +614,12 @@ class AgentRunner:
         backend defence in case the frontend hasn't been rebuilt with the
         corresponding slash-command routing.
         """
+        # Join any previous turn thread before starting a new one, to prevent
+        # thread leaks on rapid submissions (e.g. double-click send).
+        prev = self._turn_thread
+        if prev is not None and prev.is_alive():
+            self._cancel_event.set()
+            prev.join(timeout=5)
         if text.strip().startswith("/"):
             self.handle_command(text.strip())
             return
@@ -769,7 +793,8 @@ class AgentRunner:
             # so the renderer doesn't route subsequent tokens to the wrong panel.
             if self._callbacks._in_thinking:
                 send_msg({"type": "thinking_end"})
-            self._callbacks._in_thinking = False
+            with self._callbacks._thinking_lock:
+                self._callbacks._in_thinking = False
             if not self._cancel_event.is_set():
                 send_msg({"type": "error", "message": str(e)})
             # Always send turn_complete so the renderer resets its loading state
@@ -786,7 +811,8 @@ class AgentRunner:
             )
             return
         # Safety: reset thinking flag so a stuck marker doesn't persist across turns
-        self._callbacks._in_thinking = False
+        with self._callbacks._thinking_lock:
+            self._callbacks._in_thinking = False
 
         if self._cancel_event.is_set():
             send_msg(

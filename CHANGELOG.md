@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-06-24 — Backend audit: thread safety & resource leak fixes (server.py)
+- **_run_shell_pty**: Fixed double-close of `master_fd` (was closed in try body then again in finally — second close always OSError). Replaced `try/finally` with `try/except Exception` that closes both `slave_fd` and `master_fd` on error.
+- **_run_shell_pty**: Added `proc.wait(timeout=5)` after `proc.kill()` at two sites (timeout path and normal exit path) — prevents infinite hang if process is in D-state.
+- **_run_shell_pty**: Wrapped `os.set_blocking(master_fd, False)` in try/except OSError — not all platforms support set_blocking on PTY masters.
+- **StreamCallbacks**: Added `_thinking_lock` (threading.Lock) to protect `_in_thinking` flag, which is accessed from both the main turn thread and subagent callback threads.
+- **AgentRunner**: Added `_subagent_lock` (threading.Lock) for `_pending_subagents` and `_auto_report_flag` — both mutated from subagent callback threads and read/reset from turn thread.
+- **AgentRunner.submit()**: Now joins previous `_turn_thread` (with 5s timeout + cancel_event) before spawning a new one — prevents thread leak on rapid submissions.
+
 Self-modification audit trail -- what the agent changed and why.
 
 ## 2026-06-24
