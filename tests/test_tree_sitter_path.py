@@ -245,5 +245,164 @@ class TestFallbackRegexGaps(unittest.TestCase):
                           "_TS_ARROW_RE now matches generic arrows - regex improved, update test")
 
 
+class TestParserLanguageSelection(unittest.TestCase):
+    """_get_tree_sitter_parser must select the correct grammar for each extension.
+
+    Regressions: .tsx was using language_typescript() (unreachable else branch),
+    .jsx had no dedicated JS parser. These tests lock in the correct mappings.
+    """
+
+    def _parser_lang_for(self, ext: str):
+        """Return the Language object from _get_tree_sitter_parser for `ext`."""
+        from tools.ast_tools import _get_tree_sitter_parser
+        result = _get_tree_sitter_parser(ext)
+        self.assertIsNotNone(result, f"No parser returned for {ext}")
+        _parser, lang, _query = result
+        return lang
+
+    def test_ts_uses_typescript_language(self):
+        """Regression: .tsx was also using language_typescript() via unreachable else."""
+        import tree_sitter_typescript as tsts
+        from tree_sitter import Language
+        lang = self._parser_lang_for(".ts")
+        expected = Language(tsts.language_typescript())
+        self.assertEqual(lang, expected, ".ts must use language_typescript()")
+
+    def test_tsx_uses_tsx_language(self):
+        """REGRESSION: .tsx was using language_typescript() instead of language_tsx()."""
+        import tree_sitter_typescript as tsts
+        from tree_sitter import Language
+        lang = self._parser_lang_for(".tsx")
+        expected = Language(tsts.language_tsx())
+        self.assertEqual(lang, expected, ".tsx must use language_tsx()")
+
+    @unittest.skipUnless(_TS_AVAILABLE, _TS_SKIP)
+    def test_js_uses_javascript_language(self):
+        """REGRESSION: .js/.jsx were parsed with tree-sitter-typescript (wrong grammar)."""
+        import tree_sitter_javascript as tsjs
+        from tree_sitter import Language
+        lang = self._parser_lang_for(".js")
+        expected = Language(tsjs.language())
+        self.assertEqual(lang, expected, ".js must use tree-sitter-javascript")
+
+    @unittest.skipUnless(_TS_AVAILABLE, _TS_SKIP)
+    def test_jsx_uses_javascript_language(self):
+        """REGRESSION: .jsx was using tree-sitter-typescript."""
+        import tree_sitter_javascript as tsjs
+        from tree_sitter import Language
+        lang = self._parser_lang_for(".jsx")
+        expected = Language(tsjs.language())
+        self.assertEqual(lang, expected, ".jsx must use tree-sitter-javascript")
+
+
+@unittest.skipUnless(_TS_AVAILABLE, _TS_SKIP)
+class TestTsxDefinitionsArrowFunctions(unittest.TestCase):
+    """_extract_definitions must find arrow-function consts in TSX via variable_declarator.
+
+    REGRESSION: the TSX query used (arrow_function name: (identifier)?) which
+    tree-sitter-typescript does not support. It must use
+    (variable_declarator name: ... value: (arrow_function)) instead.
+    """
+
+    def setUp(self):
+        from tools.ast_tools import _get_tree_sitter_parser
+        result = _get_tree_sitter_parser(".tsx")
+        self.assertIsNotNone(result)
+        self.parser, self.lang, _ = result
+
+    def test_arrow_const_found(self):
+        """A `const f = () => {}` arrow function is detected."""
+        from tools.ast_tools import _extract_definitions
+        source = "const handleClick = () => {\n  console.log('click');\n};\n"
+        defs = _extract_definitions(source, self.parser, self.lang, ".tsx")
+        names = {d["name"] for d in defs}
+        self.assertIn("handleClick", names,
+                      "arrow const not found — variable_declarator pattern regression")
+
+    def test_arrow_const_with_type_annotations(self):
+        """Arrow with TS type annotations: `const fn = (x: number): string => { ... }`."""
+        from tools.ast_tools import _extract_definitions
+        source = "const format = (n: number): string => {\n  return n.toString();\n};\n"
+        defs = _extract_definitions(source, self.parser, self.lang, ".tsx")
+        names = {d["name"] for d in defs}
+        self.assertIn("format", names,
+                      "annotated arrow const not found — tree-sitter TSX regression")
+
+    def test_function_declaration_still_works(self):
+        """Regular `function foo() {}` declarations still detected alongside arrows."""
+        from tools.ast_tools import _extract_definitions
+        source = (
+            "function helper(): void {}\n"
+            "const onClick = () => {\n  helper();\n};\n"
+        )
+        defs = _extract_definitions(source, self.parser, self.lang, ".tsx")
+        names = {d["name"] for d in defs}
+        self.assertIn("helper", names)
+        self.assertIn("onClick", names,
+                      "arrow const not found alongside function declaration")
+
+
+class TestGetFileSkeletonTsxEndToEnd(unittest.TestCase):
+    """get_file_skeleton must return results for real .tsx files (not silently empty).
+
+    REGRESSION: TerminalBlock.tsx returned "0 function(s), 0 class(es)" because
+    (a) TSX grammar was wrong and (b) variable_declarator pattern was missing.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.ws_root = self.tmp
+        self.rg = ReadSafetyGate(self.ws_root)
+        self.wg = WriteSafetyGate(self.ws_root)
+
+    def _write(self, name, content):
+        path = os.path.join(self.tmp, name)
+        Path(path).write_text(content)
+        return path
+
+    @unittest.skipUnless(_TS_AVAILABLE, _TS_SKIP)
+    def test_tsx_with_arrow_const(self):
+        """A minimal .tsx file with an arrow const returns results, not empty."""
+        from tools.ast_tools import _get_file_skeleton
+        path = self._write("Component.tsx", (
+            "import React from 'react';\n"
+            "const MyComponent = () => {\n"
+            "  return <div>Hello</div>;\n"
+            "};\n"
+            "export default MyComponent;\n"
+        ))
+        r = _get_file_skeleton({"path": path}, self.wg, self.rg)
+        self.assertTrue(r.success, r.content)
+        self.assertIn("MyComponent", r.content,
+                      "arrow const not in skeleton — TSX regression")
+        # Summary line must NOT say "0 function(s)"
+        self.assertNotIn("0 function(s)", r.content,
+                        "0 functions reported — tree-sitter TSX path is broken")
+
+    @unittest.skipUnless(_TS_AVAILABLE, _TS_SKIP)
+    def test_tsx_mixed_declarations(self):
+        """file with function declaration + arrow const — both detected."""
+        from tools.ast_tools import _get_file_skeleton
+        path = self._write("Mixed.tsx", (
+            "function helper(): string { return 'ok'; }\n"
+            "const onClick = () => { helper(); };\n"
+        ))
+        r = _get_file_skeleton({"path": path}, self.wg, self.rg)
+        self.assertTrue(r.success, r.content)
+        self.assertIn("helper", r.content)
+        self.assertIn("onClick", r.content,
+                      "mixed: arrow const not detected alongside function declaration")
+        self.assertNotIn("0 function(s)", r.content)
+
+    def test_python_still_works(self):
+        """Sanity: Python files still return results (no regression from TSX fix)."""
+        from tools.ast_tools import _get_file_skeleton
+        path = self._write("mod.py", "def foo():\n    pass\n\nclass Bar:\n    pass\n")
+        r = _get_file_skeleton({"path": path}, self.wg, self.rg)
+        self.assertTrue(r.success, r.content)
+        self.assertIn("foo", r.content)
+        self.assertIn("Bar", r.content)
+
+
 if __name__ == "__main__":
     unittest.main()
