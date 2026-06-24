@@ -16,7 +16,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from core.tree_sitter_parser import _TREE_SITTER_AVAILABLE
+from core.tree_sitter_parser import _TREE_SITTER_AVAILABLE, run_query
 
 # ---------------------------------------------------------------------------
 # Query strings per language (mirrors Dirac's SymbolContextResolver.getQueryStrings)
@@ -198,22 +198,16 @@ def resolve_symbol_context(
     if not config:
         return ""
 
-    import tree_sitter as _ts
-
     try:
         language = parser.language
-        query = _ts.Query(language, config["context_query"])
 
         if root_node is None:
             tree = parser.parse(file_content.encode("utf-8"))
             root_node = tree.root_node
 
-        import tree_sitter as _ts
-        captures_dict = _ts.QueryCursor(query).captures(root_node)
-        # Normalise dict[str, list[Node]] -> list[(Node, str)] for helper consumption
-        captures: list[tuple[Any, str]] = [
-            (node, tag) for tag, nodes in captures_dict.items() for node in nodes
-        ]
+        captures: list[tuple[Any, str]] = run_query(
+            language, config["context_query"], root_node
+        )
 
         # 1. Identify all identifiers used within the target node
         used_identifiers = _get_used_identifiers(node)

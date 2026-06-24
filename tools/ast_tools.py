@@ -18,6 +18,7 @@ from tools import _register, _summarize
 from tools._file_utils import _FILE_CACHE
 from core.file_context_tracker import get_tracker
 from core.safety import WriteSafetyGate, ReadSafetyGate
+from core.tree_sitter_parser import run_query
 
 
 # ---------------------------------------------------------------------------
@@ -98,25 +99,12 @@ def _extract_definitions(
         ) @function.def
         """
 
-    import tree_sitter as _ts
-
-    try:
-        query = _ts.Query(lang, query_str)
-    except Exception:
+    items = run_query(lang, query_str, tree.root_node)
+    if not items:
         return _extract_with_regex(source, ext)
-
-    captures = _ts.QueryCursor(query).captures(tree.root_node)
 
     definitions: list[dict] = []
     seen: set[str] = set()
-
-    # tree-sitter v0.23+ returns dict[str, list[Node]]; v0.22 returns list[tuple[Node, str]]
-    if isinstance(captures, dict):
-        items: list[tuple[Any, str]] = [
-            (node, tag) for tag, nodes in captures.items() for node in nodes
-        ]
-    else:
-        items = captures
 
     for node, tag in items:
         if tag in ("function.def", "class.def"):

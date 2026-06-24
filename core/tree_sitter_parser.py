@@ -70,6 +70,27 @@ def _get_parser_for_ext(ext: str) -> Any | None:
     return None
 
 
+def run_query(lang: Any, query_str: str, root_node: Any) -> list[tuple[Any, str]]:
+    """Execute a tree-sitter query and return normalized captures.
+
+    Handles tree-sitter v0.23+ API (Query + QueryCursor) and normalizes
+    the result to a flat list of ``(node, capture_name)`` tuples regardless
+    of whether the underlying version returns a dict or list.
+
+    Returns empty list on query error.
+    """
+    if not _TREE_SITTER_AVAILABLE:
+        return []
+    try:
+        query = tree_sitter.Query(lang, query_str)
+    except Exception:
+        return []
+    captures_raw = tree_sitter.QueryCursor(query).captures(root_node)
+    if isinstance(captures_raw, dict):
+        return [(node, tag) for tag, nodes in captures_raw.items() for node in nodes]
+    return captures_raw
+
+
 # ---------------------------------------------------------------------------
 # Query-based symbol extraction
 # ---------------------------------------------------------------------------
@@ -181,12 +202,9 @@ def _extract_with_tree_sitter(
         query_str = _TS_QUERY
 
     lang = parser.language
-    try:
-        query = tree_sitter.Query(lang, query_str)
-    except Exception:
+    captures = run_query(lang, query_str, tree.root_node)
+    if not captures:
         return _extract_with_fallback(source, "", ext)
-
-    captures_raw = tree_sitter.QueryCursor(query).captures(tree.root_node)
 
     definitions: list[dict] = []
     calls: list[dict] = []
@@ -197,14 +215,6 @@ def _extract_with_tree_sitter(
     # Determine current function context for call attribution
     # Walk the tree to build a line->function mapping
     line_to_func: dict[int, str] = {}
-
-    # tree-sitter >= 0.23 returns dict[str, list[Node]]; older returns list[(Node, str)]
-    if isinstance(captures_raw, dict):
-        captures: list[tuple[Any, str]] = [
-            (node, tag) for tag, nodes in captures_raw.items() for node in nodes
-        ]
-    else:
-        captures = captures_raw
 
     for node, tag in captures:
         start_line = node.start_point[0] + 1
