@@ -1,6 +1,16 @@
 # Changelog
 
-## 2026-07-13 — Startup performance: lazy-load desktop/browser/macos tool modules
+## 2026-07-13 — Stuck tool-card watchdog + startup performance
+
+### Bug Fix
+- **`mini_agent_electron/renderer/src/App.tsx`**: Added a stuck tool-card watchdog
+  (30s threshold, 10s check interval) that auto-resolves tool cards from 'running'
+  to 'ok' if they've been stuck for more than 30 seconds. This is a defense-in-depth
+  safety net — the existing turn_complete sweep handles most cases, but this catches
+  edge cases where tool_end never arrives, matching fails, or orphaned cards remain
+  after errors.
+
+### Performance
 
 ### Performance
 - **Tools import: 1.53s → 0.06s (26x faster)** by deferring `browser_ops`, `desktop_ops`, `macos_ops` imports

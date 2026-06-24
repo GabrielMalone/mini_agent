@@ -733,6 +733,31 @@ function AppShell() {
   // State setters from React are stable; api, startTimer, stopTimer are refs/globals.
   }, []);
 
+  // Stuck tool-card watchdog: periodically resolves cards that have been
+  // "running" for more than 30 seconds.  This is a defense-in-depth safety
+  // net — turn_complete already sweeps running cards, but this catches any
+  // cards that slipped through (e.g. tool_end never arrived, matching
+  // failures, orphaned cards after an error, etc.).
+  useEffect(() => {
+    const STUCK_THRESHOLD_MS = 30_000;
+    const CHECK_INTERVAL_MS = 10_000;
+    const interval = setInterval(() => {
+      setToolCards((prev) => {
+        const now = Date.now();
+        let changed = false;
+        const updated = prev.map((card) => {
+          if (card.status === 'running' && (now - card.startTime) > STUCK_THRESHOLD_MS) {
+            changed = true;
+            return { ...card, status: 'ok' as const, endTime: now };
+          }
+          return card;
+        });
+        return changed ? updated : prev;
+      });
+    }, CHECK_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, []);
+
   // Submit handler -- creates terminal blocks, supports slash commands.
   // Regular text: if a turn is running, queue as an interjection;
   // otherwise start a new turn with a 'running' block.
