@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-07-13 — Startup performance: lazy-load desktop/browser/macos tool modules
+
+### Performance
+- **Tools import: 1.53s → 0.06s (26x faster)** by deferring `browser_ops`, `desktop_ops`, `macos_ops` imports
+- **`core.llm` import: 1.54s → 0.14s (11x faster)** since it transitively imports tools
+- Heavy macOS frameworks (AppKit, Quartz, atomacos) now only load when `use_skill("desktop")` is called
+- Added `_ensure_skill_imports()` lazy loader, wired into `use_skill` dispatch and `_cleanup_resources`
+
+### Changed
+- `tools/__init__.py`: Replaced 3 eager imports with lazy `_ensure_skill_imports()` function
+- `tools/__init__.py`: Wrapped `use_skill` dispatch to trigger lazy imports on skill activation
+- `tools/__init__.py`: Updated `_cleanup_resources` to lazy-load browser_ops before cleanup
+- `tests/test_smoke.py`: `test_all_tools_have_handlers` now activates web/desktop skills before checking handlers
+
 ## 2026-06-24 — Search/find system audit + cleanup
 
 ### Audit findings & fixes

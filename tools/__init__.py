@@ -649,6 +649,11 @@ from tools.skills import (
 
 _TOOL_DISPATCH["use_skill"] = _use_skill
 _TOOL_SUMMARIES["use_skill"] = lambda args: f"use_skill({args.get('name', '?')})"
+def _use_skill_with_import(args, wg, rg):
+    """Wraps _use_skill to trigger lazy imports for skill-gated tool modules."""
+    _ensure_skill_imports(args.get("name", ""))
+    return _use_skill(args, wg, rg)
+_TOOL_DISPATCH["use_skill"] = _use_skill_with_import
 _TOOL_DISPATCH["skill_list"] = _skill_list
 _TOOL_SUMMARIES["skill_list"] = lambda args: "skill_list()"
 _TOOL_DISPATCH["skill_view"] = _skill_view
@@ -1189,9 +1194,28 @@ from tools import file_ops  # noqa: E402, F401  -- read_file, write_file, edit_f
 from tools import ast_tools  # noqa: E402, F401  -- get_file_skeleton, get_function, replace_symbol
 from tools import shell_ops  # noqa: E402, F401  -- run_shell, search_files, run_tests, etc.
 from tools import search_ops  # noqa: E402, F401  -- find_symbol, web_search, semantic_search
-from tools import browser_ops  # noqa: E402, F401  -- browser automation (web skill)
-from tools import desktop_ops  # noqa: E402, F401  -- desktop automation (desktop skill)
-from tools import macos_ops  # noqa: E402, F401  -- macOS-specific APIs (desktop skill)
+# browser_ops, desktop_ops, macos_ops are lazy-loaded on demand
+# by _ensure_skill_imports() when the corresponding skill is activated.
+
+_skill_imports_done: set[str] = set()
+
+
+def _ensure_skill_imports(skill_name: str) -> None:
+    """Lazy-import tool submodules when a skill is activated."""
+    if skill_name in _skill_imports_done:
+        return
+    modules: list[str] = []
+    if skill_name == "web":
+        modules = ["tools.browser_ops"]
+    elif skill_name == "desktop":
+        modules = ["tools.desktop_ops", "tools.macos_ops"]
+    for mod in modules:
+        if mod not in _skill_imports_done:
+            try:
+                __import__(mod)
+            except ImportError:
+                pass
+    _skill_imports_done.update(modules)
 from tools import agent_ops  # noqa: E402, F401  -- restore_file, session_stats, recall_turn, remember, read_image
 from tools import memory_core  # noqa: E402, F401  -- memory_core, session_search (core)
 from tools import agent_todos  # noqa: E402, F401  -- todo_write, todo_read (planning skill)
@@ -1266,6 +1290,7 @@ def _cleanup_resources() -> None:
 
     # Close browser (Playwright)
     try:
+        _ensure_skill_imports("web")
         from tools.browser_ops import _close_browser as _close_browser_fn
 
         _close_browser_fn()

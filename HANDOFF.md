@@ -1,37 +1,27 @@
-# HANDOFF — 2026-06-24 Session: Search/Find System Audit
+# HANDOFF — 2026-07-13
 
-## What I did
-Audited the search/find system (7 tools: find_symbol, find_usages, find_callers, find_callees,
-find_related, search_ast, semantic_search) for correctness and consistency.
-
-### Changes made
-1. **tools/search_ops.py** — Removed redundant inline `from core.constants import SKIP_DIRS`
-   in `_find_usages` grep fallback (line ~1941). Module-level import at line 27 already
-   provides `_SKIP_DIRS`.
-
-2. **tools/search_ops.py** — Removed misleading `_SKIP_DIRS_LIST = _SKIP_DIRS` assignment
-   in `_build_call_graph` (line ~1679). Directly uses `_SKIP_DIRS` now.
-
-3. **CHANGELOG.md** — Added audit entry.
-
-4. **STATE.txt** — Updated date.
-
-### Verification
-- All 34 test_search_audit.py tests pass
-- All 302 search-related tests pass (k=search|find|symbol|ast|lsp|semantic)
-- No lint errors on edited file
-- Imports verified clean
+## What I changed
+- **`tools/__init__.py`**: Made `browser_ops`, `desktop_ops`, `macos_ops` lazy-loaded
+  - Removed 3 eager `from tools import ...` statements (was importing AppKit, Quartz, atomacos at startup)
+  - Added `_ensure_skill_imports(skill_name)` lazy loader
+  - Wrapped `use_skill` dispatch to trigger lazy imports when desktop/web skills activate
+  - Updated `_cleanup_resources` to lazy-load before browser cleanup
+- **`tests/test_smoke.py`**: `test_all_tools_have_handlers` now activates web+desktop skills before checking
+- **`CHANGELOG.md`**: Added entry
 
 ## What's pending
-- 4 remaining `os.walk` calls in search_ops.py could be converted to workspace_scanner:
-  - `build_symbol_index` (line ~207)
-  - `_sem_index` (line ~1194)
-  - `_build_call_graph` (line ~1679)
-  - `_find_usages` grep fallback (line ~1935)
-  These do complex per-file inline work (mtime tracking, AST parsing, encoding) so
-  conversion is non-trivial but feasible.
+- Full test suite validation (only smoke tests run so far)
+- Runtime verification: confirm `use_skill("desktop")` still works end-to-end in agent sessions
+- Consider also lazy-loading `sentence_transformers` (currently loads top-level package only, ~2ms — not a bottleneck)
+
+## Performance results
+| Metric | Before | After | Speedup |
+|--------|--------|-------|---------|
+| `import tools` | 1.534s | 0.058s | **26x** |
+| `import core.llm` | 1.543s | 0.140s | **11x** |
+| atomacos/AppKit at startup | LOADED | NOT loaded | — |
 
 ## Modified files
-- tools/search_ops.py
-- CHANGELOG.md
-- STATE.txt
+- `tools/__init__.py` — lazy import mechanism
+- `tests/test_smoke.py` — test awareness of lazy skills
+- `CHANGELOG.md` — changelog entry

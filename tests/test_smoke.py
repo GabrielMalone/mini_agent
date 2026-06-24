@@ -116,8 +116,12 @@ class TestAllToolsDispatchable(unittest.TestCase):
 
     def test_all_tools_have_handlers(self):
         """No tool in TOOLS should be missing from _TOOL_DISPATCH."""
-        from tools import _TOOL_DISPATCH, _TOOL_SUMMARIES
+        from tools import _TOOL_DISPATCH, _TOOL_SUMMARIES, _ensure_skill_imports
         from tools.schema import TOOLS
+
+        # Activate skill-gated tools so their handlers are registered
+        _ensure_skill_imports("web")
+        _ensure_skill_imports("desktop")
 
         for tool_def in TOOLS:
             name = tool_def["function"]["name"]
