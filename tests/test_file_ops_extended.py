@@ -72,8 +72,9 @@ class TestListDirectory(unittest.TestCase):
         try:
             tc = _make_tool_call("list_directory", path=outside)
             result = execute_tool(tc, self.write_gate, self.read_gate)
-            # Safety gates are now unrestricted -- listing outside workspace succeeds
-            self.assertTrue(result.success)
+            # Safety gates now enforce workspace containment
+            self.assertFalse(result.success)
+            self.assertIn("blocked by safety layer", result.content)
         finally:
             import shutil
 

@@ -80,8 +80,23 @@ class ReadSafetyGate:
         return self._unrestricted
 
     def check(self, path: str | None) -> SafetyResult:
-        """Validate a proposed read path."""
+        """Validate a proposed read path.
+
+        Resolves the path relative to workspace root and checks containment.
+        When unrestricted mode is enabled, allows any path.
+        """
         resolved = _safe_resolve(self._root, path or "")
+        if self._unrestricted:
+            return SafetyResult(allowed=True, reason="OK (unrestricted)", resolved_path=resolved)
+        if not resolved.startswith(self._root_prefix) and resolved != self._root:
+            return SafetyResult(
+                allowed=False,
+                reason=(
+                    f"Path '{resolved}' escapes workspace root '{self._root}'. "
+                    f"Use a path inside the workspace or enable unrestricted mode."
+                ),
+                resolved_path=resolved,
+            )
         return SafetyResult(allowed=True, reason="OK", resolved_path=resolved)
 
 
@@ -138,8 +153,23 @@ class WriteSafetyGate:
         return self._unrestricted
 
     def check(self, path: str | None) -> SafetyResult:
-        """Validate a proposed write path."""
+        """Validate a proposed write path.
+
+        Resolves the path relative to workspace root and checks containment.
+        When unrestricted mode is enabled, allows any path.
+        """
         resolved = _safe_resolve(self._root, path or "")
+        if self._unrestricted:
+            return SafetyResult(allowed=True, reason="OK (unrestricted)", resolved_path=resolved)
+        if not resolved.startswith(self._root_prefix) and resolved != self._root:
+            return SafetyResult(
+                allowed=False,
+                reason=(
+                    f"Path '{resolved}' escapes workspace root '{self._root}'. "
+                    f"Use a path inside the workspace or enable unrestricted mode."
+                ),
+                resolved_path=resolved,
+            )
         return SafetyResult(allowed=True, reason="OK", resolved_path=resolved)
 
     # ------------------------------------------------------------------

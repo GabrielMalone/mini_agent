@@ -36,17 +36,19 @@ class TestReadSafetyGate(unittest.TestCase):
         result = self.gate.check(self.workspace)
         self.assertTrue(result.allowed)
 
-    def test_read_outside_workspace_allowed(self):
+    def test_read_outside_workspace_blocked(self):
         outside = os.path.join(tempfile.gettempdir(), "secret.txt")
         result = self.gate.check(outside)
-        self.assertTrue(result.allowed)
+        self.assertFalse(result.allowed)
+        self.assertIn("escapes workspace root", result.reason)
 
-    def test_path_traversal_allowed(self):
+    def test_path_traversal_blocked(self):
         path = os.path.join(self.workspace, "..", "..", "etc", "passwd")
         result = self.gate.check(path)
-        self.assertTrue(result.allowed)
+        self.assertFalse(result.allowed)
+        self.assertIn("escapes workspace root", result.reason)
 
-    def test_symlink_outside_workspace_allowed(self):
+    def test_symlink_outside_workspace_blocked(self):
         outside_target = os.path.join(tempfile.gettempdir(), "outside_target.txt")
         with open(outside_target, "w") as f:
             f.write("secret")
@@ -54,7 +56,8 @@ class TestReadSafetyGate(unittest.TestCase):
         os.symlink(outside_target, symlink_path)
         try:
             result = self.gate.check(symlink_path)
-            self.assertTrue(result.allowed)
+            self.assertFalse(result.allowed)
+            self.assertIn("escapes workspace root", result.reason)
         finally:
             os.unlink(symlink_path)
             os.unlink(outside_target)
@@ -159,15 +162,17 @@ class TestWriteSafetyGate(unittest.TestCase):
         self.assertTrue(result.allowed)
         self.assertEqual(result.resolved_path, os.path.realpath(self.workspace))
 
-    def test_write_outside_workspace_allowed(self):
+    def test_write_outside_workspace_blocked(self):
         outside = os.path.join(tempfile.gettempdir(), "hack.txt")
         result = self.gate.check(outside)
-        self.assertTrue(result.allowed)
+        self.assertFalse(result.allowed)
+        self.assertIn("escapes workspace root", result.reason)
 
-    def test_path_traversal_allowed(self):
+    def test_path_traversal_blocked(self):
         path = os.path.join(self.workspace, "..", "..", "etc", "passwd")
         result = self.gate.check(path)
-        self.assertTrue(result.allowed)
+        self.assertFalse(result.allowed)
+        self.assertIn("escapes workspace root", result.reason)
 
     def test_relative_path_resolves_correctly(self):
         # Relative paths are resolved before checking
@@ -183,7 +188,7 @@ class TestWriteSafetyGate(unittest.TestCase):
         finally:
             os.chdir(orig_cwd)
 
-    def test_symlink_outside_workspace_allowed(self):
+    def test_symlink_outside_workspace_blocked(self):
         # Create a symlink inside workspace pointing outside
         outside_target = os.path.join(tempfile.gettempdir(), "outside_target.txt")
         with open(outside_target, "w") as f:
@@ -192,7 +197,8 @@ class TestWriteSafetyGate(unittest.TestCase):
         os.symlink(outside_target, symlink_path)
         try:
             result = self.gate.check(symlink_path)
-            self.assertTrue(result.allowed)
+            self.assertFalse(result.allowed)
+            self.assertIn("escapes workspace root", result.reason)
         finally:
             os.unlink(symlink_path)
             os.unlink(outside_target)
