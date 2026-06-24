@@ -31,7 +31,7 @@ except ImportError:
     pass
 
 
-def _ensure_language(lang_name: str, pkg_name: str) -> bool:
+def _ensure_language(lang_name: str, pkg_name: str, lang_func: str = "language") -> bool:
     """Lazily load a tree-sitter language. Returns True if available."""
     if lang_name in _PARSERS:
         return True
@@ -39,9 +39,10 @@ def _ensure_language(lang_name: str, pkg_name: str) -> bool:
         return False
     try:
         if lang_name not in _LANGUAGE_MODULES:
-            mod = __import__(pkg_name, fromlist=["language"])
+            mod = __import__(pkg_name, fromlist=[lang_func])
             _LANGUAGE_MODULES[lang_name] = mod
-        lang = tree_sitter.Language(_LANGUAGE_MODULES[lang_name].language())
+        lang_fn = getattr(_LANGUAGE_MODULES[lang_name], lang_func)
+        lang = tree_sitter.Language(lang_fn())
         parser = tree_sitter.Parser(lang)
         _PARSERS[lang_name] = parser
         return True
@@ -58,14 +59,18 @@ def _get_parser_for_ext(ext: str) -> Any | None:
         ".mjs": ("javascript", "tree_sitter_javascript"),
         ".cjs": ("javascript", "tree_sitter_javascript"),
         ".jsx": ("javascript", "tree_sitter_javascript"),
-        ".ts": ("typescript", "tree_sitter_typescript"),
-        ".tsx": ("typescript", "tree_sitter_typescript"),
+        ".ts": ("typescript", "tree_sitter_typescript", "language_typescript"),
+        ".tsx": ("tsx", "tree_sitter_typescript", "language_tsx"),
     }
     pair = mapping.get(ext)
     if pair is None:
         return None
-    lang_name, pkg_name = pair
-    if _ensure_language(lang_name, pkg_name):
+    if len(pair) == 3:
+        lang_name, pkg_name, lang_func = pair
+    else:
+        lang_name, pkg_name = pair
+        lang_func = "language"
+    if _ensure_language(lang_name, pkg_name, lang_func):
         return _PARSERS[lang_name]
     return None
 
@@ -142,6 +147,36 @@ _TS_QUERY = """
     property: (property_identifier) @call.target)) @call.expr
 """
 
+_TSX_QUERY = """
+(function_declaration
+  name: (identifier) @function.name) @function.def
+
+(method_definition
+  name: (property_identifier) @function.name) @function.def
+
+(class_declaration
+  name: (type_identifier) @class.name) @class.def
+
+(export_statement
+  declaration: (function_declaration
+    name: (identifier) @function.name)) @function.def
+
+(export_statement
+  declaration: (class_declaration
+    name: (type_identifier) @class.name)) @class.def
+
+(variable_declarator
+  name: (identifier) @function.name
+  value: (arrow_function)) @function.def
+
+(call_expression
+  function: (identifier) @call.target) @call.expr
+
+(call_expression
+  function: (member_expression
+    property: (property_identifier) @call.target)) @call.expr
+"""
+
 # Fallback regex patterns (used when tree-sitter is unavailable)
 _PY_DEF_RE = re.compile(r"^\s*(def|class)\s+(\w+)")
 _PY_CALL_RE = re.compile(r"\b(\w+)\s*\(")
@@ -198,6 +233,8 @@ def _extract_with_tree_sitter(
 
     if ext == ".py":
         query_str = _PYTHON_QUERY
+    elif ext in (".ts", ".tsx"):
+        query_str = _TSX_QUERY
     else:
         query_str = _TS_QUERY
 

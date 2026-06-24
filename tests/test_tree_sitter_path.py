@@ -84,7 +84,7 @@ class TestRunQueryIsCalled(unittest.TestCase):
         parser = tsp._get_parser_for_ext(".ts")
         self.assertIsNotNone(parser, "tree-sitter TS parser not available")
         tree = parser.parse(b"function hello(): void {}")
-        captures = tsp.run_query(parser.language, tsp._TS_QUERY, tree.root_node)
+        captures = tsp.run_query(parser.language, tsp._TSX_QUERY, tree.root_node)
         self.assertIsInstance(captures, list)
         self.assertGreater(len(captures), 0, "run_query returned empty - tree-sitter silently failing")
 

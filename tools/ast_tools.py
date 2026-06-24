@@ -83,6 +83,21 @@ def _extract_definitions(
             name: (identifier) @class.name
         ) @class.def
         """
+    elif ext in (".ts", ".tsx"):
+        query_str = """
+        (function_declaration
+            name: (identifier) @function.name
+        ) @function.def
+        (method_definition
+            name: (property_identifier) @function.name
+        ) @function.def
+        (class_declaration
+            name: (type_identifier) @class.name
+        ) @class.def
+        (arrow_function
+            name: (identifier)? @function.name
+        ) @function.def
+        """
     else:
         query_str = """
         (function_declaration
@@ -110,7 +125,7 @@ def _extract_definitions(
         if tag in ("function.def", "class.def"):
             name_node = None
             for child in node.children:
-                if child.type in ("identifier", "property_identifier"):
+                if child.type in ("identifier", "property_identifier", "type_identifier"):
                     name_node = child
                     break
 
