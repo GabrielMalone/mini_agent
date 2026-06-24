@@ -604,60 +604,60 @@ def _search_ast(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolRes
     if not safety.allowed:
         return ToolResult(success=False, content=f"Search blocked: {safety.reason}")
 
-    results: list[str] = []
-    total_hits = 0
+    from core.workspace_scanner import walk_workspace, Handler
+    from core.constants import SKIP_DIRS
 
-    _SKIP_DIRS = {".git", "__pycache__", "node_modules", ".venv", "venv", ".tox", ".mypy_cache", ".pytest_cache", "dist", "build"}
+    results: list[str] = []
+    total_hits = [0]  # mutable so handler can update it
     _SRC_EXTS = {".py", ".ts", ".tsx", ".js", ".jsx"}
 
-    for root, dirs, files in os.walk(safety.resolved_path):
-        dirs[:] = [d for d in dirs if d not in _SKIP_DIRS and not d.startswith(".")]
-        for fname in sorted(files):
-            ext = os.path.splitext(fname)[1]
-            if ext not in _SRC_EXTS:
-                continue
-            if file_types and ext not in file_types:
-                continue
+    def _handle_file(fpath: str, ext: str, _root: str) -> None:
+        if total_hits[0] >= 200:
+            return
+        if file_types and ext not in file_types:
+            return
 
-            query_str = _AST_PATTERNS[pattern_name].get(ext)
-            if not query_str:
+        query_str = _AST_PATTERNS[pattern_name].get(ext)
+        if not query_str:
+            return
+
+        parser = _get_parser_for_ext(ext)
+        if parser is None:
+            return
+
+        try:
+            with open(fpath, "rb") as f:
+                source = f.read()
+        except (OSError, PermissionError):
+            return
+
+        tree = parser.parse(source)
+        lang = parser.language
+        captures = run_query(lang, query_str, tree.root_node)
+
+        if not captures:
+            return
+
+        # Group captures by node for dedup
+        seen_lines: set[int] = set()
+        lines = source.decode("utf-8", errors="replace").split("\n")
+        for node, _tag in captures:
+            if total_hits[0] >= 200:
+                return
+            lineno = node.start_point[0] + 1
+            if lineno in seen_lines:
                 continue
+            seen_lines.add(lineno)
+            snippet = lines[node.start_point[0]][:120].strip() if node.start_point[0] < len(lines) else ""
+            results.append(f"  {fpath}:{lineno}  {snippet}")
+            total_hits[0] += 1
 
-            fpath = os.path.join(root, fname)
-            parser = _get_parser_for_ext(ext)
-            if parser is None:
-                continue
-
-            try:
-                with open(fpath, "rb") as f:
-                    source = f.read()
-            except (OSError, PermissionError):
-                continue
-
-            tree = parser.parse(source)
-            lang = parser.language
-            captures = run_query(lang, query_str, tree.root_node)
-
-            if not captures:
-                continue
-
-            # Group captures by node for dedup
-            seen_lines: set[int] = set()
-            lines = source.decode("utf-8", errors="replace").split("\n")
-            for node, _tag in captures:
-                lineno = node.start_point[0] + 1
-                if lineno in seen_lines:
-                    continue
-                seen_lines.add(lineno)
-                snippet = lines[node.start_point[0]][:120].strip() if node.start_point[0] < len(lines) else ""
-                results.append(f"  {fpath}:{lineno}  {snippet}")
-                total_hits += 1
-                if total_hits >= 200:
-                    break
-            if total_hits >= 200:
-                break
-        if total_hits >= 200:
-            break
+    walk_workspace(
+        safety.resolved_path,
+        [Handler(exts=list(_SRC_EXTS), fn=_handle_file)],
+        skip_dirs=frozenset(SKIP_DIRS),
+        src_exts=frozenset(_SRC_EXTS),
+    )
 
     if not results:
         return ToolResult(
@@ -665,8 +665,8 @@ def _search_ast(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolRes
             content=f"No '{pattern_name}' patterns found in {safety.resolved_path}",
         )
 
-    out = f"Found {total_hits} '{pattern_name}' pattern(s):\n" + "\n".join(results)
-    if total_hits >= 200:
+    out = f"Found {total_hits[0]} '{pattern_name}' pattern(s):\n" + "\n".join(results)
+    if total_hits[0] >= 200:
         out += "\n... (capped at 200 results)"
     return ToolResult(success=True, content=out)
 

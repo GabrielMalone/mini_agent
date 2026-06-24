@@ -217,33 +217,31 @@ def build_knowledge_graph(root: str) -> None:
         _GRAPH = {}
         _GRAPH_WORKSPACE = root
 
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [
-            d for d in dirnames if d not in _SKIP_DIRS and not d.startswith(".")
-        ]
-        for fname in filenames:
-            ext = os.path.splitext(fname)[1].lower()
-            if ext not in (".py", ".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs"):
-                continue
-            fpath = os.path.join(dirpath, fname)
-            rel = os.path.relpath(fpath, root)
+    from core.workspace_scanner import walk_workspace, Handler
 
-            # Module entity
-            mod_name = rel.replace("/", ".").replace("\\", ".")
-            if mod_name.endswith(ext):
-                mod_name = mod_name[: -len(ext)]
-            _add_module(mod_name, rel)
+    def _handle_file(fpath: str, ext: str, _root: str) -> None:
+        rel = os.path.relpath(fpath, root)
+        mod_name = rel.replace("/", ".").replace("\\\\", ".")
+        if mod_name.endswith(ext):
+            mod_name = mod_name[: -len(ext)]
+        _add_module(mod_name, rel)
 
-            try:
-                with open(fpath, "r", encoding="utf-8", errors="replace") as f:
-                    source = f.read()
-            except (OSError, UnicodeDecodeError):
-                continue
+        try:
+            with open(fpath, "r", encoding="utf-8", errors="replace") as f:
+                source = f.read()
+        except (OSError, UnicodeDecodeError):
+            return
 
-            if ext == ".py":
-                _extract_python_graph(source, fpath, mod_name)
-            else:
-                _extract_ts_graph(source, fpath, mod_name)
+        if ext == ".py":
+            _extract_python_graph(source, fpath, mod_name)
+        else:
+            _extract_ts_graph(source, fpath, mod_name)
+
+    walk_workspace(
+        root,
+        [Handler(exts=[".py", ".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs"], fn=_handle_file)],
+        skip_dirs=frozenset(_SKIP_DIRS),
+    )
 
     with _GRAPH_LOCK:
         _GRAPH_BUILT = True

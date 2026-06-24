@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-06-24 — Search system: wire workspace_scanner, dedup SKIP_DIRS, add tests
+
+### search_ast uses workspace_scanner
+- Replaced inline `os.walk` + duplicated `_SKIP_DIRS` with `walk_workspace` + `core.constants.SKIP_DIRS`
+- `_search_ast` handler uses `walk_workspace(..., [Handler(exts=..., fn=_handle_file)])`
+
+### knowledge_graph uses workspace_scanner
+- `build_knowledge_graph` now delegates file walking to `walk_workspace` instead of inline `os.walk`
+
+### Tests added
+- `TestWorkspaceScanner`: 4 tests (skip dirs, ext filter, handler exceptions, src_exts override)
+- `TestSearchAST`: 12 tests covering all 11 structural patterns + unknown pattern rejection
+- Total: 34 passing (18 existing + 16 new)
+
+### workspace_scanner no longer dead code
+- Previously created but never imported — now used by `search_ops.py` and `knowledge_graph.py`
+
 ## 2026-06-24 — Plan/Todo panel for Electron frontend
 
 ### PlanPanel component
