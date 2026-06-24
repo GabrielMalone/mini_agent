@@ -183,7 +183,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "find_symbol",
-            "description": "Find where a Python symbol (function, class, method name) is defined in the workspace. Returns file path and line number for each match. Much faster than grep/search_files for symbol lookup. Supports substring matching.",
+            "description": "Find where a symbol (function, class, method name) is defined in the workspace. Supports Python, JS, TS, JSX, TSX files. Returns file path and line number for each match. Much faster than grep/search_files for symbol lookup. Supports substring matching.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -417,9 +417,38 @@ TOOLS = [
                         "type": "string",
                         "description": "Optional: restrict search to a single file instead of a directory tree. When set, 'path' is ignored.",
                     },
+                    "file_types": {
+                        "type": "string",
+                        "description": "Optional: comma-separated extensions to filter (e.g. '.py,.ts'). Omit to search all.",
+                    },
                     "offset": {
                         "type": "integer",
                         "description": "Optional: skip the first N matching results (for pagination). Default: 0.",
+                    },
+                },
+                "required": ["pattern"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_ast",
+            "description": "Search for structural AST patterns (try_except, async_function, decorator, for_loop, while_loop, if_else, with_block, lambda, class_def, function_def, import) across Python/JS/TS/TSX files using tree-sitter. Returns file:line with code snippet. Use to find error handling, async code, decorated functions, loop structures, etc.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pattern": {
+                        "type": "string",
+                        "description": "AST pattern to search for. One of: try_except, async_function, decorator, for_loop, while_loop, if_else, with_block, lambda, class_def, function_def, import.",
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "Directory to search in (defaults to workspace root)",
+                    },
+                    "file_types": {
+                        "type": "string",
+                        "description": "Optional: comma-separated extensions to filter (e.g. '.py,.ts'). Omit to search all.",
                     },
                 },
                 "required": ["pattern"],

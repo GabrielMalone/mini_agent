@@ -761,23 +761,6 @@ _BINARY_EXTS = {
 }
 
 
-def _is_binary_file(filepath: str) -> bool:
-    """Check if a file is binary by reading the first 512 bytes.
-
-    Returns True if the file contains null bytes or is unreadable.
-    Used as a fast pre-filter in search_files to avoid reading
-    SQLite WALs, coverage DBs, and other binary files that slip
-    past extension-based filtering.
-    """
-    try:
-        with open(filepath, "rb") as f:
-            chunk = f.read(512)
-        # Null byte in first 512 bytes -> binary (covers SQLite, ELF, Mach-O, etc.)
-        return b"\x00" in chunk
-    except (OSError, PermissionError):
-        return True  # Can't read -> treat as binary, skip it
-
-
 _SEARCH_MAX_RESULTS = 200
 
 
@@ -831,7 +814,8 @@ def _search_single_file(
 
 
 def _search_with_rg(
-    root_dir: str, pattern: str, use_regex: bool, ignore_case: bool, offset: int
+    root_dir: str, pattern: str, use_regex: bool, ignore_case: bool, offset: int,
+    file_types: list[str] | None = None,
 ) -> ToolResult:
     """Run ripgrep for fast file search, falling back to Python on failure."""
     import subprocess
@@ -848,6 +832,9 @@ def _search_with_rg(
         cmd.append("--fixed-strings")
     if ignore_case:
         cmd.append("--ignore-case")
+    if file_types:
+        for ext in file_types:
+            cmd.extend(["-g", f"*{ext}"])
     cmd.extend(["--", pattern, root_dir])
     try:
         result = subprocess.run(
@@ -887,6 +874,8 @@ def _search_files(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolR
     pattern = args["pattern"]
     path = args.get("path", ".")
     file_path = args.get("file_path", "")
+    file_types_raw = args.get("file_types", "")
+    file_types = [t.strip() for t in file_types_raw.split(',') if t.strip()] if file_types_raw else []
     use_regex = args.get("regex", False)
     ignore_case = args.get("ignore_case", False)
     offset = max(0, int(args.get("offset", 0)))
@@ -919,7 +908,7 @@ def _search_files(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolR
 
     if _shutil.which("rg") and not file_path:
         return _search_with_rg(
-            safety_result.resolved_path, pattern, use_regex, ignore_case, offset
+            safety_result.resolved_path, pattern, use_regex, ignore_case, offset, file_types
         )
 
     if use_regex:
@@ -957,8 +946,8 @@ def _search_files(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolR
                     # appearing hung, but the walk always completes.
                     pass
                 fpath = os.path.join(root, fname)
-                # Skip binary files (null bytes in first 512 bytes)
-                if _is_binary_file(fpath):
+                # Apply file_types filter if specified
+                if file_types and ext not in file_types:
                     continue
                 try:
                     with open(fpath, "r", errors="replace", encoding="utf-8") as f:

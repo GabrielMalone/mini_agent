@@ -503,6 +503,180 @@ def _find_symbol_summary(args: dict) -> str:
 # semantic_search (sentence-transformers, local)
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# search_ast -- structural AST pattern search via tree-sitter
+# ---------------------------------------------------------------------------
+
+# Tree-sitter queries for structural patterns (Python + JS/TS/TSX)
+_AST_PATTERNS: dict[str, dict[str, str]] = {
+    "try_except": {
+        ".py": "(try_statement) @match",
+        ".ts": "(try_statement) @match",
+        ".tsx": "(try_statement) @match",
+        ".js": "(try_statement) @match",
+    },
+    "async_function": {
+        ".py": "(function_definition \"async\") @match",
+        ".ts": '(function_declaration "async" @match)\n(method_definition "async" @match)\n(arrow_function "async" @match)',
+        ".tsx": '(function_declaration "async" @match)\n(method_definition "async" @match)\n(arrow_function "async" @match)',
+        ".js": '(function_declaration "async" @match)\n(method_definition "async" @match)\n(arrow_function "async" @match)',
+    },
+    "decorator": {
+        ".py": "(decorator) @match",
+        ".ts": "(decorator) @match",
+        ".tsx": "(decorator) @match",
+    },
+    "for_loop": {
+        ".py": "(for_statement) @match",
+        ".ts": "(for_statement) @match",
+        ".tsx": "(for_statement) @match",
+        ".js": "(for_statement) @match",
+    },
+    "while_loop": {
+        ".py": "(while_statement) @match",
+        ".ts": "(while_statement) @match",
+        ".tsx": "(while_statement) @match",
+        ".js": "(while_statement) @match",
+    },
+    "if_else": {
+        ".py": "(if_statement) @match",
+        ".ts": "(if_statement) @match",
+        ".tsx": "(if_statement) @match",
+        ".js": "(if_statement) @match",
+    },
+    "with_block": {
+        ".py": "(with_statement) @match",
+        ".ts": "(with_statement) @match",
+        ".tsx": "(with_statement) @match",
+        ".js": "(with_statement) @match",
+    },
+    "lambda": {
+        ".py": "(lambda) @match",
+        ".ts": "(arrow_function) @match",
+        ".tsx": "(arrow_function) @match",
+        ".js": "(arrow_function) @match",
+    },
+    "class_def": {
+        ".py": "(class_definition) @match",
+        ".ts": "(class_declaration) @match",
+        ".tsx": "(class_declaration) @match",
+        ".js": "(class_declaration) @match",
+    },
+    "function_def": {
+        ".py": "(function_definition) @match",
+        ".ts": '(function_declaration) @match\n(method_definition) @match',
+        ".tsx": '(function_declaration) @match\n(method_definition) @match',
+        ".js": '(function_declaration) @match\n(method_definition) @match',
+    },
+    "import": {
+        ".py": '(import_statement) @match\n(import_from_statement) @match',
+        ".ts": "(import_statement) @match",
+        ".tsx": "(import_statement) @match",
+        ".js": "(import_statement) @match",
+    },
+}
+
+_AST_PATTERN_HELP = ", ".join(sorted(_AST_PATTERNS.keys()))
+
+
+@_register("search_ast")
+def _search_ast(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResult:
+    """Structural AST pattern search using tree-sitter.
+
+    Finds code structures like try/except blocks, async functions,
+    decorators, loops, imports, etc. across the workspace.
+    """
+    pattern_name = args["pattern"]
+    path_filter = args.get("path", ".")
+    file_types_raw = args.get("file_types", "")
+    file_types = [t.strip() for t in file_types_raw.split(",") if t.strip()] if file_types_raw else []
+
+    if pattern_name not in _AST_PATTERNS:
+        return ToolResult(
+            success=False,
+            content=f"Unknown pattern '{pattern_name}'. Available: {_AST_PATTERN_HELP}",
+        )
+
+    from core.tree_sitter_parser import _get_parser_for_ext, run_query
+
+    # Safety check
+    safety = rg.check(path_filter)
+    if not safety.allowed:
+        return ToolResult(success=False, content=f"Search blocked: {safety.reason}")
+
+    results: list[str] = []
+    total_hits = 0
+
+    _SKIP_DIRS = {".git", "__pycache__", "node_modules", ".venv", "venv", ".tox", ".mypy_cache", ".pytest_cache", "dist", "build"}
+    _SRC_EXTS = {".py", ".ts", ".tsx", ".js", ".jsx"}
+
+    for root, dirs, files in os.walk(safety.resolved_path):
+        dirs[:] = [d for d in dirs if d not in _SKIP_DIRS and not d.startswith(".")]
+        for fname in sorted(files):
+            ext = os.path.splitext(fname)[1]
+            if ext not in _SRC_EXTS:
+                continue
+            if file_types and ext not in file_types:
+                continue
+
+            query_str = _AST_PATTERNS[pattern_name].get(ext)
+            if not query_str:
+                continue
+
+            fpath = os.path.join(root, fname)
+            parser = _get_parser_for_ext(ext)
+            if parser is None:
+                continue
+
+            try:
+                with open(fpath, "rb") as f:
+                    source = f.read()
+            except (OSError, PermissionError):
+                continue
+
+            tree = parser.parse(source)
+            lang = parser.language
+            captures = run_query(lang, query_str, tree.root_node)
+
+            if not captures:
+                continue
+
+            # Group captures by node for dedup
+            seen_lines: set[int] = set()
+            lines = source.decode("utf-8", errors="replace").split("\n")
+            for node, _tag in captures:
+                lineno = node.start_point[0] + 1
+                if lineno in seen_lines:
+                    continue
+                seen_lines.add(lineno)
+                snippet = lines[node.start_point[0]][:120].strip() if node.start_point[0] < len(lines) else ""
+                results.append(f"  {fpath}:{lineno}  {snippet}")
+                total_hits += 1
+                if total_hits >= 200:
+                    break
+            if total_hits >= 200:
+                break
+        if total_hits >= 200:
+            break
+
+    if not results:
+        return ToolResult(
+            success=True,
+            content=f"No '{pattern_name}' patterns found in {safety.resolved_path}",
+        )
+
+    out = f"Found {total_hits} '{pattern_name}' pattern(s):\n" + "\n".join(results)
+    if total_hits >= 200:
+        out += "\n... (capped at 200 results)"
+    return ToolResult(success=True, content=out)
+
+
+@_summarize("search_ast")
+def _search_ast_summary(args: dict) -> str:
+    return f"search_ast({args.get('pattern', '?')})"
+
+
+
 _SEMANTIC_STORE: dict[str, tuple[float, list[tuple[int, int, str, Any]]]] = {}
 _SEMANTIC_LRU: list[str] = []  # tracks access order for eviction
 _SEMANTIC_MAX_ENTRIES = 500  # per-file entries before eviction kicks in
