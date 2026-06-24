@@ -1,5 +1,5 @@
 # mini_agent Architecture Map
-# Last updated: 2026-06-24 -- Plan/Todo panel added to Electron frontend
+# Last updated: 2026-06-24 -- Search/find system audit + cleanup
 
 ## Active Decisions (most recent first)
 

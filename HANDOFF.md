@@ -1,15 +1,37 @@
-# Session Handoff
-# Auto-generated at session end. Read at next session start for continuity.
+# HANDOFF — 2026-06-24 Session: Search/Find System Audit
 
-## Last Session: 2026-06-24 23:00 UTC
+## What I did
+Audited the search/find system (7 tools: find_symbol, find_usages, find_callers, find_callees,
+find_related, search_ast, semantic_search) for correctness and consistency.
 
-### What I Changed
-(no git changes detected)
+### Changes made
+1. **tools/search_ops.py** — Removed redundant inline `from core.constants import SKIP_DIRS`
+   in `_find_usages` grep fallback (line ~1941). Module-level import at line 27 already
+   provides `_SKIP_DIRS`.
 
-### What's Pending
-- Backend doesn't emit structured todo data yet — add `todos` field to send_status() in server.py (the frontend is ready to receive it via `data.todos` in the onStatus handler)
-- Consider adding dedicated `stream:plan_update` / `stream:todo_update` events for real-time push instead of polling on status messages
-- The backend send_status() already emits plan_steps/plan_done — the frontend now consumes them; todos are the missing piece on the backend side
+2. **tools/search_ops.py** — Removed misleading `_SKIP_DIRS_LIST = _SKIP_DIRS` assignment
+   in `_build_call_graph` (line ~1679). Directly uses `_SKIP_DIRS` now.
 
-### Modified Files
-(none tracked)
+3. **CHANGELOG.md** — Added audit entry.
+
+4. **STATE.txt** — Updated date.
+
+### Verification
+- All 34 test_search_audit.py tests pass
+- All 302 search-related tests pass (k=search|find|symbol|ast|lsp|semantic)
+- No lint errors on edited file
+- Imports verified clean
+
+## What's pending
+- 4 remaining `os.walk` calls in search_ops.py could be converted to workspace_scanner:
+  - `build_symbol_index` (line ~207)
+  - `_sem_index` (line ~1194)
+  - `_build_call_graph` (line ~1679)
+  - `_find_usages` grep fallback (line ~1935)
+  These do complex per-file inline work (mtime tracking, AST parsing, encoding) so
+  conversion is non-trivial but feasible.
+
+## Modified files
+- tools/search_ops.py
+- CHANGELOG.md
+- STATE.txt

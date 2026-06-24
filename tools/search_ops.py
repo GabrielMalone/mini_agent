@@ -1676,13 +1676,11 @@ def _build_call_graph(root: str) -> None:
         import ast as _ast
         from core.ast_utils import resolve_call_name
 
-        _SKIP_DIRS_LIST = _SKIP_DIRS
-
         for dirpath, dirnames, filenames in os.walk(root):
             dirnames[:] = [
                 d
                 for d in dirnames
-                if d not in _SKIP_DIRS_LIST and not d.startswith(".")
+                if d not in _SKIP_DIRS and not d.startswith(".")
             ]
             for fname in filenames:
                 if not fname.endswith(".py"):
@@ -1938,7 +1936,6 @@ def _find_usages(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolRe
     if not matches:
         # Fall back to grep-based search
         import subprocess
-        from core.constants import SKIP_DIRS as _SKIP_DIRS
 
         try:
             cmd = ["grep", "-rn", "--include=*.py"]

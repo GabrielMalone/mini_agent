@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-06-24 — Search/find system audit + cleanup
+
+### Audit findings & fixes
+- Removed redundant inline `from core.constants import SKIP_DIRS` in `_find_usages` grep fallback (already imported at module level)
+- Removed misleading `_SKIP_DIRS_LIST` variable in `_build_call_graph` — now uses `_SKIP_DIRS` directly
+- All 302 search-related tests pass
+
+### Remaining observations
+- 4 `os.walk` calls remain in search_ops.py (build_symbol_index, _sem_index, _build_call_graph, find_usages fallback) — these do complex per-file inline work; workspace_scanner conversion is feasible but non-trivial
+
 ## 2026-06-24 — Search system: wire workspace_scanner, dedup SKIP_DIRS, add tests
 
 ### search_ast uses workspace_scanner
