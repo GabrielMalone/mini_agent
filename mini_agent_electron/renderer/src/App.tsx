@@ -221,7 +221,7 @@ function AppShell() {
           }
           const idx = capped.length;
           toolCardIndexRef.current.set(cardId, idx);
-          return [...capped, cardWithEnter];
+          return [...capped, newCard];
         });
       });
       toolOutputStack.current.push({ cardId, buffer: '', toolName, toolCallId: data.tool_call_id || '' });
@@ -441,14 +441,13 @@ function AppShell() {
               const code = data.content || matched.output || '';
               const diffPreview = data.diff_preview || null;
               const errorDetail = !data.ok ? (data.detail || '') : '';
-              const { _enter, ...clean } = matched;
               const updated = [...prev];
-              updated[matchIdx] = { ...clean, status, endTime: now, output: code, diffPreview, errorDetail };
+              updated[matchIdx] = { ...matched, status, endTime: now, output: code, diffPreview, errorDetail };
               return updated;
             });
           });
         } else {
-          // No tool_name or tool_call_id — match any running card (most recent first)
+          // No tool_name or tool_call_id \u2014 match any running card (most recent first)
           startTransition(() => {
             setToolCards((prev) => {
               let matchIdx = -1;
@@ -465,9 +464,8 @@ function AppShell() {
               const code = data.content || matched.output || '';
               const diffPreview = data.diff_preview || null;
               const errorDetail = !data.ok ? (data.detail || '') : '';
-              const { _enter, ...clean } = matched;
               const updated = [...prev];
-              updated[matchIdx] = { ...clean, status, endTime: now, output: code, diffPreview, errorDetail };
+              updated[matchIdx] = { ...matched, status, endTime: now, output: code, diffPreview, errorDetail };
               return updated;
             });
           });

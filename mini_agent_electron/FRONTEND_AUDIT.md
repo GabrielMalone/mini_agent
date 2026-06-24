@@ -306,16 +306,16 @@ All `stream:tool_output` and `stream:tool_end` handlers now use typed `StreamToo
 
 ---
 
-### Remaining from 2026-06-23 audit (not yet addressed)
-| # | Issue | Severity |
-|---|-------|----------|
-| 1 | Fix AgentTree type params (15 TS errors) | Medium |
-| 2 | Fix StatusBar prop types | Medium |
-| 3 | Add implicit `any` types in App.tsx | Low |
-| 4 | `disabled` prop passthrough in TerminalPanel | Low |
-| 5 | Deduplicate `escapeHtml` | Low |
-| 6 | Remove `_enter` hack from ToolCardData | Low |
-| 7 | Fix AstResult index signature | Low |
+### Remaining from 2026-06-23 audit (ALL RESOLVED 2026-06-24 \u2705)
+| # | Issue | Severity | Status |
+|---|-------|----------|--------|
+| 1 | Fix AgentTree type params (15 TS errors) | Medium | FIXED (tsc clean) |
+| 2 | Fix StatusBar prop types | Medium | FIXED (tsc clean) |
+| 3 | Add implicit `any` types in App.tsx | Low | FIXED (tsc clean) |
+| 4 | `disabled` prop passthrough in TerminalPanel | Low | FIXED (verified) |
+| 5 | Deduplicate `escapeHtml` | Low | FIXED (→ utils.ts) |
+| 6 | Remove `_enter` hack from ToolCardData | Low | FIXED (→ self-managed state) |
+| 7 | Fix AstResult index signature | Low | FIXED (tsc clean) |
 
 ---
 

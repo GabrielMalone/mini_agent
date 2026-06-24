@@ -1,7 +1,12 @@
 # mini_agent Architecture Map
-# Last updated: 2026-06-24 -- Benchmark harness for Exercism Polyglot exercises
+# Last updated: 2026-06-24 -- Tool UI audit & type safety cleanup complete
 
 ## Active Decisions (most recent first)
+
+- **Tool UI audit & type safety (2026-06-24)** — All 7 remaining items from 2026-06-23 frontend audit
+  resolved. Removed `_enter` hack from ToolCardData (replaced with self-managed `[entered, setEntered]`
+  state in ToolCard.tsx via useLayoutEffect + RAF). Deduplicated `escapeHtml` into shared `utils.ts`.
+  Eliminated last `as any` casts in App.tsx. tsc --noEmit clean (0 errors), vitest 2/2 pass.
 
 - **Benchmark harness (2026-06-24)** — `benchmark/benchmark.py` plugs mini_agent into the Aider
   Polyglot benchmark (Exercism exercises). 34 Python exercises, 2-attempt protocol with test feedback

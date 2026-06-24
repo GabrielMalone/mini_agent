@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-06-24 — Tool UI audit: type safety & `_enter` hack removal
+
+### Removed `_enter` hack from ToolCardData
+- `types.ts`: removed `_enter?: boolean` from `ToolCardData` interface
+- `App.tsx`: replaced `cardWithEnter: any` with `newCard: ToolCardData`; removed 6 `const { _enter, ...clean }` destructures across all tool_end matching paths; eliminated last `card as any` cast
+- `ToolCard.tsx`: replaced `tool._enter` with self-managed `[entered, setEntered]` state using `useLayoutEffect` + RAF cleanup for one-shot CSS enter animation
+
+### Deduplicated `escapeHtml`
+- Created `renderer/src/utils.ts` with shared `escapeHtml(text: string): string`
+- `LogLine.tsx`: removed local function, import from `../utils`, added `?? ''` for undefined text
+- `SubAgentsPane.tsx`: removed local function, import from `../utils`
+
+### Verification
+- **tsc --noEmit: clean (0 errors)**
+- **vitest: 2/2 smoke tests pass**
+
 ## 2026-06-24 — Benchmark harness: Exercism Polyglot exercises
 
 ### Fix: API key & test path bugs in benchmark runner

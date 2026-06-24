@@ -13,15 +13,6 @@ const markdownComponents = {
   },
 };
 
-function escapeHtml(text: string | undefined | null): string {
-  if (!text) return '';
-  return String(text)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
 export interface LogLineData {
   component?: React.ReactNode;
   cls?: string;
@@ -67,7 +58,7 @@ const LogLine = memo(function LogLine({ line }: LogLineProps) {
     );
   }
 
-  return <div className={line.cls || ''}>{escapeHtml(line.text)}</div>;
+  return <div className={line.cls || ''}>{escapeHtml(line.text ?? '')}</div>;
 });
 
 export default LogLine;
