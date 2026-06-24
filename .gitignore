@@ -18,6 +18,9 @@ tui_stderr.log
 *.db-shm
 *.db-wal
 .mini_agent_index.json
+
+# Benchmark exercises (cloned from Aider polyglot benchmark)
+benchmark/exercises/
 logs/
 api_error.log
 

@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-06-24 — Benchmark harness: Exercism Polyglot exercises
+
+### New: `benchmark/benchmark.py`
+Plugs mini_agent into the Aider Polyglot benchmark. Uses Exercism coding exercises
+across Python, Go, Rust, JS, Java, and C++ (225 exercises total, 34 Python).
+
+- **Python API integration** — calls `run_agent_turn()` directly (not subprocess) with
+  `AgentConfig`, `WriteSafetyGate`, and `ReadSafetyGate` configured per exercise
+- **2-attempt protocol** — agent gets 2 tries per exercise; on first failure, test
+  output is fed back for a second attempt (matches Aider protocol)
+- **Per-language test detection** — auto-detects pytest, cargo test, go test, npm test,
+  gradle test based on exercise language
+- **CLI**: `python benchmark/benchmark.py --language python`, `--exercise`, `--setup`, etc.
+
+### `tests/test_benchmark.py`
+9 unit tests validating exercise discovery, instruction extraction, stub file
+identification, test command generation, and cross-language support. All pass.
+
 ## 2026-06-24 — Testing suite audit: 8 new/expanded test files, frontend vitest
 
 ### New test files (6)
