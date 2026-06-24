@@ -346,10 +346,39 @@ function AppShell() {
           stack.splice(idx, 1);
         }
       }
+      // When tool_call_id didn't match (or was absent), try tool_name.
+      // If tCallId IS present but no stack entry matched by ID, prefer
+      // entries with an empty toolCallId -- those were created by a
+      // tool_start that fired before the streaming ID arrived.
       if (cardId == null && tName) {
-        const idx = stack.findIndex((e) => e.toolName === tName);
+        let idx = -1;
+        if (tCallId) {
+          // Prefer empty toolCallId entries (ID arrived late), then any match
+          idx = stack.findIndex((e) => e.toolName === tName && !(e as any).toolCallId);
+          if (idx === -1) {
+            idx = stack.findIndex((e) => e.toolName === tName);
+          }
+        } else {
+          idx = stack.findIndex((e) => e.toolName === tName);
+        }
         if (idx !== -1) {
           const entry = stack[idx];
+          // Heal: if tool_end has a tool_call_id but the stack entry doesn't,
+          // update the card so future lookups (e.g. card fallback) can match.
+          if (tCallId && !(entry as any).toolCallId) {
+            (entry as any).toolCallId = tCallId;
+            startTransition(() => {
+              setToolCards((prev) => {
+                const ci = toolCardIndexRef.current.get(entry.cardId);
+                if (ci == null) return prev;
+                const c = prev[ci];
+                if (!c || c.id !== entry.cardId) return prev;
+                const u = [...prev];
+                u[ci] = { ...c, toolCallId: tCallId };
+                return u;
+              });
+            });
+          }
           finalBuffer = entry.buffer;
           cardId = entry.cardId;
           stack.splice(idx, 1);

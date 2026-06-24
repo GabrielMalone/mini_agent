@@ -734,11 +734,17 @@ def _api_call_phase(
         if isinstance(raw_args, str) and "_pipe" in raw_args:
             return
 
+        # Ensure tool_call_id is never empty — DeepSeek may stream the id
+        # delta AFTER arguments are complete.  Stash a synthetic id in a
+        # private key so it can't be overwritten by a late-arriving real id.
+        # _append_tool_result picks it up so tool_start/tool_end always match.
+        tool_call_id = tc.get("id") or f"_stream_{idx}"
+        tc["_stream_id"] = tool_call_id  # survives late id arrival
         if on_tool_start is not None:
             on_tool_start(
                 tool_summary(tc),
                 tool_name=tc.get("function", {}).get("name", ""),
-                tool_call_id=tc.get("id", ""),
+                tool_call_id=tool_call_id,
             )
         import sys as _sys_otr
 
@@ -1147,6 +1153,9 @@ def _append_tool_result(
     """Append a tool result message and fire the on_tool_end callback."""
     detail = format_tool_detail(result, max_len=TOOL_DETAIL_DISPLAY_LENGTH)
     tool_name = tc.get("function", {}).get("name", "")
+    # Use synthetic id from streaming execution if present (guarantees
+    # tool_start/tool_end id match when DeepSeek streams id late).
+    tool_call_id = tc.get("_stream_id") or tc.get("id", "")
     if on_tool_end is not None:
         on_tool_end(
             result.success,
@@ -1154,7 +1163,7 @@ def _append_tool_result(
             diff_preview=result.diff_preview,
             content=result.content,
             tool_name=tool_name,
-            tool_call_id=tc.get("id", ""),
+            tool_call_id=tool_call_id,
         )
     # --- Truncate oversized tool results before appending to messages ---
     # Large tool results (e.g. run_shell returning 244K chars of log output)
