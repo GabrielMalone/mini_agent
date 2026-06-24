@@ -1,225 +1,236 @@
 # mini_agent Architecture Map
-# Last updated: 2026-06-23 -- Streaming text wrapping: word-boundary chunking + break-word on streaming containers
-#
-# This file is the agent's map of the codebase. Update it after completed changes.
-# Behavioral rules live in AGENTS.md. Long-term facts live in core memory.
+# Last updated: 2026-06-24 -- TSX grammar regression tests + STATE.txt refresh (stale module map, missing modules)
 
-## Active Decisions
+## Active Decisions (most recent first)
 
-- **Streaming text wrapping (2026-06-23)** — `StreamingMessage` and `DeferredMarkdown` now use `<div>` with `word-break: break-word; overflow-wrap: break-word` instead of `<pre>` with only `pre-wrap` — long tokens (code, paths, URLs) now wrap instead of forming a single unbroken horizontal line. `useSmoothStream` chunks at word boundaries (seeks forward to space/newline/punctuation) instead of raw character count — text never splits mid-word.
-- **Auto-read before edit: transparent guard (2026-06-23)** — Three guard sites (`_write_file`, `_apply_single_edit`, `_edit_file_anchored`) previously rejected writes/edits to files not yet `read_file`'d, causing wasted turn cycles. Now auto-mark files as read (`_READ_FILES.add(resolved)`) since the file is read immediately after the guard by the existing code path (syntax validation for `write_file`, `open(resolved, "r")` for edits). Net: -14 lines, 0 wasted turns.
-- **Tool cards final sweep: mark stuck "running" cards on turn_complete (2026-06-23)** — `stream:turn_complete` handler now sweeps all tool cards: any card with `status === 'running'` is marked `ok` with an `endTime`. This is a defense-in-depth measure — all the existing tool_end matching layers (tool_call_id, tool_name, LIFO, card-search fallback) can fail in edge cases (empty tool_call_id, parallel same-name races, stale toolCardIndexRef), but when a turn completes we know definitively that all tools are done. Cards are only mutated if `changed=true`.
-- **Session creation fix: IPC handler alignment (2026-06-23)** — `session:new` and `session:switch` IPC handlers were `ipcMain.handle()` but never returned; Python backend never sent response messages. Fixed by aligning with the `send`+`once` pattern used by `listSessions`/`deleteSession`: preload.js uses `ipcRenderer.send`+`once`, main.js uses `ipcMain.on`+`win.webContents.send`, server.py sends `session_new_result`/`session_switch_result` responses with try/except error handling.
-- **Input area fix: re-enable after turn complete + interjection typing (2026-06-23)** — `stream:turn_complete` handler now calls `setIsLive(false)`, `setInputDisabled(false)`, and refocuses the input, so the input re-enables immediately when any turn finishes (not just on error/cancel). Regular message submit no longer calls `setInputDisabled(true)`, so users can type interjections while the agent is running — the CodeMirror editor stays editable, and hitting Enter while `isLive=true` routes to `window.miniAgent.interject()`.
-- **Tool card stuck-in-running fix round 2 (2026-06-23)** — When `stream:tool_end` name-match+LIFO both fail but stack is non-empty, handler now falls back to searching all running cards by `toolName` (same strategy as empty-stack guard). Previously cardId stayed null in this gap and the function returned early, leaving cards in 'running' forever. Covers: parallel race where stack entry already popped, dropped tool_start IPC messages, tool_end-before-tool_start ordering race.
-- **Batched edit_file per-file timeout (2026-06-23)** — `_edit_file_anchored` Phase 3 now wraps each per-file `_finalize_edit` call in a `ThreadPoolExecutor` with 60s timeout. Diagnostic stderr logging shows per-file timing. Prevents one slow file from hanging the entire batch (was previously uncovered by the `_execute_groups` 150s wrapper and `execute_tool`'s 120s timeout).
-- **Tool card stuck-in-running fix (2026-06-23)** — `_on_tool_ready` now passes `tool_name` to `on_tool_start` (was missing). Frontend `stream:tool_end` handler has card-search fallback when `toolOutputStack` is empty — searches running cards by `toolName` instead of giving up.
-- **Single-tool timeout protection (2026-06-23)** — `_execute_groups` single-tool path now wraps `execute_tool()` in `ThreadPoolExecutor` with `future.result(timeout=150)`. Previously only the multi-tool (parallel) path had timeout protection — a hung single tool (e.g., edit_file batch) would freeze the entire agent loop forever.
-- **Chat window frontend audit (2026-06-23)** — 4 fixes: RoundedFrame title prop now renders (was destructured away), chat blocks capped at 200, thinking blocks capped at 100, DeferredMarkdown consistent div wrapper (no pre→div element switch).
-- **Frontend tool panel audit (2026-06-23)** — 7 fixes to App.tsx, ToolCard.tsx, style.css: silent tool_end drops now console.warn, tool_output before tool_start race buffered as orphans, card array capped at 50 with stale index cleanup, CSS animation moved from nth-child to data-enter attribute, args parsing uses lastIndexOf for parens in paths, status icons crossfade via opacity transition.
-- **Parallel tool hang prevention (2026-06-23)** — `_execute_groups` now uses `future.result(timeout=150)` with TimeoutError/Exception handling. Prevents a single hung tool thread from blocking `as_completed()` and freezing the agent loop.
-- **Pass 2 orphan tool message stripping (2026-06-23)** — Pass 2 now collects ALL `tool_call_id`s of stripped `assistant(tool_calls)` blocks and filters their tool messages from output. Fixes 400 errors where Pass 3 appended orphaned tool messages via its `else` branch (pending_ids empty). Root cause: Pass 2 stripped the assistant but left its tool messages intact.
-- **API 400 defense-in-depth: Pass 3 interleaved message stripping (2026-06-23)** — `_strip_orphaned_tool_messages` now has a Pass 3 (truncate=False only) that strips non-tool messages (user/system) interleaved between `assistant(tool_calls)` and `tool` results. Prevents API 400 errors even when the primary fix misses an injection path. 8 errors in api_error.log.
-- **Pass 3 pending_ids clobber fix (2026-06-23)** — Pass 3 previously overwrote `pending_ids` when a new `assistant(tool_calls)` arrived while the previous block still had uncollected tool results. This caused tool messages from the first block to appear after the second `assistant(tool_calls)` without a matching `tool_call_id`, triggering 400 errors. Fixed by merging instead of clobbering. Also tightened the tool-message guard to drop tool results whose `tool_call_id` is not in `pending_ids` (previously they were appended unconditionally).
-- **Frontend batched tool_call audit (2026-06-23)** — `types.ts` now has `parallel` on `StreamToolStartData` and `tool_name` on `StreamToolOutputData`/`StreamToolEndData`. `server.py` `on_tool_start` accepts and forwards `tool_name` in the IPC msg. `llm.py` `_execute_groups` passes `tool_name` to `on_tool_start`. `App.tsx` prefers explicit `data.tool_name` over summary parsing for tool card matching.
-- **Parallel tool card matching fix (2026-06-23)** — When tools run in parallel via ThreadPoolExecutor, on_tool_end fires in completion order. Frontend now matches tool_end→tool_start by `tool_name` (with LIFO fallback) instead of relying on a LIFO stack that breaks when parallel tools complete out of start order. Added `tool_name` to `StreamCallbacks.on_tool_end` IPC message.
-- **TypeScript strict mode + UI smoke test (2026-06-23)** — Frontend migrated to TypeScript with `strict: true`. All components have explicit `interface Props`. Shared types in `renderer/src/types.ts`. ESLint uses `typescript-eslint` parser. UI smoke test (`electron . --smoke-test`) renders the full React tree and exits 1 if any console.error fires. Smoke test runs automatically via `postbuild` hook — `npm run build` fails if the UI can't render.
-- **Self-learning fix_strategy (2026-06-22)** — record_success auto-populates fix_strategy from successful args. Args now passed to record_failure. Success recorded on every call, not just in-memory patterns.
-- **Plan auto-repair (2026-06-22)** — _plan() in agent_todos.py auto-splits string steps into arrays (numbered list or newline-separated). Single-line strings still rejected.
-- **Hash-anchored editing (2026-06-16)** — edit_lines with 3-char SHA-256 validation per Akay/Howard Chen pattern
-- **Electron slash commands (2026-06-19)** — `/cancel` (cancel running turn) and `/help` (list all commands) added to server.py handle_command
-- **Fork cherry-pick: structured output UI (2026-06-19)** — 5 new React components from sunfllower1141 fork:
-  AnsiBlock (ANSI→styled), ReadFileResult (read_file with syntax highlight),
-  SearchResults (search_files/find_symbol tables), ShellResults (shell output with exit code),
-  AstResult (AST skeleton/function rendering). ToolCard dispatches via ToolOutput helper.
-- **Fork cherry-pick: core utilities (2026-06-19)** — `core/file_context_tracker.py` (stale read detection),
-  `core/symbol_context_resolver.py` (tree-sitter context), `tools/ast_ops.py` (tree-sitter AST ops)
-- **Fork cherry-pick: CodeBlock enhancements (2026-06-19)** — wrap/noScroll props, 35+ languages,
-  ANSI escape support via anser, EXT_TO_LANG export for downstream components
-- **Storm-breaker (2026-06-16)** — after 3 consecutive identical failures, synthesize explanation instead of silent loop
-- **Self-modifying architecture** — agent observes, diagnoses, and improves its own codebase via STATE.txt/CHANGELOG.md/HANDOFF.md
-- **Context injection ZONE model** — ZONE 1 (immutable prefix), ZONE 2 (append-only log), ZONE 3 (volatile scratch)
-- **Read-before-edit enforcement** — all .py edits require prior read_file this session; syntax validated via compile()
+- **TSX grammar regression tests (2026-06-24)** — 3 test classes (10 tests) in test_tree_sitter_path.py lock in:
+  correct parser language per extension (.ts→typescript, .tsx→tsx, .js/.jsx→javascript),
+  variable_declarator pattern for arrow functions in TSX, and e2e get_file_skeleton on .tsx.
+  Would have caught both bugs before they shipped.
+- **TSX grammar fix (2026-06-24)** — `_get_tree_sitter_parser` unreachable else branch caused .tsx
+  to use `language_typescript()` instead of `language_tsx()`. `_extract_definitions` TSX query used
+  `(arrow_function name: ...)` which tree-sitter-typescript doesn't support; switched to
+  `(variable_declarator name: ... value: (arrow_function))`. `.js`/`.jsx` now uses tree-sitter-javascript.
+- **Tree-sitter TSX integration (2026-06-24)** — Integrated tree-sitter-typescript and
+  tree-sitter-javascript for frontend code understanding. ast_tools.py get_file_skeleton/get_function
+  now work on .ts/.tsx/.js/.jsx files. Centralized run_query in tree_sitter_parser.py.
+- **Neural pulse thinking animation (2026-06-23)** — Replaced blinking dots with CSS neural pulse
+  animation on thinking blocks. Running-state notch pulse removed (redundant).
+- **Smooth tool card transitions (2026-06-23)** — Animated collapse (max-height/opacity), completion
+  pulse, icon crossfade. ToolCard body/diff/error stay in DOM with `.collapsed` class.
+- **Streaming text wrapping (2026-06-23)** — StreamingMessage and DeferredMarkdown use
+  `word-break: break-word; overflow-wrap: break-word`. useSmoothStream chunks at word boundaries.
+- **Auto-read before edit guard (2026-06-23)** — Three guard sites auto-mark files as read
+  since the file is read immediately after the guard by the existing code path.
+- **Tool cards final sweep on turn_complete (2026-06-23)** — stream:turn_complete handler marks
+  all "running" cards as "ok" — defense-in-depth when tool_end matching layers fail.
+- **Session creation fix (2026-06-23)** — IPC handler alignment: session:new and session:switch
+  now use send+once pattern matching listSessions/deleteSession.
+- **Input area fix (2026-06-23)** — Input re-enables on turn_complete. Typing interjections
+  while agent is running routes via window.miniAgent.interject().
+- **Batched edit_file per-file timeout (2026-06-23)** — Each per-file _finalize_edit in
+  ThreadPoolExecutor with 60s timeout. Prevents one slow file from hanging entire batch.
+- **Single-tool timeout protection (2026-06-23)** — Execute single tools in ThreadPoolExecutor
+  with 150s timeout. Previously only parallel path had timeout protection.
+- **Tool card stuck-in-running fixes (2026-06-23)** — Multiple layers: tool_name in on_tool_start,
+  card-search fallback when stack empty, sweep on turn_complete.
+- **Chat window frontend audit (2026-06-23)** — 4 fixes: RoundedFrame title, chat cap 200,
+  thinking cap 100, DeferredMarkdown consistent div wrapper.
+- **Frontend tool panel audit (2026-06-23)** — 7 fixes: tool_end drops warn, orphans buffered,
+  card array capped at 50, animation via data-enter, args parsing lastIndexOf, icon crossfade.
+- **Parallel tool hang prevention (2026-06-23)** — future.result(timeout=150) for ThreadPoolExecutor.
+- **Orphan tool message stripping (2026-06-23)** — Pass 2 collects tool_call_ids, Pass 3 strips
+  interleaved non-tool messages. pending_ids merged instead of clobbered.
+- **TypeScript strict mode (2026-06-23)** — Frontend migrated to TypeScript with strict:true.
+  All components have explicit interface Props. Shared types in types.ts. UI smoke test.
+- **Self-learning fix_strategy (2026-06-22)** — record_success auto-populates fix_strategy.
+- **Plan auto-repair (2026-06-22)** — _plan() auto-splits string steps into arrays.
+- **Fork cherry-picks (2026-06-19)** — Structured output UI (AnsiBlock, ReadFileResult,
+  SearchResults, ShellResults, AstResult), CodeBlock enhancements, core utilities
+  (file_context_tracker, symbol_context_resolver, ast_ops).
+- **Hash-anchored editing (2026-06-16)** — edit_lines with 3-char SHA-256 validation.
+- **Storm-breaker (2026-06-16)** — After 3 consecutive identical failures, synthesize explanation.
+- **Self-modifying architecture** — Agent observes, diagnoses, improves own codebase via
+  STATE.txt/CHANGELOG.md/HANDOFF.md.
+- **Context injection ZONE model** — ZONE 1 (immutable prefix), ZONE 2 (append-only log),
+  ZONE 3 (volatile scratch).
+- **Read-before-edit enforcement** — All .py edits require prior read_file; syntax validated via compile().
 
 ## Module Map
 
 ### Core Orchestration
-- `core/constants.py` -- shared constants (MEMORY_FILENAME, HTTP_CONNECT_TIMEOUT, SKIP_DIRS, etc.).
+- `core/constants.py` — shared constants (MEMORY_FILENAME, HTTP_CONNECT_TIMEOUT, SKIP_DIRS).
   Zero internal project imports — safe to import from anywhere.
-- `core/bootstrap.py` -- entry point, session init, workspace setup, startup warmup
-- `core/checkpoint.py` -- git checkpoint system: pre-edit rollback safety (Dirac-inspired)
-- `core/llm.py` -- main agent loop: turn management, tool dispatch, API calls (825 lines)
-- `core/codebase_map.py` -- AST-based symbol extraction, module grouping, import graph.
-  Injected into startup context (~2K tokens). Incremental cache via update_file_in_map().
-- `core/context_inject.py` -- per-turn context injection (handoff, state, tasks, scratchpad,
-  git diff, orchestration, circuit breaker, compaction, edit risk, pattern rules) (1250 lines)
-- `core/prompt.py` -- system prompt assembly, startup context
-- `core/config.py` -- TOML config loading, provider settings (718 lines). Re-exports from constants.
-- `core/tree_sitter_parser.py` -- multi-language (Python/JS/TS) symbol extraction via tree-sitter
-- `core/knowledge_graph.py` -- entity-relationship graph (calls, imports, inherits, defines).
-- `core/file_context_tracker.py` -- proactive file change detection (stale read prevention, mtime tracking)
-- `core/symbol_context_resolver.py` -- tree-sitter context resolution for imports and class properties
-  BFS shortest-path, subgraph, caller-finding. Wired into edit risk + post-edit verification.
-
-### Sub-Agent System (REMOVED in commit 25d41eb)
-The sub-agent/multi-agent system was removed. Files deleted:
-- `agents/agent_runtime.py`, `agents/sub_agent.py`, `agents/__init__.py`
-- `tools/agent_spawn.py`, `tools/agent_collect.py`, `tools/agent_messages.py`,
-  `tools/agent_patterns.py`, `tools/reservations.py`
-- `skills/agents/SKILL.md`
+- `core/bootstrap.py` — entry point, session init, workspace setup, startup warmup
+- `core/checkpoint.py` — git checkpoint system: pre-edit rollback safety (Dirac-inspired)
+- `core/llm.py` — main agent loop: turn management, tool dispatch, API calls
+- `core/config.py` — TOML config loading, provider settings, CLI args. Re-exports from constants.
+- `core/prompt.py` — system prompt assembly, personality, tool descriptions, startup context
+- `core/context_inject.py` — per-turn context injection (handoff, state, tasks, scratchpad,
+  git diff, orchestration, circuit breaker, compaction, edit risk, pattern rules)
+- `core/prefix.py` — immutable session prefix cache with fingerprint tracking
+- `core/repair.py` — JSON repair for malformed tool calls, storm detection
+- `core/compaction.py` — context compaction at turn end, token estimation
+- `core/cost_control.py` — budget tracking, escalation triggers, emergency compaction
+- `core/cost_tracking.py` — per-turn and per-session cost tracking, provider pricing
+- `core/cache_telemetry.py` — cache hit rate tracking, prefix/semantic cache stats
+- `core/balance.py` — provider account balance display and polling
+- `core/safety.py` — read/write safety gates, workspace boundaries, diff previews
+- `core/codebase_map.py` — AST-based symbol extraction, module grouping, import graph.
+  Injected into startup context. Incremental cache via update_file_in_map().
+- `core/tree_sitter_parser.py` — multi-language (Python/JS/TS/TSX) symbol extraction via tree-sitter.
+  Centralized run_query() for all query execution.
+- `core/knowledge_graph.py` — entity-relationship graph (calls, imports, inherits, defines)
+- `core/file_context_tracker.py` — proactive file change detection (stale read prevention, mtime tracking)
+- `core/symbol_context_resolver.py` — tree-sitter context resolution for imports and class properties
+- `core/anchor_manager.py` — stable word anchors for edit_file targeting (TrackedDocument, AnchorStateManager)
+- `core/ast_utils.py` — AST node name resolution helpers
+- `core/semantic_memory.py` — embedding-based semantic memory (store and query)
 
 ### API & Communication
-- `api.py` -- OpenAI/Anthropic API client. Flash/Pro routing, fallback chain, semantic cache integration.
-- `stream.py` -- streaming response handling
-- `retry.py` -- retry with exponential backoff. Uses HTTP_CONNECT_TIMEOUT (30s) and
-  HTTP_READ_TIMEOUT (120s) from core.constants.
+- `api.py` — OpenAI/Anthropic API client. Flash/Pro routing, fallback chain, semantic cache integration.
+- `stream.py` — streaming response handling (SSE parser)
+- `retry.py` — HTTP retry with exponential backoff and jitter
+- `interject.py` — thread-safe user interjection polling
 
-### Memory & Knowledge
-- `memory/memory.py` -- SQLite store: conversations, knowledge, scratchpad, handoff.
+### Memory & Persistence
+- `memory/memory.py` — SQLite store: conversations, knowledge, scratchpad, handoff. ~38 methods.
   save() decomposed: _prepare_messages(), _write_messages(), _maybe_vacuum().
-- `memory/memory_prune.py` -- content-aware compression, two-tier pruning (gentle: 7-20 msgs,
-  aggressive: 21+). System prompt NEVER pruned. _TOOL_RESULT_MAX_CHARS = 8000.
-- `memory/session.py` -- session lifecycle and persistence
-- `interject.py` -- user interjection polling
-- `logging_setup.py` -- structured logging
-
-### Safety & Security
-- `core/safety.py` -- read/write safety gates, workspace boundaries
+- `memory/memory_prune.py` — content-aware compression, two-tier pruning. _TOOL_RESULT_MAX_CHARS = 8000.
+  Three-pass orphan tool message stripping.
+- `memory/session.py` — session lifecycle and persistence (list, switch, delete)
+- `memory/observations.py` — observation storage with TTL and content hashing
+- `memory/session_summaries.py` — session summaries for context continuity
 
 ### Tools (tools/ directory)
-- `tools/__init__.py` -- tool dispatch, execute_tool, register/summarize. Tool cache with 30s TTL.
+- `tools/__init__.py` — tool dispatch, execute_tool, register/summarize. Tool cache with 30s TTL.
   Per-session tool usage tracking.
-- `tools/file_ops.py` -- read/write/edit/list/info/scratchpad. Read-before-edit enforcement,
-  syntax validation via compile().
-- `tools/shell_ops.py` -- run_shell, search_files, run_tests, verify. Dangerous command detection,
+- `tools/schema.py` — TOOLS definitions sent to LLM (all tool schemas)
+- `tools/result.py` — ToolResult dataclass, JSON repair, error formatting
+- `tools/file_ops.py` — read_file, write_file, edit_file, list_directory, file_info, scratchpad.
+  Hash-anchored editing, read-before-edit enforcement, syntax validation via compile().
+- `tools/_file_utils.py` — shared file utility functions (path resolution, type detection)
+- `tools/_edit_ops.py` — edit operation primitives (single edit, batch apply, syntax check)
+- `tools/shell_ops.py` — run_shell, search_files, run_tests, verify. Dangerous command detection.
   _communicate_windows() for Windows subprocess safety.
-- `tools/search_ops.py` -- find_symbol, web_search, semantic_search
-- `tools/agent_ops.py` -- extend, cancel, wait, restore, session_stats, recall_turn, remember (1330 lines)
-- `tools/context.py` -- AgentContext, _ContextProxy, _TOOL_CONTEXT, set_context
-- `tools/result.py` -- ToolResult dataclass, JSON repair, error formatting
-- `tools/agent_todos.py` -- plan, plan_status, todo_write, todo_read
-- `tools/skills.py` -- Hermes-style skill discovery: SKILL.md files with YAML frontmatter.
+- `tools/search_ops.py` — find_symbol, find_usages, web_search, semantic_search, recall_turn
+- `tools/agent_ops.py` — extend, cancel, wait, restore, session_stats, recall_turn, remember, read_image
+- `tools/agent_todos.py` — plan, plan_status, todo_write, todo_read, write_scratchpad
+- `tools/context.py` — AgentContext, _ContextProxy, _TOOL_CONTEXT, set_context
+- `tools/skills.py` — Hermes-style skill discovery: SKILL.md files with YAML frontmatter.
   Progressive disclosure (compact catalog at startup, full content on use_skill).
-- `tools/lsp.py` -- LSP client (pylsp integration)
-- `tools/mcp_client.py` -- MCP client (stdio JSON-RPC)
-- `tools/semantic_cache.py` -- two-tier response cache: exact SHA-256 + cosine similarity.
+- `tools/lsp.py` — LSP client (pylsp integration)
+- `tools/mcp_client.py` — MCP client (stdio JSON-RPC tool discovery)
+- `tools/_json_rpc_shared.py` — shared drain_stderr() for LSP and MCP clients
+- `tools/semantic_cache.py` — Two-tier response cache: exact SHA-256 + cosine similarity.
   Adaptive per-entry thresholds. 128 entries, 1-hour TTL.
-- `tools/failure_learning.py` -- failure pattern store (SQLite), self-critique (MistakeNotebook),
+- `tools/failure_learning.py` — failure pattern store (SQLite), self-critique (MistakeNotebook),
   experience context injection. Tracks tool failures, learns fix strategies.
-- `tools/browser_ops.py` -- Playwright headless browser
-- `tools/ast_ops.py` -- tree-sitter-based AST operations (get_file_skeleton, get_function, replace_symbol)
-- `tools/desktop_ops.py` -- desktop automation
-- `tools/macos_ops.py` -- macOS-specific desktop ops
-- `tools/_json_rpc_shared.py` -- shared drain_stderr() for lsp.py and mcp_client.py
+- `tools/error_hints.py` — error hint generation and failure fingerprinting
+- `tools/tool_graph.py` — tool transition graph for sequencing hints
+- `tools/browser_ops.py` — Playwright headless browser automation
+- `tools/desktop_ops.py` — desktop automation (macOS Atomacos, Windows UIA)
+- `tools/macos_ops.py` — macOS-specific desktop tools (apps, windows, clipboard, keys)
+- `tools/win_ops.py` — Windows-specific desktop automation
+- `tools/ast_ops.py` — tree-sitter-based AST operations exposed as tools:
+  find_symbol, get_file_skeleton, get_function, replace_symbol, rename_symbol
+- `tools/ast_tools.py` — AST tool implementations: _get_tree_sitter_parser, _extract_definitions,
+  _get_file_skeleton, _get_function, _replace_symbol, _rename_symbol
+- `tools/memory_core.py` — persistent core memory CRUD (read, add, replace, remove)
+- `tools/memory_consolidation.py` — background knowledge consolidation and summarization
+- `tools/idempotency.py` — idempotency key generation and duplicate detection
+- `tools/trace_replay.py` — tool call trace replay for debugging
+- `tools/trajectory.py` — tool call trajectory logging and analysis
+- `tools/json_repair.py` — JSON repair and parse-error recovery for malformed tool calls
 
 ### Desktop App (Electron)
-- `mini_agent_electron/main.js` -- Electron main process, restart throttle (max 3/30s), taskkill
-- `mini_agent_electron/preload.js` -- IPC bridge
-- `mini_agent_electron/backend/server.py` -- Python backend WebSocket server
-- `mini_agent_electron/renderer/src/App.jsx` -- React 19 UI with startTransition + useDeferredValue
-- `mini_agent_electron/renderer/src/hooks/useSmoothStream.js` -- requestAnimationFrame-based streaming
-- `mini_agent_electron/renderer/style.css` -- themeable styles with CSS animations
-- `mini_agent_electron/renderer/src/components/CodeBlock.jsx` -- syntax highlighting with 35+ languages, wrap/noScroll, ANSI support
-- `mini_agent_electron/renderer/src/components/AnsiBlock.jsx` -- ANSI escape → styled React elements
-- `mini_agent_electron/renderer/src/components/ReadFileResult.jsx` -- read_file output with filename header + line hashes
-- `mini_agent_electron/renderer/src/components/SearchResults.jsx` -- search_files/find_symbol results as tables
-- `mini_agent_electron/renderer/src/components/ShellResults.jsx` -- shell command output with exit code badge
-- `mini_agent_electron/renderer/src/components/AstResult.jsx` -- AST skeleton/function output with proper line numbering
+- `mini_agent_electron/main.js` — Electron main process, restart throttle (max 3/30s)
+- `mini_agent_electron/preload.js` — IPC bridge (contextBridge.exposeInMainWorld)
+- `mini_agent_electron/backend/server.py` — Python backend WebSocket server (AgentRunner, PTY shell)
+- `mini_agent_electron/renderer/src/App.tsx` — React 19 UI shell: AppShell with startTransition + useDeferredValue
+- `mini_agent_electron/renderer/src/types.ts` — shared IPC types (StreamToolStartData, etc.)
+- `mini_agent_electron/renderer/src/hooks/useSmoothStream.ts` — rAF-based word-boundary streaming
+- `mini_agent_electron/renderer/src/hooks/useDropdownPosition.ts` — dropdown positioning logic
+- `mini_agent_electron/renderer/src/hooks/useTheme.tsx` — theme management
+- `mini_agent_electron/renderer/style.css` — themeable styles with CSS animations
 
-### React UI Modernization (2026-06-19)
-- React 19 `startTransition`: all chat/tool/thinking array updates wrapped for non-blocking UI
-- React 19 `useDeferredValue`: toolsLines, chatLines, thinkingBlocks, subagentData deferred
-  to keep scroll and input responsive during heavy streaming (400+ line arrays)
-- `useSmoothStream`: switched from setTimeout(16ms) to requestAnimationFrame for vsync-locked
-  60fps text streaming. Automatically pauses when tab hidden, better battery life.
-- CSS animations: slideInLeft for tool/chat entries (last 6 only), fadeInUp for agent messages,
-  fadeIn for thinking blocks and status lines, border transitions on panels with
-  .tools-active / .chat-active conditional classes
-- Panel highlighting: left pane gets .tools-active border glow when agent is running,
-  right pane gets .chat-active when responding
-- @starting-style for smooth first-paint entry (Chromium 117+ / Electron 42+)
-
-### Enriched Tool Summaries (2026-06-19)
-- `_read_file_summary`: now shows line range — `read_file(/x/y.py, lines 100-150)` instead of just path
-- `_write_file_summary`: shows line count + byte count — `write_file(/x/y.py, 75 lines, 2736B) "..."`
-- `_edit_file_summary` (anchor mode): shows per-edit anchor words + content previews — `Apple→"new code", Banjo→"..."`
-- `_edit_lines_summary`: shows hash anchors + line ranges — `L10-L15 h=a1b2c3 +546B`
-- Frontend `tool_start`: emoji icons for tool categories (📖 read, ✏️ write, 🔍 search, ⚙️ shell, etc.)
-- Frontend `tool_end`: checkmark/cross symbols (✓/✗) instead of OK/ERR, detail always shown
+### Renderer Components
+- `components/CharStream.tsx` — character-by-character text streaming
+- `components/StreamingMessage.tsx` — streaming agent messages with word-break
+- `components/DeferredMarkdown.tsx` — deferred markdown rendering for performance
+- `components/ToolCard.tsx` — tool execution cards with animated collapse/completion
+- `components/TerminalPanel.tsx` — terminal panel with resizable split
+- `components/TerminalBlock.tsx` — individual terminal command blocks
+- `components/ShellInput.tsx` — CodeMirror-based shell input with completions
+- `components/ShellResults.tsx` — shell output with exit code and line numbers
+- `components/CodeBlock.tsx` — syntax highlighting (35+ languages, wrap/noScroll, ANSI)
+- `components/AnsiBlock.tsx` — ANSI escape → styled React elements
+- `components/HighlightedTerminalOutput.tsx` — ls output colorization, Shiki highlighting
+- `components/ReadFileResult.tsx` — read_file output with filename header + line numbers
+- `components/SearchResults.tsx` — search_files/find_symbol results as tables
+- `components/AstResult.tsx` — AST skeleton/function output rendering
+- `components/LogLine.tsx` — individual log line with markdown support
+- `components/LogPanel.tsx` — log panel with auto-scroll
+- `components/AgentTree.tsx` — sub-agent tree visualization (ReactFlow)
+- `components/SubAgentsPane.tsx` — sub-agent status and output pane
+- `components/ErrorBoundary.tsx` — React error boundary
+- `components/Header.tsx` — title bar with close button
+- `components/RoundedFrame.tsx` — rounded corner frame wrapper
+- `components/SessionPicker.tsx` — session selection dropdown
+- `components/SettingsPanel.tsx` — provider/key settings panel
+- `components/StatusBar.tsx` — status bar display
 
 ## Architecture Notes
 
 ### Provider System
-- Flash/Pro routing: `_compute_complexity()` uses last user message only (not accumulated history).
+- Flash/Pro routing: `_compute_complexity()` uses last user message only.
   Cache keyed by `hash(last_user_content)`.
-- Fallback chain: primary → fallback providers on 429/5xx. DeepSeek defaults to Claude.
-  Provider-specific params stripped. Only non-streaming.
+- Fallback chain: primary → fallback providers on 429/5xx. Provider-specific params stripped.
 - DeepSeek prompt cache key: `mini_agent-v1-{tool_count}` for KV-cache stickiness.
+
+### Tree-Sitter Multi-Language
+- tree-sitter-python for `.py`, tree-sitter-typescript for `.ts`/`.tsx`,
+  tree-sitter-javascript for `.js`/`.jsx`. Centralized run_query() in tree_sitter_parser.py.
+- `_get_tree_sitter_parser` must return correct language per extension — `.tsx` must use
+  `language_tsx()`, not `language_typescript()` (regression test in test_tree_sitter_path.py).
+- `_extract_definitions` TSX query uses `(variable_declarator name: ... value: (arrow_function))`
+  pattern — tree-sitter-typescript does NOT support `(arrow_function name: ...)`.
 
 ### Windows-Specific
 - _communicate_windows() in shell_ops.py: read threads + threading.Timer watchdog with
   taskkill /F /T. CREATE_NO_WINDOW set; CREATE_NEW_PROCESS_GROUP removed (caused freeze).
-- File reads bypass subprocess on Windows (`if False:` guard) — direct in-process reads.
-- Startup warmup: cmd.exe /c rem runs during bootstrap to absorb antivirus scan delay.
+- File reads bypass subprocess on Windows — direct in-process reads.
+- Startup warmup: cmd.exe /c rem absorbs antivirus scan delay.
 - Bash path quoting: MSYS2 paths must be quoted when building bash wrapper commands.
 
-### Agent Ops Split (2026-06-14) — REVERSED in commit 25d41eb
-- The sub-agent system (agent_spawn.py, agent_collect.py, agent_patterns.py) was removed.
-
-### Constants Consolidation (2026-06-14)
-- MEMORY_FILENAME, HTTP_CONNECT_TIMEOUT, HTTP_READ_TIMEOUT moved to core/constants.py
-  to break circular import (core.config ↔ memory.session). Re-exported for backward compat.
+### Context Injection
+- ZONE model: ZONE 1 (immutable prefix), ZONE 2 (append-only log), ZONE 3 (volatile scratch)
+- Per-turn injections: handoff, state, tasks, scratchpad, git diff, core memory,
+  circuit breaker, compaction, edit risk, pattern rules, progress check, modified files
 
 ### Semantic Cache
 - tools/semantic_cache.py: Tier 1 exact SHA-256 (~0ms), Tier 2 cosine similarity via
-  CodeSearchNet embeddings. Adaptive thresholds with feedback loop. 15-25% cost reduction.
+  CodeSearchNet embeddings. Adaptive thresholds. 15-25% cost reduction.
 
-### Backend:response Handler Fix (2026-06-14)
-- App.jsx removed `data.target === 'chat'` guard — Python backend never sets `target`
-  field. All responses now shown as msg-status lines.
+### Git Checkpoint System
+- `core/checkpoint.py` — git-based rollback before write_file, edit_file, run_shell.
+  One checkpoint per turn via `_checked_this_turn` gating. Falls back to no-op when git unavailable.
+- `tools/agent_ops.py` `_restore_file()` — tries `git checkout <path>` first, falls back to session backups.
 
-### Knowledge Confidence Scale
-- _inject_confidence_web_search_nudge(): monitors 3 triggers (search misses, tool failures,
-  read-only turns) with 4-turn cooldown. Constants: _CONFIDENCE_NO_RESULT_THRESHOLD=3,
-  _CONFIDENCE_FAILURE_THRESHOLD=2, _CONFIDENCE_NUDGE_COOLDOWN_TURNS=4.
+### Hash-Anchored Editing
+- read_file(hash_lines=True): `lineno:hash| content` format. 3-char SHA-256 per line.
+- edit_lines: hash-validated line-range edits, batch rejected on any mismatch, applied bottom-up.
 
-### Hash-Anchored Editing (2026-06-16)
-- `tools/file_ops.py`: `_line_hash()`, `_compute_line_hashes()` -- 3-char SHA-256 hash per line
-- `read_file(hash_lines=True)`: returns `lineno:hash| content` format for constructing edit_lines calls
-- `edit_lines(path, edits[{from, from_hash, to, to_hash, new_text}])`: hash-validated line-range edits
-  All hashes validated before any edit applied; batch rejected on any mismatch with precise error.
-  Edits applied bottom-up (reverse line order) to preserve pre-edit line numbers.
-  Pattern from Akay/Howard Chen hashlines design. Reduces retries ~50% and output tokens 30-40%.
-- Schema: `tools/schema.py` -- `hash_lines` param on `read_file`, full `edit_lines` tool definition
-- Tests: `tests/test_file_ops_extended.py::TestHashlines` (11 tests)
-
-### Storm-Breaker (2026-06-16)
-- `core/llm.py`: `_STORM_FAILURES` deque, `_check_storm_breaker()`, `_synthesize_storm_breaker_message()`
-  After 3 consecutive identical failed tool calls (same name + error fingerprint), synthesizes
-  an assistant-role message explaining the failure instead of silently continuing.
+### Storm-Breaker
+- After 3 consecutive identical failed tool calls, synthesizes explanation message.
   Pattern from Howard Chen's cwcode: "don't crash, talk."
-- Injected in `run_agent_turn()` after `_tool_execution_phase()`
-- Tests: `tests/test_file_ops_extended.py::TestStormBreaker` (6 tests)
 
-### Git Checkpoint System (2026-06-20)
-- `core/checkpoint.py` -- CheckpointManager: git-based rollback safety before risky operations.
-  Inspired by Dirac's checkpoint system.  Creates git commits before write_file, edit_file,
-  and run_shell tool calls (one per turn via `_checked_this_turn` gating).  Falls back
-  gracefully when git is unavailable (no-op).
-- Integrated into `tools/__init__.py` `execute_tool()` -- checkpoint fires inside
-  `_run_and_capture()` thread before tool dispatch.
-- Turn-level reset in `core/llm.py` `run_agent_turn()` -- `reset_turn_checkpoint()` at
-  each turn boundary.
-- `tools/agent_ops.py` `_restore_file()` -- tries `git checkout <path>` first, falls
-  back to session `_BACKUPS` per-file undo.  Updated error messages to reflect
-  dual restore path.
-- Path normalization: `os.path.realpath()` resolves macOS `/var` → `/private/var`
-  symlink so all callers hit the same CheckpointManager singleton.
-- Tests: `tests/test_checkpoint.py` (22 tests, 5 test classes)
+### Agent Ops Split — REMOVED in commit 25d41eb
+- The sub-agent system (agents/, tools/agent_spawn.py, agent_collect.py, agent_patterns.py,
+  agent_messages.py, reservations.py) was removed.
 
 ## Known Issues
-
-- No known critical bugs as of 2026-06-18. Minor issues:
+- No known critical bugs as of 2026-06-24. Minor:
   - test_bash_diag.py parametrize fixture issue (non-functional test harness)
   - Some Windows path handling edge cases with MSYS2 bash wrappers
   - Desktop app WebSocket reconnection on network change needs improvement
@@ -235,7 +246,7 @@ The sub-agent/multi-agent system was removed. Files deleted:
 - `core/context_inject.py` — per-turn context injection
 
 ### Modify Configuration
-- `core/config.py` — TOML config, provider settings, env vars, CLI args
+- `core/config.py` — provider settings, env vars, CLI args
 - `.mini_agent.toml` or `~/.mini_agent/config.toml`
 
 ### Add a New Tool
@@ -250,36 +261,33 @@ The sub-agent/multi-agent system was removed. Files deleted:
 ### Modify Shell / Processes
 - `tools/shell_ops.py` — run_shell, search_files, run_tests, verify
 
-### Modify Agent Orchestration (REMOVED in commit 25d41eb)
-- The sub-agent orchestration system was removed.
-
 ### Modify Planning / Todos
 - `tools/agent_todos.py` — plan, plan_status, todo_write, todo_read
-- `memory/memory.py` — plan persistence (set_plan, get_plan)
-- `tools/file_ops.py` — _auto_advance_plan
 
 ### Modify Memory / Persistence
-- `memory/memory.py` — SQLite store, save_knowledge(), search_knowledge()
-- `memory/memory_prune.py` — pruning, compression
+- `memory/memory.py` — SQLite store
 
-### Modify LSP
+### Modify LSP / MCP
 - `tools/lsp.py` — pylsp integration
-
-### Modify MCP
 - `tools/mcp_client.py` — stdio JSON-RPC
 
 ### Modify Electron App
 - `mini_agent_electron/main.js` — main process
 - `mini_agent_electron/preload.js` — IPC bridge
 - `mini_agent_electron/backend/server.py` — WebSocket backend
-- `mini_agent_electron/renderer/src/App.jsx` — React UI
+- `mini_agent_electron/renderer/src/App.tsx` — React UI
+- `mini_agent_electron/renderer/src/types.ts` — shared IPC types
+
+### Modify AST / Tree-Sitter Tools
+- `tools/ast_tools.py` — tool implementations (get_file_skeleton, get_function, replace_symbol)
+- `tools/ast_ops.py` — exposed AST tool operations
+- `core/tree_sitter_parser.py` — multi-language parser, centralized run_query
 
 ### Add Dependencies
 - `pyproject.toml` — Python
 - `package.json` — Node.js (Electron)
 
 ### Update Tracking Files
-- `AGENTS.md` — behavioral rules
+- `.mini_agent.rules` — behavioral rules
 - `STATE.txt` — architecture map (this file)
 - `CHANGELOG.md` — audit trail
-
