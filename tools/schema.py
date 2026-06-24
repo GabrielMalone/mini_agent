@@ -200,7 +200,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "read_file",
-            "description": "Read the contents of one or more files at the given path(s). Use 'paths' (array) for multi-file reads. Use offset and limit for line-range reads on large files. Set include_anchors=True to get stable word anchors (e.g. 'Apple§content') for reliable edit_file targeting.",
+            "description": "Read the contents of one or more files at the given path(s). Use 'paths' (array) for multi-file reads. Use offset and limit for line-range reads on large files. Set hash_lines=True for edit_lines (PREFERRED: hash anchors are unambiguous). Or set include_anchors=True for word anchors used with edit_file anchor mode.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -260,7 +260,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "edit_file",
-            "description": "Edit one or more files. TWO MODES: (1) Anchor mode: use 'files' array with [{path, edits: [{anchor, end_anchor?, edit_type?, text}]}]. Read files with read_file(include_anchors=True) first to get stable word anchors. (2) Legacy string mode: use 'path'/'paths' with 'old_string'/'new_string'.",
+            "description": "Edit files via string matching. DEPRECATED: prefer edit_lines with hash_lines=True — hash anchors are mathematically unambiguous and batch-validated. TWO MODES: (1) Anchor mode: use 'files' array with [{path, edits: [{anchor, end_anchor?, edit_type?, text}]}]. Read files with read_file(include_anchors=True) first. (2) Legacy string mode: use 'path'/'paths' with 'old_string'/'new_string'.",
             "parameters": {
                 "type": "object",
                 "properties": {

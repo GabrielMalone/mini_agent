@@ -902,6 +902,42 @@ def _inject_edit_risk_context(messages: list[dict]) -> None:
 # File-pattern conditional rules
 # ---------------------------------------------------------------------------
 
+
+def _inject_hash_anchor_nudge(messages: list[dict]) -> None:
+    """Nudge agent toward edit_lines + hash_lines when using edit_file string mode."""
+    # Find the most recent assistant message with edit_file using old_string (legacy mode)
+    for m in reversed(messages):
+        if m.get('role') != 'assistant':
+            continue
+        tool_calls = m.get('tool_calls', [])
+        if not tool_calls:
+            continue
+        for tc in tool_calls:
+            fn = tc.get('function', {})
+            name = fn.get('name', '')
+            if name == 'edit_file':
+                try:
+                    import json
+                    args = json.loads(fn.get('arguments', '{}'))
+                except Exception:
+                    continue
+                # Only nudge if using legacy string mode (old_string present)
+                if 'old_string' in args:
+                    messages.append({
+                        'role': 'user',
+                        'content': (
+                            '[HASH-ANCHOR NUDGE] You used edit_file with '
+                            'old_string/new_string (legacy string mode). '
+                            'PREFER edit_lines with read_file(hash_lines=True) '
+                            'instead — hash anchors are mathematically unambiguous '
+                            'and batch-validated. This eliminates string-matching '
+                            'retries entirely.'
+                        ),
+                        '_transient': True,
+                    })
+                    return
+        break  # Only scan the most recent assistant message
+
 # Cache for loaded pattern rules: list of (pattern, instruction, rule_name)
 _PATTERN_RULES: list[tuple[str, str, str]] | None = None
 # Set of pattern names already injected this session (avoid repeats)
@@ -2079,6 +2115,7 @@ def _inject_context(
     _inject_circuit_breaker(messages, recent_tool_keys=recent_tool_keys)
     _inject_cache_degradation_alert(messages)
     _inject_edit_risk_context(messages)
+    _inject_hash_anchor_nudge(messages)
     _inject_pattern_rules(messages)
     _inject_scratchpad_nudge(messages, turn_count=turn_count)
     _inject_strategy_hint(messages)
