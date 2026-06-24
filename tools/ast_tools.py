@@ -43,16 +43,21 @@ def _get_tree_sitter_parser(ext: str) -> tuple[Any, Any, Any] | None:
             lang = Language(tsp.language())
         except (ImportError, AttributeError, OSError):
             return None
-    elif ext in (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"):
+    elif ext in (".ts", ".tsx"):
         try:
             import tree_sitter_typescript as tsts
 
-            if ext in (".ts", ".tsx"):
-                lang = Language(tsts.language_typescript())
+            if ext == ".tsx":
+                lang = Language(tsts.language_tsx())
             else:
-                lang = Language(
-                    tsts.language_tsx() if ext == ".tsx" else tsts.language_typescript()
-                )
+                lang = Language(tsts.language_typescript())
+        except (ImportError, AttributeError, OSError):
+            return None
+    elif ext in (".js", ".jsx", ".mjs", ".cjs"):
+        try:
+            import tree_sitter_javascript as tsjs
+
+            lang = Language(tsjs.language())
         except (ImportError, AttributeError, OSError):
             return None
     else:
@@ -94,8 +99,9 @@ def _extract_definitions(
         (class_declaration
             name: (type_identifier) @class.name
         ) @class.def
-        (arrow_function
-            name: (identifier)? @function.name
+        (variable_declarator
+            name: (identifier) @function.name
+            value: (arrow_function)
         ) @function.def
         """
     else:
