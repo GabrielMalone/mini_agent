@@ -1,27 +1,22 @@
 # Session Handoff
-# Auto-generated at session end. Read at next session start for continuity.
+# 2026-06-24 22:41 UTC — Tool UI Audit
 
-## Last Session: 2026-06-11 12:57 UTC
+## What Changed
+- **server.py**: `on_tool_output` now sends `tool_call_id` (parallel same-name tool output routing fix)
+- **types.ts**: `StreamToolOutputData` gained `tool_call_id?: string`
+- **App.tsx**: 
+  - `toolArgs` parsing: depth-aware paren walker replaces `lastIndexOf('(')`
+  - Orphan buffering: uses `toolCallId` for matching (not just `toolName`)
+  - Type safety: removed all `(data as any)` casts, typed as `StreamToolOutputData`/`StreamToolEndData`
+  - `orphanOutputs` ref type includes `toolCallId`
+  - Cleaned unused imports
+- **FRONTEND_AUDIT.md**: 2026-06-24 addendum documenting all 4 bugs fixed
 
-### What I Changed
-### Commits
-```
-88dbfb0 fix: move memory persist after init_session in /workspace handler
-```
-```
-mini_agent_electron/backend/server.py | 12 +++++-------
- 1 file changed, 5 insertions(+), 7 deletions(-)
-```
+## Pending
+- 2026-06-23 audit items #1-7 still outstanding (AgentTree type params, StatusBar props, etc.)
 
-### What's Pending
-(none recorded)
-
-### Plan Progress
-Plan (4/4 complete):
-  [✓] 1. Add logging to cleanup handler (bootstrap.py:_cleanup_on_exit)
-  [✓] 2. Add stderr warning in _sem_preload._loader() (tools/search_ops.py)
-  [✓] 3. Centralize skip-dir constants to a shared location and update 3 consumers
-  [✓] 4. Wire AgentRuntime shutdown into the exit cleanup handler (bootstrap.py)
-
-### Modified Files
+## Modified Files
 - mini_agent_electron/backend/server.py
+- mini_agent_electron/renderer/src/types.ts
+- mini_agent_electron/renderer/src/App.tsx
+- mini_agent_electron/FRONTEND_AUDIT.md

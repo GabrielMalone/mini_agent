@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, startTransition, useDeferredValue } from 'react';
-import type { ChatBlock, ThinkingBlock, UserCommand, ShellOutputEntry, ToolCardData, BackendStatusData, BalanceData } from './types';
+import type { ChatBlock, ThinkingBlock, UserCommand, ShellOutputEntry, ToolCardData, BackendStatusData, BalanceData, StreamToolOutputData, StreamToolEndData } from './types';
 import useSmoothStream from './hooks/useSmoothStream';
 import useTheme from './hooks/useTheme';
 import TerminalBlock from './components/TerminalBlock';
@@ -88,7 +88,7 @@ function AppShell() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const turnStartRef = useRef<number | null>(null);
   const toolOutputStack = useRef<Array<{ cardId: number; buffer: string; toolName: string; toolCallId?: string }>>([]); // stack of buffers for parallel tool calls
-  const orphanOutputs = useRef<Array<{ toolName: string; lines: string[] }>>([]); // buffered output lines before tool_start arrives
+  const orphanOutputs = useRef<Array<{ toolName: string; toolCallId?: string; lines: string[] }>>([]); // buffered output lines before tool_start arrives
   const orphanTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null); // timeout to flush orphans
   const lineIdRef = useRef(0); // monotonically increasing ID for stable React keys
   const nextLineId = useCallback(() => ++lineIdRef.current, []);
@@ -264,16 +264,26 @@ function AppShell() {
       }
     }));
 
-    unsubs.push(api.on('stream:tool_output', (data) => {
+    unsubs.push(api.on('stream:tool_output', (rawData) => {
+      const data = rawData as StreamToolOutputData;
       const stack = toolOutputStack.current;
-      const tName = (data as any).tool_name || '';
+      const tName = data.tool_name || '';
+      const tCallId = data.tool_call_id || '';
 
       // If stack is empty, buffer as orphan — tool_start hasn't arrived yet (IPC race)
       if (stack.length === 0) {
         if (tName) {
-          let orphan = orphanOutputs.current.find((o) => o.toolName === tName);
+          // Match by tool_call_id first (unique), then toolName
+          let orphan: { toolName: string; toolCallId?: string; lines: string[] } | undefined;
+          if (tCallId) {
+            orphan = orphanOutputs.current.find(
+              (o) => o.toolCallId === tCallId || o.toolName === tName
+            );
+          } else {
+            orphan = orphanOutputs.current.find((o) => o.toolName === tName);
+          }
           if (!orphan) {
-            orphan = { toolName: tName, lines: [] };
+            orphan = { toolName: tName, toolCallId: tCallId || undefined, lines: [] };
             orphanOutputs.current.push(orphan);
           }
           orphan.lines.push(data.line || '');
@@ -289,16 +299,17 @@ function AppShell() {
       }
 
       // Match by tool_call_id first (unique, handles same-toolName batches), then tool_name, then LIFO
-      let top;
+      let top: { cardId: number; buffer: string; toolName: string; toolCallId: string } | undefined;
       if (tCallId) {
         const found = stack.find((e) => e.toolCallId === tCallId);
-        if (found) top = found;
+        if (found) top = found as typeof top;
       }
       if (!top && tName) {
         const found = stack.find((e) => e.toolName === tName);
-        if (found) top = found;
+        if (found) top = found as { cardId: number; buffer: string; toolName: string; toolCallId: string };
       }
-      if (!top) top = stack[stack.length - 1];
+      if (!top) top = stack[stack.length - 1] as { cardId: number; buffer: string; toolName: string; toolCallId: string };
+      if (!top) return; // stack exhausted, nothing to match
       top.buffer += data.line || '';
       startTransition(() => {
         setToolCards((prev) => {
@@ -313,12 +324,13 @@ function AppShell() {
       });
     }));
 
-    unsubs.push(api.on('stream:tool_end', (data) => {
+    unsubs.push(api.on('stream:tool_end', (rawData) => {
+      const data = rawData as StreamToolEndData;
       const stack = toolOutputStack.current;
-      const tName = (data as any).tool_name || '';
+      const tName = data.tool_name || '';
 
       // Guard: if tool_end fires without a matching tool_start
-      const tCallId = (data as any).tool_call_id || '';
+      const tCallId = data.tool_call_id || '';
       if (stack.length === 0 && (tCallId || tName)) {
         // Fallback: search cards directly for a running card with this tool_call_id or tool_name.
         startTransition(() => {
@@ -414,7 +426,7 @@ function AppShell() {
               let matchIdx = -1;
               for (let i = prev.length - 1; i >= 0; i--) {
                 if (prev[i].status === 'running' && (
-                  (tCallId && (prev[i] as any).toolCallId === tCallId) ||
+                  (tCallId && prev[i].toolCallId === tCallId) ||
                   (!tCallId && prev[i].toolName === tName)
                 )) {
                   matchIdx = i;
@@ -431,7 +443,7 @@ function AppShell() {
               const code = data.content || matched.output || '';
               const diffPreview = data.diff_preview || null;
               const errorDetail = !data.ok ? (data.detail || '') : '';
-              const { _enter, ...clean } = matched as any;
+              const { _enter, ...clean } = matched;
               const updated = [...prev];
               updated[matchIdx] = { ...clean, status, endTime: now, output: code, diffPreview, errorDetail };
               return updated;

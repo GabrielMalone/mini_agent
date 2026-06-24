@@ -20,6 +20,7 @@ export interface StreamToolStartData {
 export interface StreamToolOutputData {
   line?: string;
   tool_name?: string;
+  tool_call_id?: string;
 }
 
 export interface StreamToolEndData {

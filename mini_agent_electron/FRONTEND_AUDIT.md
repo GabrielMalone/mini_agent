@@ -268,6 +268,57 @@ Serves renderer files with CORS headers for ES module support.
 
 ---
 
+## 2026-06-24 Tool UI Audit Addendum
+
+**Auditor:** mini_agent | **Scope:** Tool card pipeline (backend → IPC → frontend)
+
+### Bug 3: `on_tool_output` missing `tool_call_id` (FIXED ✅)
+
+**Severity:** MEDIUM — parallel tools with same name could receive each other's output.
+
+The backend `StreamCallbacks.on_tool_output` only sent `tool_name`, not `tool_call_id`. When two tools with the same name run in parallel (e.g., `read_file` on two files), the frontend's LIFO/toolName matching could route output lines to the wrong card.
+
+**Fix:** Added `tool_call_id: str = ""` parameter to `on_tool_output` in `server.py`, conditionally included in the message dict.
+
+---
+
+### Bug 4: `toolArgs` parsing broken on nested parentheses (FIXED ✅)
+
+**Severity:** LOW — visual glitch on tools with parenthesized arguments.
+
+`lastIndexOf('(')` was used to split `summary` into `toolName` + `toolArgs`. For summaries like `edit_file(path="foo(x)")`, this would cut at the inner `(`, producing garbled toolName.
+
+**Fix:** Replaced with `indexOf('(')` + depth-aware parenthesis walker that finds the matching close paren.
+
+---
+
+### Improvement 5: Orphan `tool_output` buffering upgraded to `tool_call_id` (FIXED ✅)
+
+Orphan output lines (arriving before `tool_start` via IPC race) were previously keyed by `toolName` only. Now also track `toolCallId` for unambiguous matching when draining orphans into the correct card.
+
+---
+
+### Improvement 6: Type safety — `(data as any)` casts removed (FIXED ✅)
+
+All `stream:tool_output` and `stream:tool_end` handlers now use typed `StreamToolOutputData` / `StreamToolEndData` instead of `as any` casts. Added `tool_call_id?: string` to `StreamToolOutputData` interface. Removed `as any` from `_enter` destructuring (ToolCardData already has `_enter?: boolean` stripped via rest).
+
+**tsc --noEmit: clean (0 errors)** after all fixes.
+
+---
+
+### Remaining from 2026-06-23 audit (not yet addressed)
+| # | Issue | Severity |
+|---|-------|----------|
+| 1 | Fix AgentTree type params (15 TS errors) | Medium |
+| 2 | Fix StatusBar prop types | Medium |
+| 3 | Add implicit `any` types in App.tsx | Low |
+| 4 | `disabled` prop passthrough in TerminalPanel | Low |
+| 5 | Deduplicate `escapeHtml` | Low |
+| 6 | Remove `_enter` hack from ToolCardData | Low |
+| 7 | Fix AstResult index signature | Low |
+
+---
+
 ## Overall Assessment: B+ / A-
 
 The frontend is **solid and battle-tested**. The race condition handling (orphan buffering, parallel tool matching, index cleanup) shows real-world debugging. Performance optimizations (`startTransition`, `useDeferredValue`, RAF-based rendering) are modern and correct. The 28 TypeScript errors are all in agent-tree visualization code and type annotation gaps — none represent runtime bugs. CSS is large but well-organized with complete theme coverage.
