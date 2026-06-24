@@ -1089,9 +1089,11 @@ class TestHashlines(unittest.TestCase):
         result = execute_tool(tc, self.write_gate, self.read_gate)
         self.assertTrue(result.success)
         # Should have hash annotations like "1:xxx| line one"
+        # First line is [File Hash: xxx] header, then 3 content lines
         lines = result.content.split("\n")
-        self.assertEqual(len(lines), 3)
-        for line in lines:
+        self.assertEqual(len(lines), 4)
+        self.assertRegex(lines[0], r"^\[File Hash: [0-9a-f]+\]$")
+        for line in lines[1:]:
             self.assertRegex(line, r"^\d+:[0-9a-f]{3}\| ")
 
     def test_read_file_hash_lines_with_offset(self):
@@ -1101,9 +1103,10 @@ class TestHashlines(unittest.TestCase):
         result = execute_tool(tc, self.write_gate, self.read_gate)
         self.assertTrue(result.success)
         lines = result.content.split("\n")
+        # First line is [File Hash: xxx] header
         # offset is 1-indexed in practice: offset=2 skips line 0 only
-        self.assertGreaterEqual(len(lines), 3)
-        self.assertIn("2:", lines[0])  # offset=2 starts at line 2
+        self.assertGreaterEqual(len(lines), 4)
+        self.assertIn("2:", lines[1])  # offset=2 starts at line 2 (after header)
 
     def test_edit_lines_happy_path(self):
         """Basic edit_lines replaces a line range."""

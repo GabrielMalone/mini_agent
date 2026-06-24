@@ -153,17 +153,18 @@ def _read_file(args: dict, _wg: WriteSafetyGate, rg: ReadSafetyGate) -> ToolResu
         except Exception:
             pass  # Fall through with unformatted content on error
     else:
-        # Content hash stamp even without anchors (for change detection)
-        # Skip stamping when hash_lines/line_numbers are active (they have own format)
-        if not hash_lines and not line_numbers:
-            try:
-                fhash = anchor_content_hash(full_content)
-                if not full_content.startswith(
-                    "[File Hash:"
-                ) and not full_content.startswith("[Lines"):
-                    full_content = f"[File Hash: {fhash}]\n{full_content}"
-            except Exception:
-                pass
+        # Content hash stamp for change detection across turns.
+        # When hash_lines or line_numbers are active, the per-line formatting
+        # already provides per-line hashes; we still stamp the whole-file hash
+        # as a quick "did this file change?" signal.
+        try:
+            fhash = anchor_content_hash(full_content)
+            if not full_content.startswith(
+                "[File Hash:"
+            ) and not full_content.startswith("[Lines"):
+                full_content = f"[File Hash: {fhash}]\n{full_content}"
+        except Exception:
+            pass
 
     # Cache full file content for cross-turn reuse (only when reading from offset 0
     # AND the read was not truncated -- avoid caching partial content).
