@@ -26,6 +26,18 @@ def build_system_prompt(config: "AgentConfig") -> str:
     Dynamic session metadata is now in ``build_session_header()`` (injected as
     a user message, after the immutable system prefix).
     """
+    # Check for user override (~/.mini_agent/prompt_override.txt)
+    # Loaded once at import time; file changes require restart.
+    override_path = os.path.expanduser("~/.mini_agent/prompt_override.txt")
+    if os.path.isfile(override_path):
+        try:
+            with open(override_path, encoding="utf-8") as f:
+                override = f.read().strip()
+            if override:
+                return override
+        except OSError:
+            pass  # fall through to default
+
     provider = getattr(config, "api_provider", None) or "deepseek"
     provider_notes: dict[str, str] = {
         "deepseek": (
@@ -401,6 +413,14 @@ def build_startup_context(
 
     codebase_map = build_codebase_map(workspace)
     if codebase_map:
+        # Cap codebase map at ~3K tokens (~12K chars) to avoid startup bloat
+        _CODEBASE_MAP_MAX_CHARS = 12_000
+        if len(codebase_map) > _CODEBASE_MAP_MAX_CHARS:
+            codebase_map = (
+                codebase_map[:_CODEBASE_MAP_MAX_CHARS]
+                + f"\n\n... (truncated {len(codebase_map) - _CODEBASE_MAP_MAX_CHARS:} chars "
+                f"-- use find_symbol/search_files to explore)"
+            )
         parts.append("\n" + codebase_map)
 
     # 3. Recent git log (last 5 commits, if this is a git repo)
@@ -417,6 +437,8 @@ def build_startup_context(
         pass
 
     # 4. Project knowledge (cross-session learnings, grouped by category)
+    #    Capped at ~2K tokens (~8K chars) to limit startup context bloat
+    _KNOWLEDGE_MAX_CHARS = 8_000
     if knowledge:
         lines = []
         session_entries = [
@@ -433,7 +455,13 @@ def build_startup_context(
                 cat = e.get("category", "general")
                 lines.append(f"- [{cat}] {e.get('summary', '')[:200]}")
         if lines:
-            parts.append("\n".join(lines))
+            section = "\n".join(lines)
+            if len(section) > _KNOWLEDGE_MAX_CHARS:
+                section = (
+                    section[:_KNOWLEDGE_MAX_CHARS]
+                    + "\n\n... (knowledge truncated -- use memory_core/remember to explore)"
+                )
+            parts.append(section)
 
     # 5. Observations + session summaries (proactive injection)
     if memory_store is not None:

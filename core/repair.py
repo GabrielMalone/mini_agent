@@ -271,12 +271,19 @@ def _try_repair(json_str: str) -> str | None:
 # ---------------------------------------------------------------------------
 
 
-def _detect_storm(tool_calls: list[dict]) -> list[dict]:
+def _detect_storm(
+    tool_calls: list[dict],
+    repair_messages: list[str] | None = None,
+) -> list[dict]:
     """Cap excessive parallel tool calls (storm detection).
 
     DeepSeek occasionally emits >20 parallel tool calls in a single
     response, which causes timeouts and API errors.  We cap at
     MAX_PARALLEL_TOOL_CALLS.
+
+    If *repair_messages* is provided, a human-readable warning is
+    appended so the agent knows calls were dropped and can re-request
+    them in the next turn.
     """
     if len(tool_calls) <= MAX_PARALLEL_TOOL_CALLS:
         return tool_calls
@@ -284,14 +291,29 @@ def _detect_storm(tool_calls: list[dict]) -> list[dict]:
     import logging
 
     _log = logging.getLogger("repair")
+    dropped_names = [
+        tc.get("function", {}).get("name", "?")
+        for tc in tool_calls[MAX_PARALLEL_TOOL_CALLS:]
+    ]
     _log.warning(
         "storm_detected: %d tool calls → capped at %d.  Dropped: %s",
         len(tool_calls),
         MAX_PARALLEL_TOOL_CALLS,
-        [
-            tc.get("function", {}).get("name", "?")
-            for tc in tool_calls[MAX_PARALLEL_TOOL_CALLS:]
-        ],
+        dropped_names,
     )
+
+    if repair_messages is not None:
+        truncated = dropped_names[:8]
+        extra = (
+            f" (+{len(dropped_names) - 8} more)"
+            if len(dropped_names) > 8
+            else ""
+        )
+        repair_messages.append(
+            f"Storm detection: {len(dropped_names)} tool calls were dropped "
+            f"because the batch exceeded the {MAX_PARALLEL_TOOL_CALLS}-call "
+            f"limit. Dropped: {', '.join(truncated)}{extra}. "
+            f"If you still need these, re-request them in the next turn."
+        )
 
     return tool_calls[:MAX_PARALLEL_TOOL_CALLS]
