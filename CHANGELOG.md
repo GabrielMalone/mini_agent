@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-06-24 — Plan/Todo panel for Electron frontend
+
+### PlanPanel component
+- New `PlanPanel.tsx` component: real-time plan progress (checkboxes + progress bar) and todo items
+- Wired into main-row layout after subagents frame (conditionally renders when plan/todos exist)
+- `types.ts`: Added `PlanStepData`, `TodoItemData`, `StreamPlanUpdateData`, `StreamTodoUpdateData`
+  plus `plan_steps`/`plan_done`/`todos` fields on `BackendStatusData` and `StreamTurnCompleteData.usage`
+- `App.tsx`: Plan/todo state (`planSteps`, `planDone`, `todos`) populated from `backend:status` and
+  `stream:turn_complete` events
+- 119 lines of CSS styles: progress bar with accent fill, checkmark markers, strikethrough done state,
+  hover highlights, themeable via `--accent`/`--green`/`--dim`/`--text`/`--border` vars
+- Backend already emits `plan_steps`/`plan_done` in `send_status()` — frontend now consumes them
+
+### Verification
+- `npx tsc --noEmit`: clean (0 errors)
+- `npx vitest run`: 2/2 smoke tests pass
+
 ## 2026-06-24 — Tool UI audit: type safety & `_enter` hack removal
 
 ### Removed `_enter` hack from ToolCardData

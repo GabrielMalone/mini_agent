@@ -1,7 +1,13 @@
 # mini_agent Architecture Map
-# Last updated: 2026-06-24 -- Tool UI audit & type safety cleanup complete
+# Last updated: 2026-06-24 -- Plan/Todo panel added to Electron frontend
 
 ## Active Decisions (most recent first)
+
+- **Plan/Todo panel (2026-06-24)** — New PlanPanel.tsx component showing real-time plan progress
+  (checkboxes + progress bar) and todo items. Data flows: backend send_status() → backend:status IPC
+  → App.tsx onStatus handler → PlanPanel. Todos flow via tool_end events (todo_write/todo_read).
+  Rendered in main-row as #plan-panel-frame (260px, conditional). All themeable via CSS vars.
+  119 lines of plan-panel styles. tsc --noEmit clean, vitest 2/2 pass.
 
 - **Tool UI audit & type safety (2026-06-24)** — All 7 remaining items from 2026-06-23 frontend audit
   resolved. Removed `_enter` hack from ToolCardData (replaced with self-managed `[entered, setEntered]`

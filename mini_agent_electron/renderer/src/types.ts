@@ -4,6 +4,28 @@
 
 import type React from 'react';
 
+// ---- Plan / Todo data -----------------------------------------------------
+
+export interface PlanStepData {
+  step: string;
+  done: boolean;
+}
+
+export interface TodoItemData {
+  id: string;
+  content: string;
+  status: 'pending' | 'done';
+}
+
+export interface StreamPlanUpdateData {
+  steps: string[];
+  done: number[];
+}
+
+export interface StreamTodoUpdateData {
+  todos: TodoItemData[];
+}
+
 // ---- Stream / IPC event payloads -------------------------------------------
 
 export interface StreamTokenData {
@@ -40,6 +62,9 @@ export interface StreamTurnCompleteData {
     cache_hit_rate?: number;
     subagent_running?: number;
     balance?: BalanceData;
+    plan_steps?: string[];
+    plan_done?: number[];
+    todos?: TodoItemData[];
   };
 }
 
@@ -91,6 +116,9 @@ export interface BackendStatusData {
   turn_cost?: string;
   cache_hit_rate?: number;
   subagent_running?: number;
+  plan_steps?: string[];
+  plan_done?: number[];
+  todos?: TodoItemData[];
 }
 
 export interface BackendBotStatusData {

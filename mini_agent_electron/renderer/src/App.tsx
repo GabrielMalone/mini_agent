@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect, useCallback, startTransition, useDeferredValue } from 'react';
-import type { ChatBlock, ThinkingBlock, UserCommand, ShellOutputEntry, ToolCardData, BackendStatusData, BalanceData, StreamToolOutputData, StreamToolEndData } from './types';
+import type { ChatBlock, ThinkingBlock, UserCommand, ShellOutputEntry, ToolCardData, BackendStatusData, BalanceData, StreamToolOutputData, StreamToolEndData, TodoItemData } from './types';
+import type { TodoItem } from './components/PlanPanel';
+import PlanPanel from './components/PlanPanel';
 import useSmoothStream from './hooks/useSmoothStream';
 import useTheme from './hooks/useTheme';
 import TerminalBlock from './components/TerminalBlock';
@@ -70,7 +72,10 @@ function AppShell() {
   const [turnCost, setTurnCost] = useState('-');
   const [cacheHitRate, setCacheHitRate] = useState<number | null>(null);
   const [subagentRunning, setSubagentRunning] = useState(0);
-  // plan UI removed — plan feature doesn't work
+  // Plan / Todo state — updated from backend:status and tool_end events
+  const [planSteps, setPlanSteps] = useState<string[]>([]);
+  const [planDone, setPlanDone] = useState<number[]>([]);
+  const [todos, setTodos] = useState<TodoItem[]>([]);
 
   // Theme hook (extracted)
   const {
@@ -142,7 +147,9 @@ function AppShell() {
       if (data.turn_cost != null) setTurnCost(data.turn_cost);
       if (data.cache_hit_rate != null) setCacheHitRate(data.cache_hit_rate);
       if (data.subagent_running != null) setSubagentRunning(data.subagent_running);
-      // plan_steps/plan_done ignored — plan UI removed
+      if (data.plan_steps != null) setPlanSteps(data.plan_steps);
+      if (data.plan_done != null) setPlanDone(data.plan_done);
+      if (data.todos != null) setTodos(data.todos);
     };
     const unsub = api.on('backend:status', onStatus);
     api.getStatus?.().then((data) => { if (data) onStatus(data); });
@@ -512,7 +519,9 @@ function AppShell() {
       if (data.usage?.cache_hit_rate != null) setCacheHitRate(data.usage.cache_hit_rate);
       if (data.usage?.subagent_running != null) setSubagentRunning(data.usage.subagent_running);
       if (data.usage?.balance != null) setBalanceDisplay(data.usage.balance);
-      // plan_steps/plan_done ignored — plan UI removed
+      if (data.usage?.plan_steps != null) setPlanSteps(data.usage.plan_steps);
+      if (data.usage?.plan_done != null) setPlanDone(data.usage.plan_done);
+      if (data.usage?.todos != null) setTodos(data.usage.todos);
       setIsLive(false);
       setInputDisabled(false);
       inputRef.current?.focus();
@@ -982,6 +991,13 @@ function AppShell() {
         {Object.keys(deferredSubagentData).length > 0 && (
           <RoundedFrame id="subagents-frame">
             <AgentTree agents={deferredSubagentData} />
+          </RoundedFrame>
+        )}
+
+        {/* Plan / Todo panel */}
+        {(planSteps.length > 0 || todos.length > 0) && (
+          <RoundedFrame id="plan-panel-frame">
+            <PlanPanel planSteps={planSteps} planDone={planDone} todos={todos} theme={theme} />
           </RoundedFrame>
         )}
       </div>

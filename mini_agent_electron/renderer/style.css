@@ -2782,3 +2782,122 @@ html, body {
 .shell-input-cm .cm-editor {
   background: transparent;
 }
+
+/* ---------------------------------------------------------------------------
+  Plan / Todo Panel
+  --------------------------------------------------------------------------- */
+#plan-panel-frame {
+  width: 260px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.plan-panel {
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.plan-panel__section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.plan-panel__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--border);
+}
+
+.plan-panel__title {
+  font-weight: 700;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent);
+}
+
+.plan-panel__progress,
+.plan-panel__count {
+  font-size: 10px;
+  color: var(--dim);
+  font-family: var(--mono-font, 'SF Mono', 'Fira Code', monospace);
+}
+
+.plan-panel__progress-bar {
+  height: 3px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 2px;
+}
+
+.plan-panel__progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  transition: width 0.35s ease;
+}
+
+.plan-panel__list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.plan-panel__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: background 0.12s ease;
+}
+
+.plan-panel__item:hover {
+  background: rgba(var(--accent-rgb, 100, 150, 255) / 0.06);
+}
+
+.plan-panel__item--done {
+  opacity: 0.55;
+}
+
+.plan-panel__marker {
+  flex-shrink: 0;
+  width: 14px;
+  text-align: center;
+  font-size: 10px;
+  color: var(--dim);
+  padding-top: 1px;
+  transition: color 0.2s ease, transform 0.2s ease;
+}
+
+.plan-panel__marker--done {
+  color: var(--green);
+  transform: scale(1.1);
+}
+
+.plan-panel__text {
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  color: var(--text);
+}
+
+.plan-panel__item--done .plan-panel__text {
+  text-decoration: line-through;
+  color: var(--dim);
+}
