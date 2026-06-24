@@ -2568,22 +2568,12 @@ html, body {
   flex-shrink: 0;
 }
 
-.terminal-block--running .terminal-block__notch {
-  border-color: var(--pulse);
-  animation: notch-pulse 1.5s ease-in-out infinite;
-}
-
 .terminal-block--ok .terminal-block__notch {
   border-color: var(--green);
 }
 
 .terminal-block--err .terminal-block__notch {
   border-color: var(--red);
-}
-
-@keyframes notch-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
 }
 
 /* Body */

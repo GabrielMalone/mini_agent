@@ -14,7 +14,6 @@ interface TerminalBlockProps {
 const STATUS_COLORS: Record<string, string> = {
   ok: 'var(--green)',
   err: 'var(--red)',
-  running: 'var(--pulse)',
 };
 
 function formatElapsed(ms: number): string {
