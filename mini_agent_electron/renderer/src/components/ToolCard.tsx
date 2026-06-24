@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, memo, useCallback } from 'react';
+import { useState, useEffect, useRef, memo, useCallback, useLayoutEffect } from 'react';
 import CodeBlock from './CodeBlock';
 import SearchResults from './SearchResults';
 import ReadFileResult from './ReadFileResult';
@@ -16,7 +16,16 @@ interface ToolCardProps {
 const ToolCard = memo(function ToolCard({ tool, theme }: ToolCardProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [manuallyToggled, setManuallyToggled] = useState(false);
+  const [entered, setEntered] = useState(false);
   const bodyRef = useRef<HTMLDivElement | null>(null);
+
+  // Set entered=true on mount, then clear on next frame so CSS enter
+  // animation fires once without the nth-child re-triggering problem.
+  useLayoutEffect(() => {
+    setEntered(true);
+    const id = requestAnimationFrame(() => setEntered(false));
+    return () => cancelAnimationFrame(id);
+  }, []);
 
   const isRunning = tool.status === 'running';
   const isOk = tool.status === 'ok';
@@ -46,7 +55,7 @@ const ToolCard = memo(function ToolCard({ tool, theme }: ToolCardProps) {
     : null;
 
   return (
-    <div className={`tool-card tool-card-${tool.status}`} data-enter={tool._enter ? 'true' : undefined}>
+    <div className={`tool-card tool-card-${tool.status}`} data-enter={entered ? 'true' : undefined}>
       <div className="tool-card-header" onClick={toggle}>
         <span className="tool-card-status">
           <span className={`tool-card-icon-spinner${isRunning ? ' active' : ''}`}>

@@ -204,10 +204,9 @@ function AppShell() {
       const cardId = ++toolCardIdRef.current;
       // Set a data-enter attribute for CSS animation targeting
       // (avoids nth-child animation churn on new card insertion)
-      const cardWithEnter: any = {
+      const newCard: ToolCardData = {
         id: cardId, toolName, toolCallId: data.tool_call_id || '', toolArgs, status: 'running', output: '',
         startTime: Date.now(), endTime: null, diffPreview: null, errorDetail: null,
-        _enter: true,
       };
       startTransition(() => {
         setToolCards((prev) => {
@@ -352,8 +351,7 @@ function AppShell() {
             const errorDetail = !data.ok ? (data.detail || '') : '';
             const status = data.ok ? 'ok' : 'err';
             const updated = [...prev];
-            const { _enter, ...clean } = matched;
-            updated[matchIdx] = { ...clean, status, endTime: Date.now(), output: code, diffPreview, errorDetail };
+            updated[matchIdx] = { ...matched, status, endTime: Date.now(), output: code, diffPreview, errorDetail };
             return updated;
           });
         });
@@ -489,9 +487,7 @@ function AppShell() {
           const card = prev[idx];
           if (!card || card.id !== cardId) return prev;
           const updated = [...prev];
-          // Strip internal _enter flag before persisting
-          const { _enter, ...cleanCard } = card as any;
-          updated[idx] = { ...cleanCard, status, endTime: now, output: code, diffPreview, errorDetail };
+          updated[idx] = { ...card, status, endTime: now, output: code, diffPreview, errorDetail };
           return updated;
         });
       });

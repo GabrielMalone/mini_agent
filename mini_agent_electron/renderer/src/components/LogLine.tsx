@@ -2,6 +2,7 @@ import { memo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import CodeBlock from './CodeBlock';
+import { escapeHtml } from '../utils';
 
 const markdownComponents = {
   code({ className, children, inline }: { className?: string; children: React.ReactNode; inline?: boolean }) {

@@ -1,7 +1,8 @@
 import { useRef, useEffect } from 'react';
+import { escapeHtml } from '../utils';
 
 /**
- * SubAgentsPane -- displays active sub-agents in a stacked layout.
+* SubAgentsPane -- displays active sub-agents in a stacked layout.
  *
  * Each sub-agent gets a section split into 3 horizontal rows:
  *   Top:    Tool calls (what tools the sub-agent used)
@@ -11,14 +12,6 @@ import { useRef, useEffect } from 'react';
  * Props:
  *   agents: object { [task_id]: { name, desc, toolCalls, thoughts, output, ok } }
  */
-
-function escapeHtml(text: string): string {
-  if (!text) return '';
-  return String(text)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-}
 
 interface SubAgentData {
   task_id: string;
