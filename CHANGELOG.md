@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-06-24 — Stuck tool-card: hardened fallback matching + watchdog
+
+### Bug Fix
+- **`mini_agent_electron/renderer/src/App.tsx`**: 
+  - **Watchdog**: polls every 5s, auto-resolves any tool card stuck 'running' >30s.
+    Defense-in-depth for edge cases where `tool_end` never arrives or matching fails.
+  - **Harden tool_end fallback matching**: when `tool_call_id` is present but no card 
+    matches by ID, the old code skipped `tool_name` matching (`!tCallId` guard). 
+    Now tries 3 tiers: exact ID → tool_name → any running card.
+
 ## 2026-07-13 — Stuck tool-card watchdog + startup performance
 
 ### Bug Fix

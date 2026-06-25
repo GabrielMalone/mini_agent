@@ -1,9 +1,13 @@
 # mini_agent Architecture Map
-# Last updated: 2026-06-24 -- Search/find system audit + cleanup
+# Last updated: 2026-06-24 -- Stuck tool-card fix
 
 ## Active Decisions (most recent first)
 
-- **Plan/Todo panel (2026-06-24)** — New PlanPanel.tsx component showing real-time plan progress
+- **Stuck tool-card fix (2026-06-24)** — Frontend App.tsx: (1) watchdog useEffect polls every 5s,
+  auto-resolves tool cards stuck 'running' >30s. (2) Hardened tool_end fallback matching from
+  2-tier to 3-tier: exact tool_call_id → tool_name → any running card. Fixes the `!tCallId` guard
+  that silently skipped tool_name matching when tool_call_id was present but no ID-matched card existed.
+  tsc --noEmit clean, vitest 2/2 pass. — New PlanPanel.tsx component showing real-time plan progress
   (checkboxes + progress bar) and todo items. Data flows: backend send_status() → backend:status IPC
   → App.tsx onStatus handler → PlanPanel. Todos flow via tool_end events (todo_write/todo_read).
   Rendered in main-row as #plan-panel-frame (260px, conditional). All themeable via CSS vars.

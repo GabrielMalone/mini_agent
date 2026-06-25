@@ -429,13 +429,30 @@ function AppShell() {
           startTransition(() => {
             setToolCards((prev) => {
               let matchIdx = -1;
-              for (let i = prev.length - 1; i >= 0; i--) {
-                if (prev[i].status === 'running' && (
-                  (tCallId && prev[i].toolCallId === tCallId) ||
-                  (!tCallId && prev[i].toolName === tName)
-                )) {
-                  matchIdx = i;
-                  break;
+              // Prefer exact tool_call_id match, then tool_name, then any running card
+              if (tCallId) {
+                for (let i = prev.length - 1; i >= 0; i--) {
+                  if (prev[i].status === 'running' && prev[i].toolCallId === tCallId) {
+                    matchIdx = i;
+                    break;
+                  }
+                }
+              }
+              if (matchIdx === -1 && tName) {
+                for (let i = prev.length - 1; i >= 0; i--) {
+                  if (prev[i].status === 'running' && prev[i].toolName === tName) {
+                    matchIdx = i;
+                    break;
+                  }
+                }
+              }
+              if (matchIdx === -1) {
+                // Last resort: match any running card (e.g., tool_end missing tool_name)
+                for (let i = prev.length - 1; i >= 0; i--) {
+                  if (prev[i].status === 'running') {
+                    matchIdx = i;
+                    break;
+                  }
                 }
               }
               if (matchIdx === -1) {
@@ -928,6 +945,28 @@ function AppShell() {
       clearTimeout(submitTimeoutRef.current!);
       if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     };
+  }, []);
+
+  // Watchdog: auto-resolve tool cards stuck in 'running' state for >30s.
+  // Handles edge cases where tool_end fires but doesn't match any card
+  // (e.g., IPC reordering, same-name tool race, or backend omission).
+  useEffect(() => {
+    const STUCK_MS = 30_000;
+    const interval = setInterval(() => {
+      const now = Date.now();
+      setToolCards((prev) => {
+        let changed = false;
+        const updated = prev.map((card) => {
+          if (card.status === 'running' && (now - card.startTime) > STUCK_MS) {
+            changed = true;
+            return { ...card, status: 'ok' as const, endTime: now };
+          }
+          return card;
+        });
+        return changed ? updated : prev;
+      });
+    }, 5_000);
+    return () => clearInterval(interval);
   }, []);
 
   return (
