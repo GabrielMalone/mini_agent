@@ -75,10 +75,22 @@ def idempotency_key_for(tool_name: str, args: dict) -> str:
         content = str(args.get("content", ""))[:256]
         material = f"wf:{path}:{content}"
     elif tool_name == "edit_file":
-        path = str(args.get("path", ""))
-        old = str(args.get("old_string", ""))[:256]
-        new = str(args.get("new_string", ""))[:256]
-        material = f"ef:{path}:{old}:{new}"
+        # Handle multi-edit batch mode (edits array) first
+        edits = args.get("edits")
+        if edits is not None and isinstance(edits, list):
+            # Hash the structured edits list to avoid collisions
+            edit_snapshot = repr(edits)[:1024]
+            material = f"ef_multi:{edit_snapshot}"
+        # Handle structured diff mode
+        elif args.get("diff"):
+            path = str(args.get("path", ""))
+            diff_text = str(args.get("diff", ""))[:512]
+            material = f"ef_diff:{path}:{diff_text}"
+        else:
+            path = str(args.get("path", ""))
+            old = str(args.get("old_string", ""))[:256]
+            new = str(args.get("new_string", ""))[:256]
+            material = f"ef:{path}:{old}:{new}"
     elif tool_name == "edit_lines":
         path = str(args.get("path", ""))
         # edit_lines uses an "edits" array; hash the whole thing
