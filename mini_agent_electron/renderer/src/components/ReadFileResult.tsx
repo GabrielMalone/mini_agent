@@ -11,7 +11,9 @@ const READFILE_HASHLINE_RE = /^\s*(\d+)(?:\s+(\w+)│)?\s?/;
 
 // Extract file path from tool summary like:
 //   read_file(E:\path\to\file.py)  — no quotes, just parens
-const TOOL_PATH_RE = /read_file\((.+?)\)\s*$/;
+// Uses greedy match with end anchor to handle paths containing
+// closing parens (e.g. "read_file(/foo/bar (copy).py)").
+const TOOL_PATH_RE = /read_file\((.+)\)\s*$/;
 
 function extractPath(toolName: string): string | null {
   if (!toolName) return null;

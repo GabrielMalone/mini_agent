@@ -10,12 +10,33 @@ interface ParsedSearchEntry {
   symbol?: string;
 }
 
+// file:line: content  —  but must handle Windows paths (C:\...)
+// Strategy: anchor the line number at the end: last ":<digits>" before the content.
+// Match: (everything up to last colon-digits) : (digits) : (optional space)(rest)
 const SEARCH_LINE_RE = /^(.+):(\d+): ?(.*)$/;
 const SYMBOL_LINE_RE = /^\s*(\S+)\s+(\S+)\s+->\s+(.+):(\d+)$/;
+
+/** Heuristic: if the file portion looks like a Windows drive root (single letter),
+ *  re-scan by treating "letter:rest" as the file path prefix. */
+function fixWindowsPath(file: string, lineno: string, content: string): { file: string; lineno: number; content: string } | null {
+  // Only applies when file is a single letter (likely a drive letter like "C")
+  if (file.length !== 1) return null;
+  // Reconstruct: original line = file + ":" + lineno + ": " + content
+  // The real file is "file:lineno" (e.g. "C:42") and the real lineno+content are in content
+  const rebuilt = `${file}:${lineno}: ${content}`;
+  const m = rebuilt.match(/^(.+):(\d+): ?(.*)$/);
+  if (!m || m[1].length <= 2) return null;
+  return { file: m[1], lineno: parseInt(m[2], 10), content: m[3] };
+}
 
 function parseLine(line: string): ParsedSearchEntry {
   let m = line.match(SEARCH_LINE_RE);
   if (m) {
+    // Heal Windows paths where the drive letter was mistaken for the file name
+    if (m[1].length === 1 && /^[A-Za-z]$/.test(m[1])) {
+      const healed = fixWindowsPath(m[1], m[2], m[3]);
+      if (healed) return { key: 0, file: healed.file, lineno: healed.lineno, content: healed.content };
+    }
     return { key: 0, file: m[1], lineno: parseInt(m[2], 10), content: m[3] };
   }
   m = line.match(SYMBOL_LINE_RE);

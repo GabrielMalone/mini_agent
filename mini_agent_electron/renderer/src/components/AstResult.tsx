@@ -17,8 +17,9 @@ interface ParsedAstResult {
 }
 
 const HASHLINE_RE = /^\s*(\d+)(?:\s+(\w+)\u2502)?\s?/;
-const HEADER_RE = /^[=-]+\s+(.+?)\s+[-]+$/;
-const FUNC_LINE_RE = /^[=-]+\s+(.+?)\s+::\s+(.+?)\s+[-]+$/;
+// Greedy matches so paths containing special chars (parens, colons) parse correctly
+const HEADER_RE = /^[=-]+\s+(.+)\s+[-]+$/;
+const FUNC_LINE_RE = /^[=-]+\s+(.+)\s+::\s+(.+?)\s+[-]+$/;
 const META_RE = /^\[(Function Hash|Symbol|Symbol Hash):\s*(.+?)\]$/;
 const COMPACTION_RE = /^\.\.\.\s*\[compacted\s+\d+\s*(?:chars|token)/;
 
