@@ -2788,7 +2788,9 @@ html, body {
   --------------------------------------------------------------------------- */
 #plan-panel-frame {
   width: 260px;
+  min-width: 0;          /* flexbox default is auto; 0 prevents content-bleed overlap */
   flex-shrink: 0;
+  overflow: hidden;      /* clip overflowing content instead of overlapping neighbors */
   display: flex;
   flex-direction: column;
 }
@@ -2814,6 +2816,7 @@ html, body {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;              /* prevent title and count from touching */
   padding-bottom: 2px;
   border-bottom: 1px solid var(--border);
 }
@@ -2824,6 +2827,10 @@ html, body {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--accent);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .plan-panel__progress,
