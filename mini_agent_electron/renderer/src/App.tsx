@@ -907,6 +907,24 @@ function AppShell() {
       chatStream.reset();
     }
     activeBlockIdRef.current = null;
+    // Clean up tool state: mark running cards as cancelled, clear stacks
+    toolOutputStack.current.length = 0;
+    orphanOutputs.current.length = 0;
+    if (orphanTimeoutRef.current) {
+      clearTimeout(orphanTimeoutRef.current);
+      orphanTimeoutRef.current = null;
+    }
+    setToolCards((prev) => {
+      let changed = false;
+      const updated = prev.map((card) => {
+        if (card.status === 'running') {
+          changed = true;
+          return { ...card, status: 'err' as const, endTime: Date.now(), errorDetail: 'Cancelled by user' };
+        }
+        return card;
+      });
+      return changed ? updated : prev;
+    });
     setIsLive(false);
     setInputDisabled(false);
     setInputValue('');
