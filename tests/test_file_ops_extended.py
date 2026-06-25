@@ -1309,7 +1309,7 @@ class TestStormBreaker(unittest.TestCase):
 
         with _STORM_LOCK:
             _STORM_FAILURES.clear()
-        triggered, name, error = _check_storm_breaker()
+        triggered, name, error, count = _check_storm_breaker()
         self.assertFalse(triggered)
 
     def test_check_storm_breaker_one_failure(self):
@@ -1319,7 +1319,7 @@ class TestStormBreaker(unittest.TestCase):
         with _STORM_LOCK:
             _STORM_FAILURES.clear()
             _STORM_FAILURES.append(("read_file", "path is empty"))
-        triggered, name, error = _check_storm_breaker()
+        triggered, name, error, count = _check_storm_breaker()
         self.assertFalse(triggered)
 
     def test_check_storm_breaker_three_same_failures(self):
@@ -1335,10 +1335,11 @@ class TestStormBreaker(unittest.TestCase):
             _STORM_FAILURES.clear()
             for _ in range(_STORM_THRESHOLD):
                 _STORM_FAILURES.append(("read_file", "path is empty"))
-        triggered, name, error = _check_storm_breaker()
+        triggered, name, error, count = _check_storm_breaker()
         self.assertTrue(triggered)
         self.assertEqual(name, "read_file")
         self.assertIn("path is empty", error)
+        self.assertEqual(count, 1)  # first trigger
         # Queue should be cleared after trigger
         self.assertEqual(len(_STORM_FAILURES), 0)
 
@@ -1351,7 +1352,7 @@ class TestStormBreaker(unittest.TestCase):
             _STORM_FAILURES.append(("read_file", "path is empty"))
             _STORM_FAILURES.append(("edit_file", "not found"))
             _STORM_FAILURES.append(("read_file", "path is empty"))
-        triggered, name, error = _check_storm_breaker()
+        triggered, name, error, count = _check_storm_breaker()
         self.assertFalse(triggered)
 
     def test_synthesize_storm_breaker_message(self):
@@ -1375,12 +1376,67 @@ class TestStormBreaker(unittest.TestCase):
             for _ in range(_STORM_THRESHOLD):
                 _STORM_FAILURES.append(("run_shell", "command not found"))
 
-        triggered, name, error = _check_storm_breaker()
+        triggered, name, error, count = _check_storm_breaker()
         self.assertTrue(triggered)
 
         msg = _synthesize_storm_breaker_message(name, error)
         self.assertIsInstance(msg, str)
         self.assertGreater(len(msg), 50)
+
+    def test_storm_breaker_auto_recovery_first_trigger(self):
+        """First storm breaker trigger returns count=1 (auto-recover, don't return to user)."""
+        from core.llm import _check_storm_breaker
+        from core.llm import _STORM_FAILURES, _STORM_LOCK, _STORM_THRESHOLD
+
+        # Reset state
+        import core.llm as llm_mod
+        with _STORM_LOCK:
+            _STORM_FAILURES.clear()
+        llm_mod._STORM_TRIGGER_COUNT = 0
+
+        # First trigger: 3 identical failures
+        with _STORM_LOCK:
+            for _ in range(_STORM_THRESHOLD):
+                _STORM_FAILURES.append(("edit_file", "not found"))
+        triggered, name, error, count = _check_storm_breaker()
+        self.assertTrue(triggered)
+        self.assertEqual(count, 1)  # first trigger → auto-recover
+        self.assertEqual(len(_STORM_FAILURES), 0)  # cleared
+
+        # Second trigger: 3 more identical failures
+        with _STORM_LOCK:
+            for _ in range(_STORM_THRESHOLD):
+                _STORM_FAILURES.append(("edit_file", "not found"))
+        triggered, name, error, count = _check_storm_breaker()
+        self.assertTrue(triggered)
+        self.assertEqual(count, 2)  # second trigger → escalate, return to user
+        self.assertEqual(len(_STORM_FAILURES), 0)
+
+    def test_storm_breaker_triggers_again_after_reset(self):
+        """After first trigger clears failures, new batch of 3 triggers count=2."""
+        from core.llm import _check_storm_breaker
+        from core.llm import _STORM_FAILURES, _STORM_LOCK, _STORM_THRESHOLD
+
+        import core.llm as llm_mod
+        with _STORM_LOCK:
+            _STORM_FAILURES.clear()
+        llm_mod._STORM_TRIGGER_COUNT = 0
+
+        # First trigger
+        with _STORM_LOCK:
+            for _ in range(_STORM_THRESHOLD):
+                _STORM_FAILURES.append(("run_shell", "cmd not found"))
+        triggered, _, _, count = _check_storm_breaker()
+        self.assertTrue(triggered)
+        self.assertEqual(count, 1)
+
+        # Second trigger with same error fingerprint
+        with _STORM_LOCK:
+            for _ in range(_STORM_THRESHOLD):
+                _STORM_FAILURES.append(("run_shell", "cmd not found"))
+        triggered, _, _, count = _check_storm_breaker()
+        self.assertTrue(triggered)
+        self.assertEqual(count, 2)  # escalated
 
 
 if __name__ == "__main__":

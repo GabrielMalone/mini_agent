@@ -83,23 +83,27 @@ from collections import deque as _deque
 _STORM_THRESHOLD = 3  # consecutive identical failures to trigger
 _STORM_FAILURES: _deque[tuple[str, str]] = _deque()  # (tool_name, error_fp)
 _STORM_LOCK = threading.Lock()
+_STORM_TRIGGER_COUNT = 0  # how many times storm breaker fired this session
 
 
-def _check_storm_breaker() -> tuple[bool, str, str]:
+def _check_storm_breaker() -> tuple[bool, str, str, int]:
     """Check if storm-breaker should trigger.
 
-    Returns (triggered, tool_name, error_message).
+    Returns (triggered, tool_name, error_message, trigger_count).
+    trigger_count is 1-based (1 = first time, 2 = escalated).
     """
+    global _STORM_TRIGGER_COUNT
     with _STORM_LOCK:
         if len(_STORM_FAILURES) < _STORM_THRESHOLD:
-            return False, "", ""
+            return False, "", "", 0
         names = {n for n, _ in _STORM_FAILURES}
         fps = {f for _, f in _STORM_FAILURES}
         if len(names) == 1 and len(fps) == 1:
             name, fp = _STORM_FAILURES[0]
             _STORM_FAILURES.clear()
-            return True, name, fp
-    return False, "", ""
+            _STORM_TRIGGER_COUNT += 1
+            return True, name, fp, _STORM_TRIGGER_COUNT
+    return False, "", "", 0
 
 
 def _synthesize_storm_breaker_message(tool_name: str, error: str) -> str:
@@ -1083,21 +1087,25 @@ def run_agent_turn(
             # already streamed -- just continue the loop.
 
             # --- Storm-breaker: synthesize assistant message on repeated failures ---
-            triggered, storm_name, storm_error = _check_storm_breaker()
+            triggered, storm_name, storm_error, storm_count = _check_storm_breaker()
             if triggered:
                 storm_msg = _synthesize_storm_breaker_message(storm_name, storm_error)
                 messages.append({"role": "assistant", "content": storm_msg})
-                if total_usage:
-                    storm_msg_dict = {
-                        "role": "assistant",
-                        "content": storm_msg,
-                        "_total_usage": total_usage,
-                    }
-                else:
-                    storm_msg_dict = {"role": "assistant", "content": storm_msg}
-                if turn_count > 1:
-                    storm_msg_dict["_turn_count"] = turn_count
-                return storm_msg_dict
+                if storm_count >= 2:
+                    # Escalated: second trigger in same session -- return to user
+                    if total_usage:
+                        storm_msg_dict = {
+                            "role": "assistant",
+                            "content": storm_msg,
+                            "_total_usage": total_usage,
+                        }
+                    else:
+                        storm_msg_dict = {"role": "assistant", "content": storm_msg}
+                    if turn_count > 1:
+                        storm_msg_dict["_turn_count"] = turn_count
+                    return storm_msg_dict
+                # First trigger: clear failures, let agent self-correct in next turn
+                continue
 
             _run_consolidation(messages, config)
 

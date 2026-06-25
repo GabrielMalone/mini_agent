@@ -1,28 +1,25 @@
-# HANDOFF — 2026-06-25 (Read file audit + PlanPanel overlap fix)
+# HANDOFF — 2026-06-25 (Storm breaker auto-recovery audit)
 
 ## What I changed
-### Read file system audit
-- **`ReadFileResult.tsx`**: `extractPath` regex `(.+?)` → `(.+)` (greedy) so paths containing
-  closing parens like `/foo/bar (copy).py` parse correctly
-- **`AstResult.tsx`**: `HEADER_RE` and `FUNC_LINE_RE` path captures `(.+?)` → `(.+)` (greedy)
-  so paths with special chars (colons, parens) don't truncate
-- **`SearchResults.tsx`**: Added `fixWindowsPath()` to heal Windows drive-letter misparse
-  (`C:\path.py:42: text` → file="C" fixed back to file="C:\path.py")
-
-### PlanPanel overlap fix
-- **`style.css`**: Three fixes to `#plan-panel-frame` and `.plan-panel__title`:
-  1. `#plan-panel-frame`: `min-width: 0` + `overflow: hidden` — prevents flexbox content-bleed
-  2. `.plan-panel__title`: text-overflow ellipsis + nowrap for long step text
-  3. `.plan-panel__header`: `gap: 8px` to prevent title/count touching
+### Storm breaker auto-recovery
+- **`core/llm.py`**: `_check_storm_breaker()` now returns a 4-tuple `(triggered, name, error, count)`.
+  Added `_STORM_TRIGGER_COUNT` global counter. On first trigger (count=1), the storm breaker
+  injects the synthesized message and **continues the loop** instead of returning — letting the
+  agent self-correct. On second trigger (count=2), it escalates and returns to the user as before.
+  This is a safety valve against infinite loops.
+- **`tests/test_file_ops_extended.py`**: Updated all existing `TestStormBreaker` tests for the
+  new 4-tuple return signature. Added 2 new tests:
+  - `test_storm_breaker_auto_recovery_first_trigger`: verifies count=1 on first trigger,
+    count=2 on second trigger
+  - `test_storm_breaker_triggers_again_after_reset`: verifies escalation across separate
+    failure batches
 
 ## What's pending
 - None from this session
 
 ## Modified files
-- `mini_agent_electron/renderer/src/components/ReadFileResult.tsx` (+2 lines)
-- `mini_agent_electron/renderer/src/components/AstResult.tsx` (+1 lines)
-- `mini_agent_electron/renderer/src/components/SearchResults.tsx` (+21 lines)
-- `mini_agent_electron/renderer/style.css` (+7 lines)
+- `core/llm.py` (+8 lines)
+- `tests/test_file_ops_extended.py` (+56 lines)
 - `HANDOFF.md` (this file)
 
 ## Commits
