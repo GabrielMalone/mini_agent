@@ -405,8 +405,16 @@ def _apply_single_edit(
     preview: bool,
     wg: WriteSafetyGate,
     args: dict,
+    fallback: str = "error",
 ) -> _EditResult:
-    """Apply an edit to a single file. Returns (path, ToolResult)."""
+    """Apply an edit to a single file. Returns (path, ToolResult).
+
+    Args:
+        fallback: What to do when fuzzy matching fails:
+            "error" - return error (default, backward-compatible)
+            "whole-file" - treat new_string as the full replacement content
+            "auto" - if confidence >= 60% use fuzzy match, else try whole-file
+    """
     if not old:
         return (
             path,
@@ -439,7 +447,48 @@ def _apply_single_edit(
         diff = wg.generate_diff("edit_file", args)
         _backup_before_write(resolved)
         match = _fuzzy_find(original, old)
+        # --- Confidence score for diagnostics (always computed) ---
+        _old_lines = old.split("\n")
+        _content_lines = original.split("\n")
+        best_match_info = _find_closest_lines(_content_lines, _old_lines)
+        _confidence = best_match_info.get("match_ratio", 0.0) if best_match_info else 0.0
+
         if match is None:
+            # --- Whole-file rewrite fallback ---
+            if fallback in ("whole-file", "auto") and new:
+                if fallback == "auto" and _confidence < 0.60:
+                    pass  # Fall through to error below
+                else:
+                    updated = new
+                    if preview:
+                        raw_diff = wg._format_diff(resolved, original, updated)
+                        return (
+                            path,
+                            ToolResult(
+                                success=True,
+                                content=(
+                                    f"[whole-file fallback] Preview: proposed full rewrite of {resolved}\n"
+                                    f"(fuzzy match confidence: {int(_confidence * 100)}%)\n{raw_diff}"
+                                ),
+                            ),
+                        )
+                    ok, err = _finalize_edit(resolved, original, updated, wg.workspace_root)
+                    if not ok:
+                        return (path, ToolResult(success=False, content=err or "Edit failed"))
+                    added = updated.count("\n") - original.count("\n")
+                    return (
+                        path,
+                        ToolResult(
+                            success=True,
+                            content=(
+                                f"OK: whole-file rewrite of {resolved}"
+                                + (f" (+{added} lines)" if added > 0 else f" ({added} lines)" if added < 0 else "")
+                                + f" (fuzzy match confidence: {int(_confidence * 100)}%)"
+                            ),
+                            diff_preview=diff.preview_text if diff.changed else None,
+                        ),
+                    )
+
             # Search for similar substrings to help the agent self-correct
             candidates: list[str] = []
             old_first_line = old.split("\n")[0].strip()
@@ -448,7 +497,6 @@ def _apply_single_edit(
                     candidates.append(f"  line {lineno}: {line.rstrip()[:120]}")
                 if len(candidates) >= 3:
                     break
-            # Build diagnostic: find the closest matching lines and show diff
             _old_lines = old.split("\n")
             _content_lines = original.split("\n")
             best_match = _find_closest_lines(_content_lines, _old_lines)
@@ -485,6 +533,12 @@ def _apply_single_edit(
                     "\nSimilar lines found (did you mean one of these?):\n"
                     + "\n".join(candidates)
                 )
+            # Suggest whole-file rewrite fallback
+            hint += (
+                f"\n\nTip: Use fallback='whole-file' to replace the entire file content "
+                f"when exact matching fails, or fallback='auto' (confidence {int(_confidence * 100)}%) "
+                f"to auto-select."
+            )
             if old_first_line:
                 try:
                     memory = getattr(_TOOL_CONTEXT, "_memory_store", None)
@@ -495,9 +549,7 @@ def _apply_single_edit(
                             detail=f"File: {resolved}. Could not find exact match for old_string.",
                         )
                 except Exception as exc:
-                    print(
-                        f"  WARNING: backup skipped: {exc}", file=sys.stderr, flush=True
-                    )
+                    print(f"  WARNING: backup skipped: {exc}", file=sys.stderr, flush=True)
             return (path, ToolResult(success=False, content=hint))
 
         if count == -1:
@@ -582,25 +634,34 @@ def _edit_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResu
     if files is not None:
         return _edit_file_anchored(files, wg, _rg)
 
+    # --- Structured diff / patch mode ---
+    diff_text = args.get("diff", None)
+    if diff_text is not None and isinstance(diff_text, str) and diff_text.strip():
+        path = args.get("path", "")
+        if not path:
+            return ToolResult(success=False, content="diff mode requires 'path'.")
+        result = _apply_patch_mode(path, diff_text, args.get("preview", False), wg, args)
+        return result[1]
+
+    # --- Multi-edit batch mode (array of edits per file) ---
+    edits = args.get("edits", None)
+    if edits is not None and isinstance(edits, list):
+        return _edit_file_multi(edits, wg, args)
+
     # --- Legacy old_string/new_string mode ---
     old = args.get("old_string", "")
     new = args.get("new_string", "")
     count = args.get("count", 1)
     preview = args.get("preview", False)
     paths = args.get("paths", None)
+    fallback = args.get("fallback", "error")
 
     if paths is not None:
-        # Batch edit: apply same old->new to all paths
         if not isinstance(paths, list) or not paths:
-            return ToolResult(
-                success=False,
-                content="'paths' must be a non-empty list of file paths.",
-            )
+            return ToolResult(success=False, content="'paths' must be a non-empty list of file paths.")
         results: list[_EditResult] = []
         for p in paths:
-            result = _apply_single_edit(
-                p, old, new, count, preview, wg, {**args, "path": p}
-            )
+            result = _apply_single_edit(p, old, new, count, preview, wg, {**args, "path": p}, fallback)
             results.append(result)
         all_ok = all(r.success for _, r in results)
         lines: list[str] = []
@@ -616,14 +677,124 @@ def _edit_file(args: dict, wg: WriteSafetyGate, _rg: ReadSafetyGate) -> ToolResu
         if all_ok:
             return ToolResult(success=True, content=summary)
         else:
-            return ToolResult(
-                success=False,
-                content=summary + f"\n\nFailed paths: {failures}",
-            )
+            return ToolResult(success=False, content=summary + f"\n\nFailed paths: {failures}")
     else:
         path = args["path"]
-        result = _apply_single_edit(path, old, new, count, preview, wg, args)
+        result = _apply_single_edit(path, old, new, count, preview, wg, args, fallback)
         return result[1]
+
+
+def _edit_file_multi(edits: list[dict], wg: WriteSafetyGate, args: dict) -> ToolResult:
+    """Apply multiple string-based edits to one or more files."""
+    if not isinstance(edits, list) or not edits:
+        return ToolResult(success=False, content="'edits' must be a non-empty array.")
+    by_file: dict[str, list[dict]] = {}
+    for i, edit in enumerate(edits):
+        if not isinstance(edit, dict):
+            return ToolResult(success=False, content=f"edits[{i}]: must be an object with 'path' and 'old_string'.")
+        p = edit.get("path", "")
+        if not p:
+            return ToolResult(success=False, content=f"edits[{i}]: missing 'path'.")
+        by_file.setdefault(p, []).append(edit)
+    all_results: list[_EditResult] = []
+    for path, file_edits in by_file.items():
+        safety_result = wg.check(path)
+        if not safety_result.allowed:
+            all_results.append((path, ToolResult(success=False, content=f"Edit blocked by safety layer: {safety_result.reason}")))
+            continue
+        for edit in file_edits:
+            old = edit.get("old_string", "")
+            new = edit.get("new_string", "")
+            count = edit.get("count", 1)
+            preview = edit.get("preview", False)
+            fb = edit.get("fallback", "error")
+            merged_args = {**args, "path": safety_result.resolved_path}
+            result = _apply_single_edit(safety_result.resolved_path, old, new, count, preview, wg, merged_args, fb)
+            all_results.append(result)
+            if not result[1].success:
+                break
+    all_ok = all(r.success for _, r in all_results)
+    lines: list[str] = []
+    for p, r in all_results:
+        first_line = r.content.split("\n")[0]
+        if r.success:
+            lines.append(f"  [OK] {p}: {first_line}")
+        else:
+            lines.append(f"  [FAIL] {p}: {first_line}")
+    summary = f"Multi-edit results ({len(all_results)} edits):\n" + "\n".join(lines)
+    return ToolResult(success=all_ok, content=summary)
+
+
+def _apply_patch_mode(path: str, diff_text: str, preview: bool, wg: WriteSafetyGate, args: dict) -> _EditResult:
+    """Apply a unified diff to a file deterministically (structured diff mode)."""
+    safety_result = wg.check(path)
+    if not safety_result.allowed:
+        return (path, ToolResult(success=False, content=f"Edit blocked by safety layer: {safety_result.reason}"))
+    resolved = safety_result.resolved_path
+    if resolved not in _READ_FILES:
+        _READ_FILES.add(resolved)
+    try:
+        with open(resolved, "r", encoding="utf-8", errors="replace") as f:
+            original = f.read()
+    except FileNotFoundError:
+        original = ""
+    except Exception as e:
+        return (path, ToolResult(success=False, content=f"Error reading '{resolved}': {e}"))
+    diff = wg.generate_diff("edit_file", args)
+    _backup_before_write(resolved)
+    try:
+        patched = _apply_unified_diff(original, diff_text)
+    except Exception as e:
+        return (path, ToolResult(success=False, content=f"Failed to apply patch: {e}"))
+    if preview:
+        raw_diff = wg._format_diff(resolved, original, patched)
+        return (path, ToolResult(success=True, content=f"[patch mode] Preview:\n{raw_diff}"))
+    ok, err = _finalize_edit(resolved, original, patched, wg.workspace_root)
+    if not ok:
+        return (path, ToolResult(success=False, content=err or "Edit failed"))
+    added = patched.count("\n") - original.count("\n")
+    return (path, ToolResult(success=True, content=f"OK: applied patch to {resolved}" + (f" (+{added} lines)" if added > 0 else f" ({added} lines)" if added < 0 else ""), diff_preview=diff.preview_text if diff.changed else None))
+
+
+def _apply_unified_diff(original: str, diff_text: str) -> str:
+    """Apply a unified diff to original content, returning patched result."""
+    import difflib
+    original_lines = original.splitlines(keepends=True)
+    diff_lines = diff_text.splitlines(keepends=True)
+    result = list(original_lines)
+    i = 0
+    offset_adjust = 0
+    while i < len(diff_lines):
+        line = diff_lines[i]
+        if line.startswith("@@"):
+            import re
+            m = re.match(r"@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@", line)
+            if not m:
+                i += 1
+                continue
+            old_start = int(m.group(1)) - 1
+            old_count = int(m.group(2)) if m.group(2) else 1
+            i += 1
+            hunk_context = []
+            hunk_add = []
+            while i < len(diff_lines) and not diff_lines[i].startswith("@@") and not diff_lines[i].startswith("---") and not diff_lines[i].startswith("+++"):
+                hl = diff_lines[i]
+                if hl.startswith(" "):
+                    hunk_context.append(hl[1:])
+                    hunk_add.append(hl[1:])
+                elif hl.startswith("-"):
+                    hunk_context.append(hl[1:])
+                elif hl.startswith("+"):
+                    hunk_add.append(hl[1:])
+                i += 1
+            actual_start = old_start + offset_adjust
+            result[actual_start:actual_start + old_count] = hunk_add
+            offset_adjust += len(hunk_add) - old_count
+        elif line.startswith("---") or line.startswith("+++"):
+            i += 1
+        else:
+            i += 1
+    return "".join(result)
 
 
 def _edit_file_anchored(

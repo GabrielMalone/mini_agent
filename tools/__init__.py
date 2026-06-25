@@ -1219,6 +1219,7 @@ def _ensure_skill_imports(skill_name: str) -> None:
 from tools import agent_ops  # noqa: E402, F401  -- restore_file, session_stats, recall_turn, remember, read_image
 from tools import memory_core  # noqa: E402, F401  -- memory_core, session_search (core)
 from tools import agent_todos  # noqa: E402, F401  -- todo_write, todo_read (planning skill)
+from tools import _viewer  # noqa: E402, F401  -- view_file (viewer subagent)
 from tools import lsp  # noqa: E402, F401  -- LSP tools (lsp skill)
 from tools.search_ops import build_symbol_index  # noqa: E402, F401
 from tools.mcp_client import get_mcp_manager, init_mcp_servers, shutdown_mcp  # noqa: E402, F401

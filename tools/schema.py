@@ -334,8 +334,62 @@ TOOLS = [
                         },
                         "description": "Anchor-based edit mode: array of {path, edits} for multi-file batch editing",
                     },
+                    "edits": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "path": {"type": "string", "description": "File path to edit"},
+                                "old_string": {"type": "string", "description": "String to find"},
+                                "new_string": {"type": "string", "description": "Replacement string"},
+                                "count": {"type": "integer", "description": "Optional: occurrences (1=first, -1=all). Default 1."},
+                                "preview": {"type": "boolean", "description": "Optional: preview only, don't write"},
+                                "fallback": {"type": "string", "enum": ["error", "whole-file", "auto"], "description": "Optional: fallback mode"},
+                            },
+                            "required": ["path", "old_string", "new_string"],
+                        },
+                        "description": "Multi-edit batch mode: array of {path, old_string, new_string} edits applied in order. Avoids N roundtrips for N changes.",
+                    },
+                    "diff": {
+                        "type": "string",
+                        "description": "Unified diff to apply deterministically. Structured diff mode -- avoids find/replace entirely. Use with 'path'.",
+                    },
+                    "fallback": {
+                        "type": "string",
+                        "enum": ["error", "whole-file", "auto"],
+                        "description": "Optional: what to do when fuzzy matching fails. 'error' (default), 'whole-file' (replace entire file content), or 'auto' (choose based on confidence).",
+                    },
                 },
-                "required": ["path"],
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "view_file",
+            "description": "Viewer subagent: extract task-relevant code snippets from a file using a natural-language query. Prevents context pollution by returning only relevant line ranges. Ideal for large files (1000+ lines).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the file to view",
+                    },
+                    "query": {
+                        "type": "string",
+                        "description": "Natural-language description of what code to find (e.g. 'the handleSubmit function', 'error handling logic')",
+                    },
+                    "context_lines": {
+                        "type": "integer",
+                        "description": "Optional: lines of context around each match. Default: 10.",
+                    },
+                    "max_blocks": {
+                        "type": "integer",
+                        "description": "Optional: max number of snippet blocks to return. Default: 5.",
+                    },
+                },
+                "required": ["path", "query"],
             },
         },
     },
