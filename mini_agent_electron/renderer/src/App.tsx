@@ -376,11 +376,12 @@ function AppShell() {
       if (cardId == null && tName) {
         let idx = -1;
         if (tCallId) {
-          // Prefer empty toolCallId entries (ID arrived late), then any match
+          // Prefer empty toolCallId entries (ID arrived late).
+          // DO NOT fall back to plain name match: when multiple tools
+          // share the same name, a generic name match would consume
+          // the wrong entry.  The card-search fallback below handles
+          // this with per-card tool_call_id matching.
           idx = stack.findIndex((e) => e.toolName === tName && !e.toolCallId);
-          if (idx === -1) {
-            idx = stack.findIndex((e) => e.toolName === tName);
-          }
         } else {
           idx = stack.findIndex((e) => e.toolName === tName);
         }
@@ -407,8 +408,10 @@ function AppShell() {
           stack.splice(idx, 1);
         }
       }
-      if (cardId == null && stack.length > 0) {
-        // Fallback: LIFO pop (sequential execution, or tool_name not available)
+      if (cardId == null && stack.length > 0 && !tCallId && !tName) {
+        // Fallback: LIFO pop only when no tool_call_id or tool_name
+        // is available.  When either is present, the card-search
+        // fallback below is more precise (ID → name → any-running).
         const top = stack.pop()!;
         finalBuffer = top.buffer;
         cardId = top.cardId;
