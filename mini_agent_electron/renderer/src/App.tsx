@@ -551,6 +551,8 @@ function AppShell() {
         });
         return changed ? updated : prev;
       });
+      // Flush tool output stack so stale entries don't leak into the next turn
+      toolOutputStack.current.length = 0;
     }));
 
     unsubs.push(api.on('stream:error', (data) => {
@@ -831,6 +833,13 @@ function AppShell() {
       inputRef.current?.focus();
     } else {
       // Agent is idle -- start a new turn
+      // Flush any stale tool state from a previously-cancelled turn
+      toolOutputStack.current.length = 0;
+      orphanOutputs.current.length = 0;
+      if (orphanTimeoutRef.current) {
+        clearTimeout(orphanTimeoutRef.current);
+        orphanTimeoutRef.current = null;
+      }
       activeBlockIdRef.current = blockId;
       chatStream.reset();
       setIsLive(true);
