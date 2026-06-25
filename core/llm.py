@@ -249,7 +249,9 @@ def _execute_single_no_pipe(
         )
         return []
     if on_tool_start is not None:
-        on_tool_start(tool_summary(tc), tool_call_id=tc.get("id", ""))
+        tool_call_id = tc.get("id") or f"_seq_{id(tc)}"
+        on_tool_start(tool_summary(tc), tool_call_id=tool_call_id)
+        tc["_stream_id"] = tool_call_id  # ensures _append_tool_result uses same id
     tool_name = tc["function"]["name"]
     on_output_wrapped = (lambda line, tn=tool_name: on_tool_output(line, tn)) if on_tool_output else None
     result = execute_tool(
@@ -287,8 +289,10 @@ def _execute_parallel_no_pipes(
 ) -> list[tuple[dict, "ToolResult"]]:
     """Execute multiple independent tool calls in parallel."""
     if on_tool_start is not None:
-        for tc in remaining:
-            on_tool_start(tool_summary(tc), True, tool_call_id=tc.get("id", ""))
+        for i, tc in enumerate(remaining):
+            tool_call_id = tc.get("id") or f"_par_{i}"
+            on_tool_start(tool_summary(tc), True, tool_call_id=tool_call_id)
+            tc["_stream_id"] = tool_call_id
 
     def _run_tool(tc: dict) -> tuple[dict, "ToolResult"]:
         tool_name = tc["function"]["name"]

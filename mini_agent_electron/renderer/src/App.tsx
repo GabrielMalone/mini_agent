@@ -383,7 +383,12 @@ function AppShell() {
           // this with per-card tool_call_id matching.
           idx = stack.findIndex((e) => e.toolName === tName && !e.toolCallId);
         } else {
-          idx = stack.findIndex((e) => e.toolName === tName);
+          // Search from end (LIFO) so later-started tools in a same-name
+          // batch match before earlier ones when tool_call_id is absent.
+          idx = -1;
+          for (let j = stack.length - 1; j >= 0; j--) {
+            if (stack[j].toolName === tName) { idx = j; break; }
+          }
         }
         if (idx !== -1) {
           const entry = stack[idx];
