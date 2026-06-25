@@ -450,13 +450,14 @@ def _finalize_edit(
         except Exception:
             pass
 
-    # 6. Knowledge graph invalidation
-    try:
-        from core.knowledge_graph import invalidate_file
+        # 6. Knowledge graph invalidation (Python only — tree-sitter-typescript
+        #    parsing of large TSX files can block the edit pipeline)
+        try:
+            from core.knowledge_graph import invalidate_file
 
-        invalidate_file(resolved, workspace_root)
-    except Exception:
-        pass
+            invalidate_file(resolved, workspace_root)
+        except Exception:
+            pass
 
     # 7. Auto-advance plan
     _auto_advance_plan(resolved, edit_text)
